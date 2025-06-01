@@ -5,9 +5,10 @@ const path = require('path');
 const os = require('os');
 
 class WhisperProvider extends EventEmitter {
-  constructor() {
+  constructor(modelManager) {
     super();
     this.isInitialized = false;
+    this.modelManager = modelManager;
     this.availableModels = [
       'tiny', 'tiny.en', 'base', 'base.en', 'small', 'small.en', 
       'medium', 'medium.en', 'large-v1', 'large-v2', 'large-v3'
@@ -15,13 +16,35 @@ class WhisperProvider extends EventEmitter {
     this.modelPath = path.join(os.homedir(), '.whisperdesk', 'models');
   }
 
+  getName() {
+    return 'Whisper';
+  }
+
+  getDescription() {
+    return 'OpenAI\'s Whisper model for high-quality speech recognition';
+  }
+
+  getCapabilities() {
+    return {
+      realtime: false,
+      fileTranscription: true,
+      speakerDiarization: false,
+      languageDetection: true,
+      wordTimestamps: true
+    };
+  }
+
+  isAvailable() {
+    return this.isInitialized;
+  }
+
   async initialize() {
     try {
       // Create models directory
       await fs.mkdir(this.modelPath, { recursive: true });
       
-      // Check if Python and whisper are available
-      await this.checkDependencies();
+      // Check if Python is available (we'll need it for transcription)
+      await this.checkPython();
       
       this.isInitialized = true;
       console.log('Whisper provider initialized successfully');
@@ -33,27 +56,14 @@ class WhisperProvider extends EventEmitter {
     }
   }
 
-  async checkDependencies() {
+  async checkPython() {
     return new Promise((resolve, reject) => {
       // Check if Python is available
       const pythonCheck = spawn('python3', ['--version']);
       
       pythonCheck.on('close', (code) => {
         if (code === 0) {
-          // Check if whisper is installed
-          const whisperCheck = spawn('python3', ['-c', 'import whisper; print("Whisper available")']);
-          
-          whisperCheck.on('close', (whisperCode) => {
-            if (whisperCode === 0) {
-              resolve();
-            } else {
-              reject(new Error('OpenAI Whisper not installed. Run: pip install openai-whisper'));
-            }
-          });
-          
-          whisperCheck.on('error', () => {
-            reject(new Error('Failed to check Whisper installation'));
-          });
+          resolve();
         } else {
           reject(new Error('Python3 not found. Please install Python 3.8 or later'));
         }
@@ -337,43 +347,41 @@ except:
       throw new Error(`Invalid model: ${modelName}`);
     }
 
-    return new Promise((resolve, reject) => {
-      const downloadProcess = spawn('python3', [
-        '-c',
-        `
-import whisper
-import sys
+    // Get the model info from the model manager
+    const modelId = `whisper-${modelName}`;
+    const modelInfo = await this.modelManager.getModelInfo(modelId);
+    
+    if (!modelInfo) {
+      throw new Error(`Model info not found for ${modelName}`);
+    }
 
-try:
-    print("Downloading model: ${modelName}", file=sys.stderr)
-    model = whisper.load_model("${modelName}")
-    print("Model downloaded successfully", file=sys.stderr)
-    print("success")
-except Exception as e:
-    print(f"Error downloading model: {e}", file=sys.stderr)
-    sys.exit(1)
-        `
-      ]);
-
-      downloadProcess.stderr.on('data', (data) => {
-        const output = data.toString();
-        console.log('Download progress:', output);
-        this.emit('download-progress', { model: modelName, message: output });
-      });
-
-      downloadProcess.on('close', (code) => {
-        if (code === 0) {
-          this.emit('download-complete', { model: modelName });
-          resolve();
-        } else {
-          reject(new Error(`Failed to download model ${modelName}`));
-        }
-      });
-
-      downloadProcess.on('error', (error) => {
-        reject(new Error(`Download process error: ${error.message}`));
-      });
+    // Set up event listeners for download progress
+    this.modelManager.on('download-progress', (data) => {
+      if (data.modelId === modelId) {
+        this.emit('download-progress', {
+          model: modelName,
+          progress: data.progress,
+          downloadedBytes: data.downloadedBytes,
+          totalBytes: data.totalBytes,
+          speed: data.speed
+        });
+      }
     });
+
+    this.modelManager.on('download-complete', (data) => {
+      if (data.modelId === modelId) {
+        this.emit('download-complete', { model: modelName });
+      }
+    });
+
+    this.modelManager.on('download-error', (data) => {
+      if (data.modelId === modelId) {
+        this.emit('download-error', { model: modelName, error: data.error });
+      }
+    });
+
+    // Use the model manager's download method
+    await this.modelManager.downloadModel(modelId);
   }
 
   async cleanup() {

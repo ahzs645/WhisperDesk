@@ -20,7 +20,7 @@ class WhisperDeskApp {
     
     // Initialize services
     this.modelManager = new ModelManager();
-    this.transcriptionService = new TranscriptionService();
+    this.transcriptionService = new TranscriptionService(this.modelManager);
     this.audioService = new AudioService();
     this.settingsService = new SettingsService();
     this.exportService = new ExportService();

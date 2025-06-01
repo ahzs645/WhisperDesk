@@ -59,9 +59,42 @@ class AudioService extends EventEmitter {
   async getWindowsDevices() {
     // Use PowerShell to get audio devices on Windows
     const script = `
-      Get-WmiObject -Class Win32_SoundDevice | 
-      Select-Object Name, DeviceID, Status | 
-      ConvertTo-Json
+      $inputDevices = Get-WmiObject -Class Win32_SoundDevice | Where-Object {$_.Status -eq 'OK'} | Select-Object Name, DeviceID, Status
+      $outputDevices = Get-CimInstance -ClassName Win32_SoundDevice | Where-Object {$_.Status -eq 'OK'} | Select-Object Name, DeviceID
+      
+      # Get system audio devices for recording
+      $audioDevices = @()
+      
+      # Add input devices (microphones)
+      foreach ($device in $inputDevices) {
+        $audioDevices += @{
+          id = $device.DeviceID
+          name = $device.Name + " (Input)"
+          type = "input"
+          isDefault = $false
+          canRecordSystem = $false
+        }
+      }
+      
+      # Add system audio capture (What U Hear / Stereo Mix)
+      $audioDevices += @{
+        id = "system-audio"
+        name = "System Audio (What U Hear)"
+        type = "system"
+        isDefault = $false
+        canRecordSystem = $true
+      }
+      
+      # Add combined input + system audio
+      $audioDevices += @{
+        id = "combined-audio"
+        name = "Microphone + System Audio"
+        type = "combined"
+        isDefault = $false
+        canRecordSystem = $true
+      }
+      
+      $audioDevices | ConvertTo-Json
     `;
 
     return new Promise((resolve, reject) => {
@@ -76,20 +109,63 @@ class AudioService extends EventEmitter {
         try {
           const devices = JSON.parse(output);
           this.audioDevices = (Array.isArray(devices) ? devices : [devices])
-            .filter(device => device.Status === 'OK')
             .map((device, index) => ({
-              id: device.DeviceID || `device-${index}`,
-              name: device.Name,
-              type: 'input',
-              isDefault: index === 0
+              id: device.id || `device-${index}`,
+              name: device.name,
+              type: device.type || 'input',
+              isDefault: index === 0,
+              canRecordSystem: device.canRecordSystem || false
             }));
           resolve();
         } catch (error) {
-          reject(error);
+          // Fallback with basic devices
+          this.audioDevices = [
+            {
+              id: 'default',
+              name: 'Default Microphone',
+              type: 'input',
+              isDefault: true,
+              canRecordSystem: false
+            },
+            {
+              id: 'system-audio',
+              name: 'System Audio (What U Hear)',
+              type: 'system',
+              isDefault: false,
+              canRecordSystem: true
+            },
+            {
+              id: 'combined-audio',
+              name: 'Microphone + System Audio',
+              type: 'combined',
+              isDefault: false,
+              canRecordSystem: true
+            }
+          ];
+          resolve();
         }
       });
 
-      process.on('error', reject);
+      process.on('error', () => {
+        // Fallback devices
+        this.audioDevices = [
+          {
+            id: 'default',
+            name: 'Default Microphone',
+            type: 'input',
+            isDefault: true,
+            canRecordSystem: false
+          },
+          {
+            id: 'system-audio',
+            name: 'System Audio (What U Hear)',
+            type: 'system',
+            isDefault: false,
+            canRecordSystem: true
+          }
+        ];
+        resolve();
+      });
     });
   }
 
@@ -116,10 +192,28 @@ class AudioService extends EventEmitter {
                   id: `${categoryIndex}-${deviceIndex}`,
                   name: device._name,
                   type: 'input',
-                  isDefault: categoryIndex === 0 && deviceIndex === 0
+                  isDefault: categoryIndex === 0 && deviceIndex === 0,
+                  canRecordSystem: false
                 });
               });
             }
+          });
+
+          // Add system audio capture options for macOS
+          this.audioDevices.push({
+            id: 'system-audio',
+            name: 'System Audio (BlackHole/Soundflower)',
+            type: 'system',
+            isDefault: false,
+            canRecordSystem: true
+          });
+
+          this.audioDevices.push({
+            id: 'combined-audio',
+            name: 'Microphone + System Audio',
+            type: 'combined',
+            isDefault: false,
+            canRecordSystem: true
           });
 
           if (this.audioDevices.length === 0) {
@@ -127,17 +221,61 @@ class AudioService extends EventEmitter {
               id: 'default',
               name: 'Default Audio Device',
               type: 'input',
-              isDefault: true
+              isDefault: true,
+              canRecordSystem: false
             });
           }
 
           resolve();
         } catch (error) {
-          reject(error);
+          // Fallback devices for macOS
+          this.audioDevices = [
+            {
+              id: 'default',
+              name: 'Default Microphone',
+              type: 'input',
+              isDefault: true,
+              canRecordSystem: false
+            },
+            {
+              id: 'system-audio',
+              name: 'System Audio (BlackHole/Soundflower)',
+              type: 'system',
+              isDefault: false,
+              canRecordSystem: true
+            },
+            {
+              id: 'combined-audio',
+              name: 'Microphone + System Audio',
+              type: 'combined',
+              isDefault: false,
+              canRecordSystem: true
+            }
+          ];
+          resolve();
         }
       });
 
-      process.on('error', reject);
+      process.on('error', () => {
+        // Fallback devices
+        this.audioDevices = [
+          {
+            id: 'default',
+            name: 'Default Microphone',
+            type: 'input',
+            isDefault: true,
+            canRecordSystem: false
+          },
+          {
+            id: 'system-audio',
+            name: 'System Audio (BlackHole/Soundflower)',
+            type: 'system',
+            isDefault: false,
+            canRecordSystem: true
+          }
+        ];
+        resolve();
+      });
     });
   }
 
@@ -160,8 +298,26 @@ class AudioService extends EventEmitter {
               id: parts[1] || `device-${index}`,
               name: parts[1] || `Audio Device ${index + 1}`,
               type: 'input',
-              isDefault: index === 0
+              isDefault: index === 0,
+              canRecordSystem: false
             };
+          });
+
+          // Add system audio capture options for Linux
+          this.audioDevices.push({
+            id: 'system-audio',
+            name: 'System Audio (PulseAudio Monitor)',
+            type: 'system',
+            isDefault: false,
+            canRecordSystem: true
+          });
+
+          this.audioDevices.push({
+            id: 'combined-audio',
+            name: 'Microphone + System Audio',
+            type: 'combined',
+            isDefault: false,
+            canRecordSystem: true
           });
 
           if (this.audioDevices.length === 0) {
@@ -169,7 +325,8 @@ class AudioService extends EventEmitter {
               id: 'default',
               name: 'Default Audio Device',
               type: 'input',
-              isDefault: true
+              isDefault: true,
+              canRecordSystem: false
             });
           }
 
@@ -181,12 +338,29 @@ class AudioService extends EventEmitter {
 
       process.on('error', () => {
         // Fallback if pactl is not available
-        this.audioDevices = [{
-          id: 'default',
-          name: 'Default Audio Device',
-          type: 'input',
-          isDefault: true
-        }];
+        this.audioDevices = [
+          {
+            id: 'default',
+            name: 'Default Microphone',
+            type: 'input',
+            isDefault: true,
+            canRecordSystem: false
+          },
+          {
+            id: 'system-audio',
+            name: 'System Audio (PulseAudio Monitor)',
+            type: 'system',
+            isDefault: false,
+            canRecordSystem: true
+          },
+          {
+            id: 'combined-audio',
+            name: 'Microphone + System Audio',
+            type: 'combined',
+            isDefault: false,
+            canRecordSystem: true
+          }
+        ];
         resolve();
       });
     });
@@ -248,6 +422,37 @@ class AudioService extends EventEmitter {
   buildFFmpegArgs(deviceId, outputFile, options = {}) {
     const args = ['-y']; // Overwrite output file
     
+    // Handle different device types
+    if (deviceId === 'system-audio') {
+      // System audio only
+      this.addSystemAudioInput(args);
+    } else if (deviceId === 'combined-audio') {
+      // Microphone + System audio
+      this.addCombinedAudioInput(args);
+    } else {
+      // Regular microphone input
+      this.addMicrophoneInput(args, deviceId);
+    }
+
+    // Audio encoding options
+    args.push(
+      '-acodec', 'pcm_s16le',
+      '-ar', options.sampleRate || '16000',
+      '-ac', options.channels || '1'
+    );
+
+    // Add audio level monitoring
+    if (options.showLevels !== false) {
+      args.push('-af', 'volumedetect');
+    }
+
+    // Output file
+    args.push(outputFile);
+
+    return args;
+  }
+
+  addMicrophoneInput(args, deviceId) {
     // Input device configuration based on platform
     if (process.platform === 'win32') {
       args.push('-f', 'dshow');
@@ -271,24 +476,46 @@ class AudioService extends EventEmitter {
         args.push('-i', 'default');
       }
     }
+  }
 
-    // Audio encoding options
-    args.push(
-      '-acodec', 'pcm_s16le',
-      '-ar', options.sampleRate || '16000',
-      '-ac', options.channels || '1',
-      '-af', 'volume=1.0'
-    );
-
-    // Add audio level monitoring
-    if (options.showLevels !== false) {
-      args.push('-af', 'volumedetect');
+  addSystemAudioInput(args) {
+    // System audio capture configuration based on platform
+    if (process.platform === 'win32') {
+      // Windows: Use DirectShow to capture "What U Hear" or Stereo Mix
+      args.push('-f', 'dshow');
+      args.push('-i', 'audio="Stereo Mix"');
+    } else if (process.platform === 'darwin') {
+      // macOS: Use BlackHole or Soundflower (requires installation)
+      args.push('-f', 'avfoundation');
+      args.push('-i', ':1'); // Assuming BlackHole is device 1
+    } else {
+      // Linux: Use PulseAudio monitor
+      args.push('-f', 'pulse');
+      args.push('-i', 'alsa_output.pci-0000_00_1f.3.analog-stereo.monitor');
     }
+  }
 
-    // Output file
-    args.push(outputFile);
-
-    return args;
+  addCombinedAudioInput(args) {
+    // Combined microphone + system audio
+    if (process.platform === 'win32') {
+      // Windows: Mix microphone and system audio
+      args.push('-f', 'dshow', '-i', 'audio="Default Audio Device"');
+      args.push('-f', 'dshow', '-i', 'audio="Stereo Mix"');
+      args.push('-filter_complex', '[0:a][1:a]amix=inputs=2:duration=longest[out]');
+      args.push('-map', '[out]');
+    } else if (process.platform === 'darwin') {
+      // macOS: Mix microphone and system audio
+      args.push('-f', 'avfoundation', '-i', ':0'); // Microphone
+      args.push('-f', 'avfoundation', '-i', ':1'); // System audio (BlackHole)
+      args.push('-filter_complex', '[0:a][1:a]amix=inputs=2:duration=longest[out]');
+      args.push('-map', '[out]');
+    } else {
+      // Linux: Mix microphone and system audio
+      args.push('-f', 'pulse', '-i', 'default'); // Microphone
+      args.push('-f', 'pulse', '-i', 'alsa_output.pci-0000_00_1f.3.analog-stereo.monitor'); // System audio
+      args.push('-filter_complex', '[0:a][1:a]amix=inputs=2:duration=longest[out]');
+      args.push('-map', '[out]');
+    }
   }
 
   parseAudioLevel(output) {

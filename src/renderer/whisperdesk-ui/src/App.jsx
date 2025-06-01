@@ -3,6 +3,8 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Mic, Package, Clock, Settings } from 'lucide-react'
+import { ModelMarketplace } from '@/components/ModelMarketplace'
+import { TranscriptionTab } from '@/components/TranscriptionTab'
 import './App.css'
 
 function App() {
@@ -46,25 +48,7 @@ function App() {
 
           {/* Transcription Tab */}
           <TabsContent value="transcribe" className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Audio Transcription</CardTitle>
-                <CardDescription>
-                  Record audio or upload files for transcription
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  <Button className="w-full" size="lg">
-                    <Mic className="w-4 h-4 mr-2" />
-                    Start Recording
-                  </Button>
-                  <p className="text-center text-muted-foreground">
-                    Click to start recording or upload an audio file
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
+            <TranscriptionTab />
           </TabsContent>
 
           {/* Models Tab */}
@@ -77,7 +61,7 @@ function App() {
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <p>Model marketplace coming soon...</p>
+                <ModelMarketplace />
               </CardContent>
             </Card>
           </TabsContent>

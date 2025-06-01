@@ -11,12 +11,13 @@ const WhisperProvider = require('./providers/whisper-provider');
 const DeepgramProvider = require('./providers/deepgram-provider');
 
 class TranscriptionService extends EventEmitter {
-  constructor() {
+  constructor(modelManager) {
     super();
     this.providers = new Map();
     this.activeTranscriptions = new Map();
     this.tempDir = path.join(os.tmpdir(), 'whisperdesk-transcription');
     this.defaultProvider = 'whisper';
+    this.modelManager = modelManager;
   }
 
   async initialize() {
@@ -37,7 +38,7 @@ class TranscriptionService extends EventEmitter {
 
   async initializeProviders() {
     // Initialize Whisper provider
-    const whisperProvider = new WhisperProvider();
+    const whisperProvider = new WhisperProvider(this.modelManager);
     await whisperProvider.initialize();
     this.providers.set('whisper', whisperProvider);
 
