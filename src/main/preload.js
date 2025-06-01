@@ -11,7 +11,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     delete: (modelId) => ipcRenderer.invoke('model:delete', modelId),
     getInfo: (modelId) => ipcRenderer.invoke('model:getInfo', modelId),
     
-    // Listen for download progress
+    // Listen for download events
+    onDownloadQueued: (callback) => {
+      ipcRenderer.on('model:downloadQueued', callback);
+      return () => ipcRenderer.removeListener('model:downloadQueued', callback);
+    },
+    
     onDownloadProgress: (callback) => {
       ipcRenderer.on('model:downloadProgress', callback);
       return () => ipcRenderer.removeListener('model:downloadProgress', callback);
@@ -25,6 +30,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
     onDownloadError: (callback) => {
       ipcRenderer.on('model:downloadError', callback);
       return () => ipcRenderer.removeListener('model:downloadError', callback);
+    },
+    
+    onDownloadCancelled: (callback) => {
+      ipcRenderer.on('model:downloadCancelled', callback);
+      return () => ipcRenderer.removeListener('model:downloadCancelled', callback);
+    },
+    
+    onModelDeleted: (callback) => {
+      ipcRenderer.on('model:modelDeleted', callback);
+      return () => ipcRenderer.removeListener('model:modelDeleted', callback);
     }
   },
 

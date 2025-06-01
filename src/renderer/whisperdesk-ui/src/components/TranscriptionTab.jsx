@@ -22,7 +22,8 @@ import {
   Loader2,
   FileAudio,
   FileVideo,
-  X
+  X,
+  ExternalLink
 } from 'lucide-react'
 
 export function TranscriptionTab() {
@@ -39,12 +40,16 @@ export function TranscriptionTab() {
   const [providers, setProviders] = useState([])
   const [selectedProvider, setSelectedProvider] = useState('')
   const [isDragOver, setIsDragOver] = useState(false)
+  const [installedModels, setInstalledModels] = useState([])
+  const [hasModels, setHasModels] = useState(false)
+  const [modelsLoading, setModelsLoading] = useState(true)
   
   const fileInputRef = useRef(null)
   const recordingIntervalRef = useRef(null)
   const dropZoneRef = useRef(null)
 
   useEffect(() => {
+    loadInstalledModels()
     loadAudioDevices()
     loadProviders()
     setupEventListeners()
@@ -98,6 +103,37 @@ export function TranscriptionTab() {
       setIsTranscribing(false)
       setError(`Transcription failed: ${data.error}`)
     })
+
+    // Listen for model changes
+    if (window.electronAPI?.model) {
+      window.electronAPI.model.onDownloadComplete(() => {
+        loadInstalledModels()
+      })
+      
+      window.electronAPI.model.onModelDeleted(() => {
+        loadInstalledModels()
+      })
+    }
+  }
+
+  const loadInstalledModels = async () => {
+    try {
+      setModelsLoading(true)
+      
+      if (!window.electronAPI?.model?.getInstalled) {
+        setHasModels(false)
+        return
+      }
+      
+      const models = await window.electronAPI.model.getInstalled()
+      setInstalledModels(models)
+      setHasModels(models.length > 0)
+    } catch (err) {
+      console.error('Error loading installed models:', err)
+      setHasModels(false)
+    } finally {
+      setModelsLoading(false)
+    }
   }
 
   const loadAudioDevices = async () => {
@@ -196,6 +232,12 @@ export function TranscriptionTab() {
     try {
       setError(null)
       
+      // Check if models are available
+      if (!hasModels) {
+        setError('Please download a transcription model first before uploading files.')
+        return
+      }
+      
       // Validate file type
       const allowedTypes = [
         'audio/mpeg', 'audio/wav', 'audio/flac', 'audio/m4a', 'audio/aac', 'audio/ogg',
@@ -227,7 +269,9 @@ export function TranscriptionTab() {
 
   const handleDragOver = (event) => {
     event.preventDefault()
-    setIsDragOver(true)
+    if (hasModels && !modelsLoading) {
+      setIsDragOver(true)
+    }
   }
 
   const handleDragLeave = (event) => {
@@ -238,6 +282,12 @@ export function TranscriptionTab() {
   const handleDrop = (event) => {
     event.preventDefault()
     setIsDragOver(false)
+    
+    // Check if models are available
+    if (!hasModels) {
+      setError('Please download a transcription model first before uploading files.')
+      return
+    }
     
     const files = Array.from(event.dataTransfer.files)
     if (files.length > 0) {
@@ -289,6 +339,37 @@ export function TranscriptionTab() {
         <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
           <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+
+      {/* Model Availability Check */}
+      {!modelsLoading && !hasModels && (
+        <Alert>
+          <Download className="h-4 w-4" />
+          <AlertDescription>
+            <div className="flex items-center justify-between">
+              <span>You need to download a model first before you can transcribe audio.</span>
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={() => {
+                  // This would typically navigate to the Models tab
+                  // For now, we'll just show a message
+                  setError('Please go to the Models tab to download a transcription model.')
+                }}
+              >
+                <ExternalLink className="w-4 h-4 mr-1" />
+                Go to Models
+              </Button>
+            </div>
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {modelsLoading && (
+        <Alert>
+          <Loader2 className="h-4 w-4 animate-spin" />
+          <AlertDescription>Checking for installed models...</AlertDescription>
         </Alert>
       )}
 
@@ -360,7 +441,7 @@ export function TranscriptionTab() {
                 onClick={handleStartRecording} 
                 size="lg"
                 className="bg-red-500 hover:bg-red-600"
-                disabled={!selectedProvider || !selectedDevice}
+                disabled={!selectedProvider || !selectedDevice || !hasModels || modelsLoading}
               >
                 <Mic className="w-5 h-5 mr-2" />
                 Start Recording
@@ -381,6 +462,12 @@ export function TranscriptionTab() {
               </div>
             )}
           </div>
+          
+          {!hasModels && !modelsLoading && (
+            <div className="text-center text-sm text-muted-foreground">
+              Recording is disabled until you download a transcription model.
+            </div>
+          )}
           
           {isRecording && (
             <div className="text-center">
@@ -407,9 +494,11 @@ export function TranscriptionTab() {
             onDrop={handleDrop}
             className={`
               border-2 border-dashed rounded-lg p-8 text-center transition-colors
-              ${isDragOver 
-                ? 'border-primary bg-primary/5' 
-                : 'border-muted-foreground/25 hover:border-muted-foreground/50'
+              ${!hasModels || modelsLoading 
+                ? 'border-muted-foreground/10 bg-muted/20 cursor-not-allowed' 
+                : isDragOver 
+                  ? 'border-primary bg-primary/5' 
+                  : 'border-muted-foreground/25 hover:border-muted-foreground/50'
               }
             `}
           >
@@ -439,14 +528,20 @@ export function TranscriptionTab() {
               </div>
             ) : (
               <div className="space-y-4">
-                <Upload className="w-12 h-12 mx-auto text-muted-foreground" />
+                <Upload className={`w-12 h-12 mx-auto ${!hasModels || modelsLoading ? 'text-muted-foreground/50' : 'text-muted-foreground'}`} />
                 <div className="space-y-2">
-                  <p className="text-lg font-medium">Drop files here or click to browse</p>
+                  <p className={`text-lg font-medium ${!hasModels || modelsLoading ? 'text-muted-foreground' : ''}`}>
+                    {!hasModels && !modelsLoading ? 'Download a model first to upload files' : 'Drop files here or click to browse'}
+                  </p>
                   <p className="text-sm text-muted-foreground">
                     Supports MP3, WAV, FLAC, M4A, AAC, OGG, MP4, AVI, MOV, MKV, WebM
                   </p>
                 </div>
-                <Button onClick={handleFileSelect} variant="outline">
+                <Button 
+                  onClick={handleFileSelect} 
+                  variant="outline"
+                  disabled={!hasModels || modelsLoading}
+                >
                   <File className="w-4 h-4 mr-2" />
                   Choose File
                 </Button>

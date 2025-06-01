@@ -24,5 +24,5 @@ fi
 
 # Start the application
 echo "🎙️ Launching WhisperDesk Enhanced..."
-npm run dev
+NODE_ENV=development npm run dev
 

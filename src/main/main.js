@@ -232,6 +232,10 @@ class WhisperDeskApp {
   async initializeServices() {
     try {
       await this.modelManager.initialize();
+      
+      // Set up ModelManager event forwarding to renderer
+      this.setupModelManagerEvents();
+      
       await this.transcriptionService.initialize();
       await this.audioService.initialize();
       await this.settingsService.initialize();
@@ -240,6 +244,45 @@ class WhisperDeskApp {
     } catch (error) {
       console.error('Error initializing services:', error);
     }
+  }
+
+  setupModelManagerEvents() {
+    // Forward ModelManager events to renderer process
+    this.modelManager.on('downloadQueued', (downloadInfo) => {
+      if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+        this.mainWindow.webContents.send('model:downloadQueued', downloadInfo);
+      }
+    });
+
+    this.modelManager.on('downloadProgress', (progressData) => {
+      if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+        this.mainWindow.webContents.send('model:downloadProgress', progressData);
+      }
+    });
+
+    this.modelManager.on('downloadComplete', (completeData) => {
+      if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+        this.mainWindow.webContents.send('model:downloadComplete', completeData);
+      }
+    });
+
+    this.modelManager.on('downloadError', (errorData) => {
+      if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+        this.mainWindow.webContents.send('model:downloadError', errorData);
+      }
+    });
+
+    this.modelManager.on('downloadCancelled', (cancelData) => {
+      if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+        this.mainWindow.webContents.send('model:downloadCancelled', cancelData);
+      }
+    });
+
+    this.modelManager.on('modelDeleted', (deleteData) => {
+      if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+        this.mainWindow.webContents.send('model:modelDeleted', deleteData);
+      }
+    });
   }
 
   setupEventHandlers() {

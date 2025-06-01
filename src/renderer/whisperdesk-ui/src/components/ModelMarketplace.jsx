@@ -46,6 +46,21 @@ export function ModelMarketplace() {
   const setupEventListeners = () => {
     if (!window.electronAPI?.model) return
 
+    // Download queued
+    window.electronAPI.model.onDownloadQueued((event, data) => {
+      setDownloadingModels(prev => new Set(prev).add(data.modelId))
+      setDownloadProgress(prev => ({
+        ...prev,
+        [data.modelId]: {
+          progress: 0,
+          downloadedBytes: 0,
+          totalBytes: data.model?.sizeBytes || 0,
+          speed: 0,
+          status: 'queued'
+        }
+      }))
+    })
+
     // Download progress
     window.electronAPI.model.onDownloadProgress((event, data) => {
       setDownloadProgress(prev => ({
@@ -54,7 +69,8 @@ export function ModelMarketplace() {
           progress: data.progress,
           downloadedBytes: data.downloadedBytes,
           totalBytes: data.totalBytes,
-          speed: data.speed
+          speed: data.speed,
+          status: 'downloading'
         }
       }))
     })
@@ -72,6 +88,7 @@ export function ModelMarketplace() {
         return newProgress
       })
       loadModels() // Refresh the models list
+      setError(null) // Clear any previous errors
     })
 
     // Download error
@@ -87,6 +104,20 @@ export function ModelMarketplace() {
         return newProgress
       })
       setError(`Failed to download ${data.modelId}: ${data.error}`)
+    })
+
+    // Download cancelled
+    window.electronAPI.model.onDownloadCancelled((event, data) => {
+      setDownloadingModels(prev => {
+        const newSet = new Set(prev)
+        newSet.delete(data.modelId)
+        return newSet
+      })
+      setDownloadProgress(prev => {
+        const newProgress = { ...prev }
+        delete newProgress[data.modelId]
+        return newProgress
+      })
     })
   }
 
@@ -250,16 +281,26 @@ export function ModelMarketplace() {
                 {isDownloading && progress && (
                   <div className="space-y-2">
                     <div className="flex justify-between text-sm">
-                      <span>Downloading...</span>
+                      <span>
+                        {progress.status === 'queued' ? 'Queued for download...' : 
+                         progress.status === 'downloading' ? 'Downloading...' : 'Processing...'}
+                      </span>
                       <span>{Math.round(progress.progress)}%</span>
                     </div>
                     <Progress value={progress.progress} className="w-full" />
-                    <div className="flex justify-between text-xs text-muted-foreground">
-                      <span>
-                        {formatBytes(progress.downloadedBytes)} / {formatBytes(progress.totalBytes)}
-                      </span>
-                      <span>{formatSpeed(progress.speed)}</span>
-                    </div>
+                    {progress.status === 'downloading' && progress.totalBytes > 0 && (
+                      <div className="flex justify-between text-xs text-muted-foreground">
+                        <span>
+                          {formatBytes(progress.downloadedBytes)} / {formatBytes(progress.totalBytes)}
+                        </span>
+                        <span>{formatSpeed(progress.speed)}</span>
+                      </div>
+                    )}
+                    {progress.status === 'queued' && (
+                      <div className="text-xs text-muted-foreground text-center">
+                        Download will start shortly...
+                      </div>
+                    )}
                   </div>
                 )}
 
