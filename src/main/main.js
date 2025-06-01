@@ -56,7 +56,9 @@ ipcMain.handle('stop-audio-capture', async () => {
 ipcMain.handle('start-transcription', async (event, options) => {
   try {
     await whisperService.initialize(options.modelSize);
-    return { success: true };
+    const status = await whisperService.getStatus();
+    console.log('Whisper service status:', status);
+    return { success: true, status };
   } catch (error) {
     console.error('Error initializing Whisper:', error);
     return { success: false, error: error.message };
@@ -76,4 +78,14 @@ ipcMain.handle('process-audio-chunk', async (event, { audioData, options }) => {
 ipcMain.handle('stop-transcription', async () => {
   // Cleanup any resources if needed
   console.log('Stopping transcription');
-}); 
+});
+
+// IPC handler for getting Whisper status
+ipcMain.handle('get-whisper-status', async () => {
+  try {
+    const status = await whisperService.getStatus();
+    return { success: true, status };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});

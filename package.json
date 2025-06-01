@@ -1,29 +1,29 @@
 {
-  "name": "whisperdesk",
-  "version": "1.0.0",
-  "description": "Real-time audio transcription with speaker diarization",
-  "main": "src/main/main.js",
-  "scripts": {
-    "start": "electron .",
-    "dev": "electron . --dev",
-    "build": "electron-builder",
-    "postinstall": "node scripts/download-models.js"
-  },
-  "author": "",
-  "license": "MIT",
-  "dependencies": {
-    "@electron/remote": "^2.1.1",
-    "electron-store": "^8.1.0",
-    "node-mic": "^1.0.0",
-    "node-wav": "^0.0.2",
-    "sqlite3": "^5.1.6",
-    "whisper-node": "^1.0.0",
-    "ffmpeg-static": "^5.2.0"
-  },
-  "devDependencies": {
-    "electron": "^28.0.0",
-    "electron-builder": "^24.9.1",
-    "concurrently": "^8.2.2",
-    "nodemon": "^3.0.2"
+    "name": "whisperdesk",
+    "version": "1.0.0",
+    "description": "Real-time audio transcription with speaker diarization",
+    "main": "src/main/main.js",
+    "scripts": {
+      "start": "electron .",
+      "dev": "electron . --dev",
+      "build": "electron-builder",
+      "setup": "pip install -r requirements.txt",
+      "postinstall": "echo 'Please run: pip install -r requirements.txt to install Python dependencies'"
+    },
+    "author": "",
+    "license": "MIT",
+    "dependencies": {
+      "@electron/remote": "^2.1.1",
+      "electron-store": "^8.1.0",
+      "node-mic": "^1.0.0",
+      "node-wav": "^0.0.2",
+      "sqlite3": "^5.1.6",
+      "ffmpeg-static": "^5.2.0"
+    },
+    "devDependencies": {
+      "electron": "^28.0.0",
+      "electron-builder": "^24.9.1",
+      "concurrently": "^8.2.2",
+      "nodemon": "^3.0.2"
+    }
   }
-} 
