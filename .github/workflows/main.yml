@@ -99,16 +99,17 @@ jobs:
 
     - name: Build whisper.cpp (Windows)
       if: runner.os == 'Windows'
+      shell: pwsh
       run: |
         git clone https://github.com/ggerganov/whisper.cpp.git C:\temp\whisper.cpp
         cd C:\temp\whisper.cpp
-        mkdir build
+        New-Item -ItemType Directory -Force -Path "build"
         cd build
         cmake .. -DCMAKE_BUILD_TYPE=Release
         cmake --build . --config Release
-        # Copy to project
-        mkdir -p $env:GITHUB_WORKSPACE\binaries
-        copy bin\Release\whisper-cli.exe $env:GITHUB_WORKSPACE\binaries\whisper.exe
+        # Copy to project using proper PowerShell syntax
+        New-Item -ItemType Directory -Force -Path "$env:GITHUB_WORKSPACE\binaries"
+        Copy-Item "bin\Release\whisper-cli.exe" "$env:GITHUB_WORKSPACE\binaries\whisper.exe" -Force
 
     # Download tiny model for inclusion
     - name: Download tiny model
