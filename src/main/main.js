@@ -6,7 +6,7 @@ const fs = require('fs');
 
 // Services
 const ModelManager = require('./services/model-manager');
-const TranscriptionService = require('./services/transcription-service');
+const TranscriptionService = require('./services/transcription-service-native');
 const AudioService = require('./services/audio-service');
 const SettingsService = require('./services/settings-service');
 const ExportService = require('./services/export-service');

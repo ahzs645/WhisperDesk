@@ -15,6 +15,7 @@
     "dev": "concurrently \"npm run dev:renderer\" \"npm run dev:main\"",
     "dev:main": "nodemon --watch src/main --exec electron .",
     "dev:renderer": "cd src/renderer/whisperdesk-ui && pnpm run dev",
+    "prebuild": "node scripts/download-binaries.js",
     "build": "npm run build:renderer && npm run build:main",
     "build:renderer": "cd src/renderer/whisperdesk-ui && pnpm run build",
     "build:main": "echo 'Main process build complete'",
@@ -26,15 +27,19 @@
     "dist:all": "npm run build && electron-builder --win --mac --linux",
     "postinstall": "electron-builder install-app-deps",
     "test": "jest",
+    "test:native": "node test-native-services.js",
     "lint": "eslint src/",
     "clean": "rimraf dist build node_modules/.cache"
   },
   "dependencies": {
     "axios": "^1.6.0",
+    "cors": "^2.8.5",
     "electron-store": "^8.1.0",
     "electron-updater": "^6.1.4",
+    "express": "^5.1.0",
     "fluent-ffmpeg": "^2.1.2",
     "form-data": "^4.0.0",
+    "multer": "^2.0.0",
     "node-record-lpcm16": "^1.0.1",
     "speaker": "^0.5.4",
     "ws": "^8.14.2"
@@ -67,7 +72,16 @@
       {
         "from": "resources/",
         "to": "resources/",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "binaries/",
+        "to": "binaries/",
+        "filter": [
+          "**/*"
+        ]
       }
     ],
     "mac": {
@@ -80,11 +94,17 @@
       "target": [
         {
           "target": "dmg",
-          "arch": ["x64", "arm64"]
+          "arch": [
+            "x64",
+            "arm64"
+          ]
         },
         {
           "target": "zip",
-          "arch": ["x64", "arm64"]
+          "arch": [
+            "x64",
+            "arm64"
+          ]
         }
       ]
     },
@@ -93,11 +113,17 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64", "ia32"]
+          "arch": [
+            "x64",
+            "ia32"
+          ]
         },
         {
           "target": "portable",
-          "arch": ["x64", "ia32"]
+          "arch": [
+            "x64",
+            "ia32"
+          ]
         }
       ],
       "publisherName": "WhisperDesk Team",
@@ -109,19 +135,27 @@
       "target": [
         {
           "target": "AppImage",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         },
         {
           "target": "deb",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         },
         {
           "target": "rpm",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         },
         {
           "target": "tar.gz",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ]
     },
@@ -175,4 +209,3 @@
     "url": "https://github.com/whisperdesk/whisperdesk-enhanced/issues"
   }
 }
-

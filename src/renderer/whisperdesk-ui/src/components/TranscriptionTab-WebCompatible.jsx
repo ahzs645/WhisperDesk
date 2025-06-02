@@ -97,22 +97,50 @@ This demonstration shows that the file upload and transcription workflow is full
       setTranscriptionResult('');
       setSelectedFile(file);
 
-      if (window.electronAPI?.transcription?.processFile) {
-        // Use real Electron API
-        const options = {
-          provider: selectedProvider,
-          language: 'auto',
-          enableTimestamps: true
-        };
-        await window.electronAPI.transcription.processFile(file.path, options);
-      } else {
-        // Simulate transcription for web demo
-        console.log(`Simulating transcription of ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`);
-        await simulateTranscription(file);
+      // Create FormData for file upload
+      const formData = new FormData();
+      formData.append('audio', file);
+      formData.append('provider', 'whisper-native');
+      formData.append('model', 'whisper-tiny');
+      formData.append('language', 'auto');
+      formData.append('enableTimestamps', 'true');
+
+      console.log(`🎵 Uploading ${file.name} for transcription...`);
+      setTranscriptionProgress(10);
+
+      // Call the real transcription API
+      const response = await fetch('http://localhost:3001/api/transcribe', {
+        method: 'POST',
+        body: formData
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Transcription failed');
       }
+
+      setTranscriptionProgress(90);
+      const data = await response.json();
+      
+      if (data.success) {
+        console.log('✅ Transcription completed successfully');
+        setTranscriptionResult(data.result.text);
+        setTranscriptionProgress(100);
+        
+        // Show success message briefly
+        const originalError = error;
+        setError(`✅ Transcription completed! Language: ${data.result.language}, Segments: ${data.result.segments?.length || 0}`);
+        setTimeout(() => setError(originalError), 5000);
+      } else {
+        throw new Error(data.error || 'Unknown error occurred');
+      }
+      
+      setIsTranscribing(false);
     } catch (err) {
+      console.error('❌ Transcription failed:', err);
       setError(`Failed to process file: ${err.message}`);
       setIsTranscribing(false);
+      setTranscriptionProgress(0);
     }
   };
 
@@ -175,10 +203,10 @@ This demonstration shows that the file upload and transcription workflow is full
   return (
     <div className="space-y-6 p-6">
       {!window.electronAPI && (
-        <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
-          <p className="text-blue-800 text-sm">
-            🌐 <strong>Web Demo Mode:</strong> File upload and transcription simulation. 
-            In the full Electron app, files would be processed with real AI transcription.
+        <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
+          <p className="text-green-800 text-sm">
+            🎵 <strong>Live Transcription Mode:</strong> Connected to native whisper.cpp backend! 
+            Files uploaded here will be processed with real AI transcription using the installed models.
           </p>
         </div>
       )}

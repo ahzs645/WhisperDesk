@@ -221,6 +221,16 @@ class ModelManager extends EventEmitter {
     // Extract model ID from filename
     const baseName = path.basename(filename, path.extname(filename));
     
+    // Handle GGML model files (ggml-tiny.bin, ggml-base.bin, etc.)
+    const ggmlMap = {
+      'ggml-tiny': 'whisper-tiny',
+      'ggml-base': 'whisper-base', 
+      'ggml-small': 'whisper-small',
+      'ggml-medium': 'whisper-medium',
+      'ggml-large-v2': 'whisper-large-v2',
+      'ggml-large-v3': 'whisper-large-v3'
+    };
+    
     // Map common filenames to model IDs
     const filenameMap = {
       'tiny': 'whisper-tiny',
@@ -231,7 +241,7 @@ class ModelManager extends EventEmitter {
       'large-v3': 'whisper-large-v3'
     };
     
-    return filenameMap[baseName] || baseName;
+    return ggmlMap[baseName] || filenameMap[baseName] || baseName;
   }
 
   async getAvailableModels() {
