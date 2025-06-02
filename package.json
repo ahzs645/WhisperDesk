@@ -105,12 +105,6 @@
         "from": "binaries/",
         "to": "binaries/",
         "filter": ["**/*"]
-      },
-      {
-        "from": "models/",
-        "to": "models/",
-        "filter": ["**/*"],
-        "when": "exists"
       }
     ],
     "mac": {
