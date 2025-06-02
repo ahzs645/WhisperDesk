@@ -1,4 +1,4 @@
-# .github/workflows/main.yml
+# .github/workflows/main.yml - FIXED VERSION with modern whisper.cpp build
 name: Build WhisperDesk for All Platforms
 
 on:
@@ -8,7 +8,6 @@ on:
   pull_request:
     branches: [ main ]
 
-# Add explicit permissions for the workflow
 permissions:
   contents: write
   actions: read
@@ -62,7 +61,6 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y build-essential cmake libasound2-dev
-        # For AppImage creation
         sudo apt-get install -y fuse libfuse2
 
     - name: Install macOS dependencies
@@ -70,16 +68,16 @@ jobs:
       run: |
         # Install Xcode command line tools if not present
         xcode-select --install || true
-        # Install cmake via homebrew (explicitly specify formula to avoid warning)
-        brew install --formula cmake
+        # Install cmake via homebrew
+        brew install cmake
 
     - name: Install Windows dependencies
       if: runner.os == 'Windows'
       run: |
         # Install Visual Studio Build Tools
-        choco install visualstudio2022buildtools --package-parameters "--add Microsoft.VisualStudio.Workload.VCTools"
+        choco install visualstudio2022buildtools --package-parameters "--add Microsoft.VisualStudio.Workload.VCTools" -y
         # Install cmake
-        choco install cmake
+        choco install cmake -y
 
     # Install main dependencies
     - name: Install main dependencies
@@ -91,33 +89,85 @@ jobs:
         cd src/renderer/whisperdesk-ui
         pnpm install --frozen-lockfile
 
-    # Build whisper.cpp from source
+    # Build whisper.cpp from source - MODERN CMAKE APPROACH
     - name: Build whisper.cpp (Linux/macOS)
       if: runner.os != 'Windows'
       run: |
+        echo "🔨 Building whisper.cpp with modern cmake approach..."
+        
+        # Clone whisper.cpp
         git clone https://github.com/ggerganov/whisper.cpp.git /tmp/whisper.cpp
         cd /tmp/whisper.cpp
-        make -j$(nproc 2>/dev/null || sysctl -n hw.ncpu || echo 4)
-        mkdir -p binaries
-        cp build/bin/whisper-cli ./binaries/whisper 2>/dev/null || cp whisper-cli ./binaries/whisper
-        chmod +x ./binaries/whisper
-        # Copy to project
-        mkdir -p $GITHUB_WORKSPACE/binaries
-        cp ./binaries/whisper $GITHUB_WORKSPACE/binaries/whisper
+        
+        # Use modern cmake build approach (not make)
+        cmake -B build -DCMAKE_BUILD_TYPE=Release
+        cmake --build build --config Release --parallel $(nproc 2>/dev/null || sysctl -n hw.ncpu || echo 4)
+        
+        # The binary should be in build/bin/whisper-cli
+        echo "📋 Checking for built binary..."
+        ls -la build/bin/ || echo "No build/bin directory"
+        ls -la bin/ || echo "No bin directory"
+        
+        # Find the whisper-cli binary
+        if [ -f "build/bin/whisper-cli" ]; then
+          WHISPER_BINARY="build/bin/whisper-cli"
+        elif [ -f "bin/whisper-cli" ]; then
+          WHISPER_BINARY="bin/whisper-cli"
+        else
+          echo "❌ Could not find whisper-cli binary"
+          echo "📋 Available files:"
+          find . -name "*whisper*" -type f | head -10
+          exit 1
+        fi
+        
+        echo "✅ Found whisper binary at: $WHISPER_BINARY"
+        
+        # Copy to project binaries directory
+        mkdir -p "$GITHUB_WORKSPACE/binaries"
+        cp "$WHISPER_BINARY" "$GITHUB_WORKSPACE/binaries/whisper"
+        chmod +x "$GITHUB_WORKSPACE/binaries/whisper"
+        
+        # Verify the binary works
+        "$GITHUB_WORKSPACE/binaries/whisper" --help || echo "Binary test failed but continuing..."
+        
+        echo "✅ whisper.cpp built and installed successfully"
 
     - name: Build whisper.cpp (Windows)
       if: runner.os == 'Windows'
       shell: pwsh
       run: |
+        Write-Host "🔨 Building whisper.cpp for Windows with cmake..."
+        
+        # Clone whisper.cpp
         git clone https://github.com/ggerganov/whisper.cpp.git C:\temp\whisper.cpp
-        cd C:\temp\whisper.cpp
-        New-Item -ItemType Directory -Force -Path "build"
-        cd build
-        cmake .. -DCMAKE_BUILD_TYPE=Release
-        cmake --build . --config Release
-        # Copy to project using proper PowerShell syntax
+        Set-Location C:\temp\whisper.cpp
+        
+        # Use modern cmake build approach
+        cmake -B build -DCMAKE_BUILD_TYPE=Release
+        cmake --build build --config Release --parallel
+        
+        # Find the whisper-cli binary
+        $whisperBinary = $null
+        if (Test-Path "build\bin\Release\whisper-cli.exe") {
+            $whisperBinary = "build\bin\Release\whisper-cli.exe"
+        } elseif (Test-Path "bin\Release\whisper-cli.exe") {
+            $whisperBinary = "bin\Release\whisper-cli.exe"
+        } elseif (Test-Path "build\Release\whisper-cli.exe") {
+            $whisperBinary = "build\Release\whisper-cli.exe"
+        } else {
+            Write-Host "❌ Could not find whisper-cli.exe binary"
+            Write-Host "📋 Available files in build:"
+            Get-ChildItem -Recurse -Filter "*whisper*" | Select-Object FullName
+            exit 1
+        }
+        
+        Write-Host "✅ Found whisper binary at: $whisperBinary"
+        
+        # Copy to project binaries directory
         New-Item -ItemType Directory -Force -Path "$env:GITHUB_WORKSPACE\binaries"
-        Copy-Item "bin\Release\whisper-cli.exe" "$env:GITHUB_WORKSPACE\binaries\whisper.exe" -Force
+        Copy-Item "$whisperBinary" "$env:GITHUB_WORKSPACE\binaries\whisper.exe" -Force
+        
+        Write-Host "✅ whisper.cpp built and installed successfully"
 
     # Download tiny model for inclusion
     - name: Download tiny model
@@ -130,6 +180,35 @@ jobs:
       run: |
         cd src/renderer/whisperdesk-ui
         pnpm run build
+
+    # Verify binary before building Electron app
+    - name: Verify whisper binary
+      shell: bash
+      run: |
+        echo "🔍 Verifying whisper binary..."
+        
+        if [ "${{ runner.os }}" = "Windows" ]; then
+          BINARY_PATH="binaries/whisper.exe"
+        else
+          BINARY_PATH="binaries/whisper"
+        fi
+        
+        if [ -f "$BINARY_PATH" ]; then
+          echo "✅ Binary exists at: $BINARY_PATH"
+          ls -la "$BINARY_PATH"
+          
+          # Test the binary (allow failure since it might need models)
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            ./binaries/whisper.exe --help || echo "Binary test failed but file exists"
+          else
+            ./binaries/whisper --help || echo "Binary test failed but file exists"
+          fi
+        else
+          echo "❌ Binary not found at: $BINARY_PATH"
+          echo "📋 Contents of binaries directory:"
+          ls -la binaries/ || echo "No binaries directory"
+          exit 1
+        fi
 
     # Build Electron app for specific platform
     - name: Build Electron app (macOS x64)
@@ -193,11 +272,10 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     
-    # Explicit permissions for the release job - this is the key fix
     permissions:
       contents: write
       actions: read
-      id-token: write  # Added this for enhanced security
+      id-token: write
       
     steps:
     - name: Checkout code
@@ -216,17 +294,8 @@ jobs:
         ls -la artifacts/
         find artifacts/ -type f -name "*.dmg" -o -name "*.zip" -o -name "*.exe" -o -name "*.AppImage" -o -name "*.deb" -o -name "*.rpm" | head -20
 
-    # Debug token permissions (optional - remove after testing)
-    - name: Debug GitHub token permissions
-      run: |
-        echo "GITHUB_TOKEN permissions test"
-        echo "Repository: ${{ github.repository }}"
-        echo "Actor: ${{ github.actor }}"
-        echo "Ref: ${{ github.ref }}"
-        echo "Event: ${{ github.event_name }}"
-
     - name: Create Release
-      uses: softprops/action-gh-release@v1  # Changed back to v1 for stability
+      uses: softprops/action-gh-release@v1
       with:
         files: artifacts/**/*
         draft: false

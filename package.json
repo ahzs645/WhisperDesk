@@ -16,10 +16,12 @@
     "dev:main": "nodemon --watch src/main --exec electron .",
     "dev:renderer": "cd src/renderer/whisperdesk-ui && pnpm run dev",
     
-    "prebuild": "node scripts/download-binaries.js || echo 'Binary download failed, continuing...'",
+    "prebuild": "npm run build:whisper",
     "build": "npm run build:renderer && npm run build:main",
     "build:renderer": "cd src/renderer/whisperdesk-ui && pnpm run build",
     "build:main": "echo 'Main process build complete'",
+    "build:whisper": "chmod +x scripts/build-whisper.sh && ./scripts/build-whisper.sh",
+    "build:whisper:force": "rm -rf binaries && npm run build:whisper",
     
     "pack": "npm run build && electron-builder --dir",
     "dist": "npm run build && electron-builder",
@@ -28,26 +30,27 @@
     "dist:linux": "npm run build && electron-builder --linux",
     "dist:all": "npm run build && electron-builder --win --mac --linux",
     
-    "build:platform": "chmod +x scripts/build-universal.sh && ./scripts/build-universal.sh",
-    "build:macos": "chmod +x scripts/build-macos.sh && ./scripts/build-macos.sh",
-    "build:linux": "chmod +x scripts/build-linux.sh && ./scripts/build-linux.sh",
-    "build:windows": "powershell -ExecutionPolicy Bypass -File scripts/build-windows.ps1",
-    "build:all-platforms": "chmod +x scripts/build-all.sh && ./scripts/build-all.sh all",
-    "build:docker": "chmod +x scripts/docker-build.sh && ./scripts/docker-build.sh",
-    
     "postinstall": "electron-builder install-app-deps",
     "test": "jest",
     "test:native": "node test-native-services.js",
     "test:transcription": "node test-transcription.js",
-    "download:binaries": "node scripts/download-binaries.js",
-    "setup": "./setup.sh",
+    "test:binary": "node -e \"const BinaryManager = require('./src/main/services/binary-manager'); (async () => { const bm = new BinaryManager(); await bm.initialize(); const status = await bm.getStatus(); console.log(JSON.stringify(status, null, 2)); })()\"",
+    
     "server": "node transcription-server.js",
     "web": "concurrently \"npm run server\" \"cd src/renderer/whisperdesk-ui && pnpm run dev\"",
+    
     "lint": "eslint src/",
     "clean": "rimraf dist build node_modules/.cache temp",
     "clean:all": "npm run clean && rimraf binaries models",
+    "clean:binary": "rimraf binaries",
     
-    "release:prepare": "npm run clean && npm run build:all-platforms",
+    "setup": "./setup.sh",
+    "setup:macos": "chmod +x scripts/build-whisper.sh && ./scripts/build-whisper.sh && npm run download:model:tiny",
+    "setup:windows": "powershell -ExecutionPolicy Bypass -File scripts/setup.ps1",
+    
+    "download:model:tiny": "mkdir -p models && curl -L -o models/ggml-tiny.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin",
+    
+    "release:prepare": "npm run clean && npm run build && npm run dist:all",
     "release:github": "gh release create v$npm_package_version dist/* --generate-notes",
     "version:patch": "npm version patch && git push && git push --tags",
     "version:minor": "npm version minor && git push && git push --tags",
@@ -88,7 +91,9 @@
       "src/renderer/whisperdesk-ui/dist/**/*",
       "src/shared/**/*",
       "node_modules/**/*",
-      "package.json"
+      "package.json",
+      "!src/renderer/whisperdesk-ui/src/**/*",
+      "!src/renderer/whisperdesk-ui/node_modules/**/*"
     ],
     "extraResources": [
       {
@@ -104,7 +109,8 @@
       {
         "from": "models/",
         "to": "models/",
-        "filter": ["**/*"]
+        "filter": ["**/*"],
+        "when": "exists"
       }
     ],
     "mac": {
@@ -124,7 +130,14 @@
           "arch": ["x64", "arm64"]
         }
       ],
-      "artifactName": "${productName}-${version}-${arch}.${ext}"
+      "artifactName": "${productName}-${version}-${arch}.${ext}",
+      "extraFiles": [
+        {
+          "from": "binaries/whisper",
+          "to": "MacOS/whisper",
+          "filter": ["**/*"]
+        }
+      ]
     },
     "win": {
       "icon": "resources/icons/icon.ico",
@@ -144,7 +157,14 @@
       ],
       "publisherName": "WhisperDesk Team",
       "verifyUpdateCodeSignature": false,
-      "artifactName": "${productName}-${version}-${arch}.${ext}"
+      "artifactName": "${productName}-${version}-${arch}.${ext}",
+      "extraFiles": [
+        {
+          "from": "binaries/whisper.exe",
+          "to": "whisper.exe",
+          "filter": ["**/*"]
+        }
+      ]
     },
     "linux": {
       "icon": "resources/icons/",
@@ -167,7 +187,14 @@
           "arch": ["x64"]
         }
       ],
-      "artifactName": "${productName}-${version}-${arch}.${ext}"
+      "artifactName": "${productName}-${version}-${arch}.${ext}",
+      "extraFiles": [
+        {
+          "from": "binaries/whisper",
+          "to": "whisper",
+          "filter": ["**/*"]
+        }
+      ]
     },
     "nsis": {
       "oneClick": false,

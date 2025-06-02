@@ -200,11 +200,15 @@ class WhisperDeskApp {
 
   async createWindow() {
     this.mainWindow = new BrowserWindow({
-      width: 1400,
-      height: 900,
+      width: 1200,
+      height: 800,
       minWidth: 1000,
       minHeight: 700,
-      show: false,
+      show: true,        // Critical for Windows
+      focus: true,       // Ensure window gets focus
+      center: true,      // Center on screen
+      alwaysOnTop: false,
+      skipTaskbar: false,
       frame: true,
       titleBarStyle: 'default',
       webPreferences: {
@@ -226,15 +230,21 @@ class WhisperDeskApp {
       await this.mainWindow.loadFile(indexPath);
     }
 
-    // Show window when ready
-    this.mainWindow.once('ready-to-show', () => {
-      this.mainWindow.show();
-      
-      // Focus on window
-      if (process.platform === 'darwin') {
+    // Platform-specific focus handling
+    if (process.platform === 'win32') {
+      this.mainWindow.once('ready-to-show', () => {
+        this.mainWindow.show();
         this.mainWindow.focus();
-      }
-    });
+      });
+    } else {
+      // For other platforms (macOS, Linux)
+      this.mainWindow.once('ready-to-show', () => {
+        this.mainWindow.show();
+        if (process.platform === 'darwin') {
+          this.mainWindow.focus();
+        }
+      });
+    }
 
     // Handle window closed
     this.mainWindow.on('closed', () => {
