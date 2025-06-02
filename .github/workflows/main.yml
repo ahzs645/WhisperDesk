@@ -1,4 +1,4 @@
-# .github/workflows/build.yml
+# .github/workflows/main.yml
 name: Build WhisperDesk for All Platforms
 
 on:
@@ -7,6 +7,13 @@ on:
     tags: [ 'v*' ]
   pull_request:
     branches: [ main ]
+
+# Add explicit permissions for the workflow
+permissions:
+  contents: write
+  actions: read
+  checks: write
+  pull-requests: write
 
 jobs:
   build:
@@ -95,6 +102,7 @@ jobs:
         cp build/bin/whisper-cli ./binaries/whisper 2>/dev/null || cp whisper-cli ./binaries/whisper
         chmod +x ./binaries/whisper
         # Copy to project
+        mkdir -p $GITHUB_WORKSPACE/binaries
         cp ./binaries/whisper $GITHUB_WORKSPACE/binaries/whisper
 
     - name: Build whisper.cpp (Windows)
@@ -184,18 +192,73 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: build
     runs-on: ubuntu-latest
+    
+    # Explicit permissions for the release job - this is the key fix
+    permissions:
+      contents: write
+      actions: read
+      id-token: write  # Added this for enhanced security
+      
     steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
     - name: Download all artifacts
       uses: actions/download-artifact@v4
       with:
         path: artifacts
 
+    - name: Display structure of downloaded files
+      run: |
+        echo "Artifact structure:"
+        ls -la artifacts/
+        find artifacts/ -type f -name "*.dmg" -o -name "*.zip" -o -name "*.exe" -o -name "*.AppImage" -o -name "*.deb" -o -name "*.rpm" | head -20
+
+    # Debug token permissions (optional - remove after testing)
+    - name: Debug GitHub token permissions
+      run: |
+        echo "GITHUB_TOKEN permissions test"
+        echo "Repository: ${{ github.repository }}"
+        echo "Actor: ${{ github.actor }}"
+        echo "Ref: ${{ github.ref }}"
+        echo "Event: ${{ github.event_name }}"
+
     - name: Create Release
-      uses: softprops/action-gh-release@v1
+      uses: softprops/action-gh-release@v1  # Changed back to v1 for stability
       with:
         files: artifacts/**/*
         draft: false
         prerelease: false
         generate_release_notes: true
+        name: "WhisperDesk Enhanced ${{ github.ref_name }}"
+        body: |
+          ## WhisperDesk Enhanced ${{ github.ref_name }}
+          
+          🎉 **New Release Available!**
+          
+          ### 📦 Download Options:
+          - **Windows**: `WhisperDesk-windows-x64.exe` 
+          - **macOS Intel**: `WhisperDesk-mac-x64.dmg`
+          - **macOS Apple Silicon**: `WhisperDesk-mac-arm64.dmg`
+          - **Linux**: `WhisperDesk-linux-x64.AppImage` (portable) or `.deb`/`.rpm` packages
+          
+          ### ✨ Features:
+          - 🎵 Native whisper.cpp integration for fast, offline transcription
+          - 📱 Cross-platform support (Windows, macOS, Linux)
+          - 🔄 Real-time progress tracking
+          - 💾 Persistent state management
+          - 🎯 Multiple model support (Tiny, Base, Small, Medium, Large)
+          - 📁 Drag & drop file upload
+          - 🎨 Modern, responsive UI
+          
+          ### 🚀 Quick Start:
+          1. Download the appropriate file for your platform
+          2. Install and launch WhisperDesk
+          3. Go to Models tab and download a transcription model
+          4. Upload audio/video files and start transcribing!
+          
+          Auto-generated release notes below ⬇️
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
