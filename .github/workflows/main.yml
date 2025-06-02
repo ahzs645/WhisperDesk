@@ -239,7 +239,8 @@ jobs:
             Write-Host "✅ Copied $foundExe -> whisper.exe"
         } else {
             Write-Host "❌ Could not find whisper executable"
-            Write-Host "📋 Available files in $buildDir:"
+            Write-Host "Available files in build directory:"
+            Write-Host "Directory: $buildDir"
             Get-ChildItem $buildDir -ErrorAction SilentlyContinue | Select-Object Name, Length
             exit 1
         }
