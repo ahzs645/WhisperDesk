@@ -1,466 +1,497 @@
-import React, { useState, useEffect } from 'react';
-
-// Mock model data that would normally come from Electron backend
-const MOCK_MODELS = [
-  {
-    id: 'whisper-tiny',
-    name: 'Whisper Tiny',
-    provider: 'OpenAI',
-    size: '39 MB',
-    sizeBytes: 39000000,
-    languages: ['en'],
-    description: 'Fastest model, English only, good for real-time transcription',
-    accuracy: 'Basic',
-    speed: 'Very Fast',
-    requirements: {
-      ram: '1 GB',
-      disk: '50 MB'
-    },
-    downloadUrl: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin',
-    version: '1.0.0',
-    isInstalled: false
-  },
-  {
-    id: 'whisper-base',
-    name: 'Whisper Base',
-    provider: 'OpenAI',
-    size: '142 MB',
-    sizeBytes: 142000000,
-    languages: ['multilingual'],
-    description: 'Good balance of speed and accuracy, supports multiple languages',
-    accuracy: 'Good',
-    speed: 'Fast',
-    requirements: {
-      ram: '2 GB',
-      disk: '200 MB'
-    },
-    downloadUrl: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin',
-    version: '1.0.0',
-    isInstalled: false
-  },
-  {
-    id: 'whisper-small',
-    name: 'Whisper Small',
-    provider: 'OpenAI',
-    size: '461 MB',
-    sizeBytes: 461000000,
-    languages: ['multilingual'],
-    description: 'Better accuracy than base, still reasonably fast',
-    accuracy: 'Very Good',
-    speed: 'Medium',
-    requirements: {
-      ram: '4 GB',
-      disk: '500 MB'
-    },
-    downloadUrl: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin',
-    version: '1.0.0',
-    isInstalled: false
-  },
-  {
-    id: 'whisper-medium',
-    name: 'Whisper Medium',
-    provider: 'OpenAI',
-    size: '1.42 GB',
-    sizeBytes: 1420000000,
-    languages: ['multilingual'],
-    description: 'High accuracy, good for professional transcription',
-    accuracy: 'Excellent',
-    speed: 'Medium-Slow',
-    requirements: {
-      ram: '6 GB',
-      disk: '1.5 GB'
-    },
-    downloadUrl: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium.bin',
-    version: '1.0.0',
-    isInstalled: false
-  },
-  {
-    id: 'whisper-large-v2',
-    name: 'Whisper Large v2',
-    provider: 'OpenAI',
-    size: '2.87 GB',
-    sizeBytes: 2870000000,
-    languages: ['multilingual'],
-    description: 'Best accuracy, slower processing, ideal for high-quality transcription',
-    accuracy: 'Outstanding',
-    speed: 'Slow',
-    requirements: {
-      ram: '8 GB',
-      disk: '3 GB'
-    },
-    downloadUrl: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v2.bin',
-    version: '1.0.0',
-    isInstalled: false
-  },
-  {
-    id: 'whisper-large-v3',
-    name: 'Whisper Large v3',
-    provider: 'OpenAI',
-    size: '2.87 GB',
-    sizeBytes: 2870000000,
-    languages: ['multilingual'],
-    description: 'Latest and most accurate model, best quality transcription',
-    accuracy: 'Outstanding',
-    speed: 'Slow',
-    requirements: {
-      ram: '8 GB',
-      disk: '3 GB'
-    },
-    downloadUrl: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3.bin',
-    version: '1.0.0',
-    isInstalled: false
-  }
-];
+// src/renderer/whisperdesk-ui/src/components/ModelMarketplace-Fixed.jsx
+import { useState, useEffect, useRef } from 'react'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { Progress } from '@/components/ui/progress'
+import { Separator } from '@/components/ui/separator'
+import { ScrollArea } from '@/components/ui/scroll-area'
+import { Package, Download, Trash2, HardDrive, Wifi, Clock, Check, AlertCircle, Loader2 } from 'lucide-react'
+import { toast } from 'sonner'
 
 export function ModelMarketplace() {
-  const [models, setModels] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [downloadProgress, setDownloadProgress] = useState({});
-  const [downloadingModels, setDownloadingModels] = useState(new Set());
+  const [availableModels, setAvailableModels] = useState([])
+  const [installedModels, setInstalledModels] = useState([])
+  const [downloads, setDownloads] = useState(new Map()) // Track download progress
+  const [loading, setLoading] = useState(true)
+  const [isElectron, setIsElectron] = useState(false)
+
+  // Refs for cleanup
+  const downloadProgressCleanup = useRef(null)
+  const downloadCompleteCleanup = useRef(null)
+  const downloadErrorCleanup = useRef(null)
+  const downloadQueuedCleanup = useRef(null)
 
   useEffect(() => {
-    loadModels();
-  }, []);
+    const electronAvailable = typeof window !== 'undefined' && window.electronAPI
 
-  const loadModels = async () => {
+    setIsElectron(electronAvailable)
+
+    if (electronAvailable) {
+      initializeElectronAPI()
+    } else {
+      initializeWebAPI()
+    }
+
+    return () => {
+      // Cleanup event handlers
+      if (downloadProgressCleanup.current) downloadProgressCleanup.current()
+      if (downloadCompleteCleanup.current) downloadCompleteCleanup.current()
+      if (downloadErrorCleanup.current) downloadErrorCleanup.current()
+      if (downloadQueuedCleanup.current) downloadQueuedCleanup.current()
+    }
+  }, [])
+
+  const initializeElectronAPI = async () => {
     try {
-      setLoading(true);
-      setError(null);
-      
-      // Try to use Electron API first
-      if (window.electronAPI?.model?.getAvailable) {
-        console.log('Using Electron API for models');
-        const availableModels = await window.electronAPI.model.getAvailable();
-        setModels(availableModels);
-      } else {
-        console.log('Using fallback mock data for models');
-        // Fallback to mock data for web browser testing
-        await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate loading
-        
-        // Check localStorage for installed models
-        const installedModels = JSON.parse(localStorage.getItem('installedModels') || '[]');
-        const modelsWithInstallStatus = MOCK_MODELS.map(model => ({
-          ...model,
-          isInstalled: installedModels.includes(model.id)
-        }));
-        
-        setModels(modelsWithInstallStatus);
-      }
-    } catch (err) {
-      console.error('Error loading models:', err);
-      // Fallback to mock data even if Electron API fails
-      const installedModels = JSON.parse(localStorage.getItem('installedModels') || '[]');
-      const modelsWithInstallStatus = MOCK_MODELS.map(model => ({
-        ...model,
-        isInstalled: installedModels.includes(model.id)
-      }));
-      setModels(modelsWithInstallStatus);
-      setError(null); // Don't show error since we have fallback data
+      setupElectronEventHandlers()
+      await loadModelsFromElectron()
+    } catch (error) {
+      console.error('Failed to initialize Electron API:', error)
+      toast.error('Failed to load models: ' + error.message)
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  };
+  }
 
-  const simulateDownload = (modelId, model) => {
-    return new Promise((resolve) => {
-      let progress = 0;
-      const interval = setInterval(() => {
-        progress += Math.random() * 15;
-        if (progress >= 100) {
-          progress = 100;
-          clearInterval(interval);
-          
-          // Mark as installed in localStorage
-          const installedModels = JSON.parse(localStorage.getItem('installedModels') || '[]');
-          if (!installedModels.includes(modelId)) {
-            installedModels.push(modelId);
-            localStorage.setItem('installedModels', JSON.stringify(installedModels));
-          }
-          
-          setDownloadProgress(prev => {
-            const newProgress = { ...prev };
-            delete newProgress[modelId];
-            return newProgress;
-          });
-          
-          setDownloadingModels(prev => {
-            const newSet = new Set(prev);
-            newSet.delete(modelId);
-            return newSet;
-          });
-          
-          // Refresh models to show installed status
-          loadModels();
-          resolve();
-        } else {
-          setDownloadProgress(prev => ({
-            ...prev,
-            [modelId]: {
-              progress,
-              downloadedBytes: (model.sizeBytes * progress) / 100,
-              totalBytes: model.sizeBytes,
-              speed: 1024 * 1024 * (2 + Math.random() * 3), // 2-5 MB/s
-              status: 'downloading'
-            }
-          }));
-        }
-      }, 200);
-    });
-  };
+  const setupElectronEventHandlers = () => {
+    console.log('Setting up model download event handlers...')
 
-  const handleDownload = async (modelId) => {
+    // Download Progress Handler - REAL-TIME UPDATES
+    if (window.electronAPI.model.onDownloadProgress) {
+      downloadProgressCleanup.current = window.electronAPI.model.onDownloadProgress((data) => {
+        console.log('Download progress:', data.modelId, data.progress + '%')
+        
+        setDownloads(prev => {
+          const updated = new Map(prev)
+          updated.set(data.modelId, {
+            ...updated.get(data.modelId),
+            progress: data.progress,
+            downloadedBytes: data.downloadedBytes,
+            totalBytes: data.totalBytes,
+            speed: data.speed,
+            status: 'downloading'
+          })
+          return updated
+        })
+      })
+      console.log('✅ Download progress handler set up')
+    }
+
+    // Download Complete Handler
+    if (window.electronAPI.model.onDownloadComplete) {
+      downloadCompleteCleanup.current = window.electronAPI.model.onDownloadComplete((data) => {
+        console.log('Download complete:', data.modelId)
+        
+        setDownloads(prev => {
+          const updated = new Map(prev)
+          updated.delete(data.modelId) // Remove from downloads
+          return updated
+        })
+
+        // Refresh installed models
+        loadInstalledModels()
+        
+        toast.success(`✅ Model downloaded successfully!`)
+      })
+      console.log('✅ Download complete handler set up')
+    }
+
+    // Download Error Handler
+    if (window.electronAPI.model.onDownloadError) {
+      downloadErrorCleanup.current = window.electronAPI.model.onDownloadError((data) => {
+        console.error('Download error:', data.modelId, data.error)
+        
+        setDownloads(prev => {
+          const updated = new Map(prev)
+          updated.delete(data.modelId) // Remove from downloads
+          return updated
+        })
+        
+        toast.error(`❌ Download failed: ${data.error}`)
+      })
+      console.log('✅ Download error handler set up')
+    }
+
+    // Download Queued Handler
+    if (window.electronAPI.model.onDownloadQueued) {
+      downloadQueuedCleanup.current = window.electronAPI.model.onDownloadQueued((data) => {
+        console.log('Download queued:', data.modelId)
+        
+        setDownloads(prev => {
+          const updated = new Map(prev)
+          updated.set(data.modelId, {
+            progress: 0,
+            downloadedBytes: 0,
+            totalBytes: data.model?.sizeBytes || 0,
+            speed: 0,
+            status: 'queued'
+          })
+          return updated
+        })
+        
+        toast.success(`📥 Download started: ${data.model?.name}`)
+      })
+      console.log('✅ Download queued handler set up')
+    }
+  }
+
+  const loadModelsFromElectron = async () => {
+    await Promise.all([
+      loadAvailableModels(),
+      loadInstalledModels()
+    ])
+  }
+
+  const loadAvailableModels = async () => {
     try {
-      setError(null);
-      setDownloadingModels(prev => new Set(prev).add(modelId));
-      
-      const model = models.find(m => m.id === modelId);
-      
-      if (window.electronAPI?.model?.download) {
-        // Use real Electron API
-        await window.electronAPI.model.download(modelId);
-      } else {
-        // Simulate download for web browser
-        console.log(`Simulating download of ${model.name} from ${model.downloadUrl}`);
-        await simulateDownload(modelId, model);
-      }
-    } catch (err) {
-      setError(`Failed to start download: ${err.message}`);
-      setDownloadingModels(prev => {
-        const newSet = new Set(prev);
-        newSet.delete(modelId);
-        return newSet;
-      });
+      const models = await window.electronAPI.model.getAvailable()
+      setAvailableModels(models)
+      console.log('Loaded available models:', models.length)
+    } catch (error) {
+      console.error('Failed to load available models:', error)
+      toast.error('Failed to load available models')
     }
-  };
+  }
 
-  const handleDelete = async (modelId) => {
+  const loadInstalledModels = async () => {
     try {
-      setError(null);
-      
-      if (window.electronAPI?.model?.delete) {
-        // Use real Electron API
-        await window.electronAPI.model.delete(modelId);
-      } else {
-        // Simulate deletion for web browser
-        const installedModels = JSON.parse(localStorage.getItem('installedModels') || '[]');
-        const updatedModels = installedModels.filter(id => id !== modelId);
-        localStorage.setItem('installedModels', JSON.stringify(updatedModels));
-      }
-      
-      await loadModels(); // Refresh the models list
-    } catch (err) {
-      setError(`Failed to delete model: ${err.message}`);
+      const models = await window.electronAPI.model.getInstalled()
+      setInstalledModels(models)
+      console.log('Loaded installed models:', models.length)
+    } catch (error) {
+      console.error('Failed to load installed models:', error)
+      toast.error('Failed to load installed models')
     }
-  };
+  }
+
+  const initializeWebAPI = async () => {
+    // For web interface - you could implement web-based model management here
+    setAvailableModels([
+      {
+        id: 'whisper-tiny',
+        name: 'Whisper Tiny',
+        size: '39 MB',
+        sizeBytes: 39000000,
+        description: 'Fastest model, good for testing',
+        accuracy: 'Basic',
+        speed: 'Very Fast',
+        isInstalled: false
+      },
+      {
+        id: 'whisper-base',
+        name: 'Whisper Base', 
+        size: '142 MB',
+        sizeBytes: 142000000,
+        description: 'Good balance of speed and accuracy',
+        accuracy: 'Good',
+        speed: 'Fast',
+        isInstalled: false
+      }
+    ])
+    setLoading(false)
+  }
+
+  const handleDownloadModel = async (modelId) => {
+    if (!isElectron) {
+      toast.error('Model downloads only available in Electron app')
+      return
+    }
+
+    try {
+      console.log('Starting download for model:', modelId)
+      await window.electronAPI.model.download(modelId)
+      // The download progress will be handled by event handlers
+    } catch (error) {
+      console.error('Failed to start download:', error)
+      toast.error('Failed to start download: ' + error.message)
+    }
+  }
+
+  const handleDeleteModel = async (modelId) => {
+    if (!isElectron) {
+      toast.error('Model deletion only available in Electron app')
+      return
+    }
+
+    try {
+      await window.electronAPI.model.delete(modelId)
+      await loadInstalledModels()
+      toast.success('Model deleted successfully')
+    } catch (error) {
+      console.error('Failed to delete model:', error)
+      toast.error('Failed to delete model: ' + error.message)
+    }
+  }
 
   const formatBytes = (bytes) => {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-  };
+    if (bytes === 0) return '0 Bytes'
+    const k = 1024
+    const sizes = ['Bytes', 'KB', 'MB', 'GB']
+    const i = Math.floor(Math.log(bytes) / Math.log(k))
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
+  }
 
   const formatSpeed = (bytesPerSecond) => {
-    return formatBytes(bytesPerSecond) + '/s';
-  };
+    if (!bytesPerSecond) return ''
+    return formatBytes(bytesPerSecond) + '/s'
+  }
 
-  const getAccuracyColor = (accuracy) => {
-    switch (accuracy?.toLowerCase()) {
-      case 'basic': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
-      case 'good': return 'bg-blue-100 text-blue-800 border-blue-200';
-      case 'very good': return 'bg-green-100 text-green-800 border-green-200';
-      case 'excellent': return 'bg-purple-100 text-purple-800 border-purple-200';
-      case 'outstanding': return 'bg-red-100 text-red-800 border-red-200';
-      default: return 'bg-gray-100 text-gray-800 border-gray-200';
+  const getModelStatus = (model) => {
+    const download = downloads.get(model.id)
+    if (download) {
+      return {
+        isDownloading: true,
+        progress: download.progress,
+        downloadedBytes: download.downloadedBytes,
+        totalBytes: download.totalBytes,
+        speed: download.speed,
+        status: download.status
+      }
     }
-  };
+    
+    const isInstalled = installedModels.some(installed => installed.id === model.id)
+    return {
+      isDownloading: false,
+      isInstalled,
+      progress: 0
+    }
+  }
 
-  const getSpeedColor = (speed) => {
-    switch (speed?.toLowerCase()) {
-      case 'very fast': return 'bg-green-100 text-green-800 border-green-200';
-      case 'fast': return 'bg-blue-100 text-blue-800 border-blue-200';
-      case 'medium': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
-      case 'medium-slow': return 'bg-orange-100 text-orange-800 border-orange-200';
-      case 'slow': return 'bg-red-100 text-red-800 border-red-200';
-      default: return 'bg-gray-100 text-gray-800 border-gray-200';
-    }
-  };
+  const ModelCard = ({ model }) => {
+    const status = getModelStatus(model)
+    
+    return (
+      <Card key={model.id} className="relative">
+        <CardHeader>
+          <div className="flex items-start justify-between">
+            <div className="space-y-1">
+              <CardTitle className="text-lg">{model.name}</CardTitle>
+              <CardDescription>{model.description}</CardDescription>
+            </div>
+            <div className="flex flex-col items-end space-y-1">
+              <Badge variant={status.isInstalled ? 'default' : 'secondary'}>
+                {model.size}
+              </Badge>
+              {status.isInstalled && (
+                <Badge variant="default" className="bg-green-100 text-green-800">
+                  <Check className="w-3 h-3 mr-1" />
+                  Installed
+                </Badge>
+              )}
+              {status.isDownloading && (
+                <Badge variant="secondary" className="bg-blue-100 text-blue-800">
+                  <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                  {status.status === 'queued' ? 'Queued' : 'Downloading'}
+                </Badge>
+              )}
+            </div>
+          </div>
+        </CardHeader>
+        
+        <CardContent className="space-y-4">
+          {/* Model Details */}
+          <div className="grid grid-cols-2 gap-4 text-sm">
+            <div className="flex items-center space-x-2">
+              <Clock className="w-4 h-4 text-muted-foreground" />
+              <span>Speed: {model.speed}</span>
+            </div>
+            <div className="flex items-center space-x-2">
+              <AlertCircle className="w-4 h-4 text-muted-foreground" />
+              <span>Accuracy: {model.accuracy}</span>
+            </div>
+          </div>
+
+          {/* Download Progress */}
+          {status.isDownloading && (
+            <div className="space-y-2">
+              <div className="flex justify-between text-sm">
+                <span>
+                  {status.status === 'queued' ? 'Queued for download...' : 
+                   `${Math.round(status.progress)}% - ${formatBytes(status.downloadedBytes)} / ${formatBytes(status.totalBytes)}`}
+                </span>
+                {status.speed > 0 && (
+                  <span className="text-muted-foreground">
+                    {formatSpeed(status.speed)}
+                  </span>
+                )}
+              </div>
+              <Progress value={status.progress} className="w-full" />
+            </div>
+          )}
+
+          {/* Actions */}
+          <div className="flex gap-2">
+            {!status.isInstalled && !status.isDownloading && (
+              <Button 
+                onClick={() => handleDownloadModel(model.id)}
+                className="flex-1"
+                disabled={!isElectron}
+              >
+                <Download className="w-4 h-4 mr-2" />
+                Download
+              </Button>
+            )}
+            
+            {status.isInstalled && (
+              <Button 
+                onClick={() => handleDeleteModel(model.id)}
+                variant="outline"
+                disabled={!isElectron}
+              >
+                <Trash2 className="w-4 h-4 mr-2" />
+                Delete
+              </Button>
+            )}
+            
+            {status.isDownloading && (
+              <Button disabled className="flex-1">
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                {status.status === 'queued' ? 'Queued...' : `Downloading ${Math.round(status.progress)}%`}
+              </Button>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+    )
+  }
 
   if (loading) {
     return (
       <div className="flex items-center justify-center p-8">
-        <div className="spinner"></div>
-        <span className="ml-2">Loading models...</span>
+        <div className="flex items-center space-x-2">
+          <Loader2 className="w-5 h-5 animate-spin" />
+          <span>Loading models...</span>
+        </div>
       </div>
-    );
+    )
   }
 
   return (
-    <div className="space-y-6 p-6">
-      <div className="mb-6">
-        <h2 className="text-2xl font-bold mb-2">Model Marketplace</h2>
-        <p className="text-gray-600">Download and manage transcription models</p>
-        {!window.electronAPI && (
-          <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-            <p className="text-blue-800 text-sm">
-              🌐 <strong>Web Demo Mode:</strong> This is a demonstration of the model marketplace. 
-              In the full Electron app, models would be downloaded to your local system.
-            </p>
-          </div>
-        )}
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold tracking-tight">Model Marketplace</h2>
+          <p className="text-muted-foreground">
+            Download and manage Whisper models for transcription
+          </p>
+        </div>
+        <div className="flex items-center space-x-2">
+          {isElectron ? (
+            <Badge variant="secondary" className="bg-green-100 text-green-800">
+              <HardDrive className="w-3 h-3 mr-1" />
+              Local Storage
+            </Badge>
+          ) : (
+            <Badge variant="secondary" className="bg-orange-100 text-orange-800">
+              <Wifi className="w-3 h-3 mr-1" />
+              Web Preview
+            </Badge>
+          )}
+        </div>
       </div>
 
-      {error && (
-        <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
-          <div className="flex items-center">
-            <span className="text-red-600 mr-2">⚠️</span>
-            <span className="text-red-800">{error}</span>
-          </div>
-        </div>
+      {!isElectron && (
+        <Card className="border-orange-200 bg-orange-50">
+          <CardContent className="pt-6">
+            <div className="flex items-center space-x-2 text-orange-800">
+              <AlertCircle className="w-4 h-4" />
+              <span className="text-sm">
+                Model downloads are only available in the Electron app. Use the web interface for testing with existing models.
+              </span>
+            </div>
+          </CardContent>
+        </Card>
       )}
 
-      <div className="grid gap-6">
-        {models.map((model) => {
-          const isDownloading = downloadingModels.has(model.id);
-          const progress = downloadProgress[model.id];
-          
-          return (
-            <div key={model.id} className="border border-gray-200 rounded-lg p-6 bg-white shadow-sm">
-              <div className="flex items-start justify-between mb-4">
-                <div className="space-y-2">
-                  <div className="flex items-center gap-3">
-                    <h3 className="text-xl font-semibold">{model.name}</h3>
-                    {model.isInstalled && (
-                      <span className="text-green-600 text-sm font-medium bg-green-50 px-2 py-1 rounded border border-green-200">
-                        ✓ Installed
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-gray-600">{model.description}</p>
-                  <div className="flex items-center gap-4 text-sm text-gray-500">
-                    <span>by {model.provider}</span>
-                    <span>•</span>
-                    <span>v{model.version}</span>
-                  </div>
-                </div>
-                
-                <div className="flex gap-2">
-                  {model.isInstalled ? (
-                    <button
-                      onClick={() => handleDelete(model.id)}
-                      className="px-4 py-2 text-red-600 border border-red-200 rounded hover:bg-red-50 transition-colors"
-                    >
-                      🗑️ Delete
-                    </button>
-                  ) : (
-                    <button
-                      onClick={() => handleDownload(model.id)}
-                      disabled={isDownloading}
-                      className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                    >
-                      {isDownloading ? (
-                        <>
-                          <span className="spinner-small inline-block mr-2"></span>
-                          Downloading
-                        </>
-                      ) : (
-                        <>
-                          📥 Download
-                        </>
-                      )}
-                    </button>
-                  )}
-                </div>
-              </div>
-              
-              {/* Download Progress */}
-              {isDownloading && progress && (
-                <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                  <div className="flex justify-between text-sm mb-2">
-                    <span>
-                      {progress.status === 'queued' ? 'Queued for download...' : 'Downloading...'}
-                    </span>
-                    <span className="font-medium">{Math.round(progress.progress)}%</span>
-                  </div>
-                  <div className="w-full bg-gray-200 rounded-full h-2 mb-2">
-                    <div 
-                      className="bg-blue-600 h-2 rounded-full transition-all duration-300" 
-                      style={{ width: `${Math.max(0, Math.min(100, progress.progress))}%` }}
-                    ></div>
-                  </div>
-                  {progress.status === 'downloading' && progress.totalBytes > 0 && (
-                    <div className="flex justify-between text-xs text-gray-600">
-                      <span>
-                        {formatBytes(progress.downloadedBytes)} / {formatBytes(progress.totalBytes)}
-                      </span>
-                      <span>{formatSpeed(progress.speed)}</span>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Model Info Grid */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div className="space-y-1">
-                  <div className="text-sm font-medium text-gray-700">💾 Size</div>
-                  <div className="text-sm text-gray-600">{model.size}</div>
-                </div>
-                
-                <div className="space-y-1">
-                  <div className="text-sm font-medium text-gray-700">⭐ Accuracy</div>
-                  <span className={`inline-block px-2 py-1 text-xs font-medium rounded border ${getAccuracyColor(model.accuracy)}`}>
-                    {model.accuracy}
-                  </span>
-                </div>
-                
-                <div className="space-y-1">
-                  <div className="text-sm font-medium text-gray-700">⚡ Speed</div>
-                  <span className={`inline-block px-2 py-1 text-xs font-medium rounded border ${getSpeedColor(model.speed)}`}>
-                    {model.speed}
-                  </span>
-                </div>
-                
-                <div className="space-y-1">
-                  <div className="text-sm font-medium text-gray-700">🌐 Languages</div>
-                  <div className="text-sm text-gray-600">
-                    {Array.isArray(model.languages) 
-                      ? model.languages.includes('multilingual') 
-                        ? '80+ languages' 
-                        : model.languages.join(', ')
-                      : model.languages}
-                  </div>
-                </div>
-              </div>
-
-              {/* Requirements */}
-              {model.requirements && (
-                <div className="mt-4 pt-4 border-t border-gray-100">
-                  <div className="text-sm font-medium text-gray-700 mb-2">💻 System Requirements</div>
-                  <div className="grid grid-cols-2 gap-4 text-sm text-gray-600">
-                    <div>RAM: {model.requirements.ram}</div>
-                    <div>Disk: {model.requirements.disk}</div>
-                  </div>
-                </div>
-              )}
+      {/* Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <Card>
+          <CardContent className="p-6">
+            <div className="flex items-center space-x-2">
+              <Package className="w-4 h-4 text-muted-foreground" />
+              <span className="text-sm font-medium">Available Models</span>
             </div>
-          );
-        })}
+            <div className="text-2xl font-bold">{availableModels.length}</div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="p-6">
+            <div className="flex items-center space-x-2">
+              <Check className="w-4 h-4 text-green-600" />
+              <span className="text-sm font-medium">Installed Models</span>
+            </div>
+            <div className="text-2xl font-bold">{installedModels.length}</div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="p-6">
+            <div className="flex items-center space-x-2">
+              <Download className="w-4 h-4 text-blue-600" />
+              <span className="text-sm font-medium">Active Downloads</span>
+            </div>
+            <div className="text-2xl font-bold">{downloads.size}</div>
+          </CardContent>
+        </Card>
       </div>
 
-      {models.length === 0 && !loading && (
-        <div className="text-center py-8">
-          <p className="text-gray-500 mb-4">No models available</p>
-          <button 
-            onClick={loadModels} 
-            className="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 transition-colors"
-          >
-            🔄 Refresh
-          </button>
+      {/* Active Downloads Section */}
+      {downloads.size > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center space-x-2">
+              <Download className="w-5 h-5" />
+              <span>Active Downloads</span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              {Array.from(downloads.entries()).map(([modelId, download]) => {
+                const model = availableModels.find(m => m.id === modelId)
+                if (!model) return null
+                
+                return (
+                  <div key={modelId} className="space-y-2">
+                    <div className="flex justify-between text-sm">
+                      <span className="font-medium">{model.name}</span>
+                      <span>
+                        {download.status === 'queued' ? 'Queued' : 
+                         `${Math.round(download.progress)}% - ${formatSpeed(download.speed)}`}
+                      </span>
+                    </div>
+                    <Progress value={download.progress} className="w-full" />
+                  </div>
+                )
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Available Models */}
+      <div className="space-y-4">
+        <h3 className="text-lg font-semibold">Available Models</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {availableModels.map((model) => (
+            <ModelCard key={model.id} model={model} />
+          ))}
         </div>
+      </div>
+
+      {availableModels.length === 0 && (
+        <Card>
+          <CardContent className="p-8 text-center">
+            <Package className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
+            <h3 className="text-lg font-medium mb-2">No Models Available</h3>
+            <p className="text-muted-foreground">
+              Unable to load available models. Please check your connection.
+            </p>
+          </CardContent>
+        </Card>
       )}
     </div>
-  );
+  )
 }
-
