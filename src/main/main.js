@@ -176,7 +176,7 @@ class WhisperDeskApp {
         nodeIntegration: false,
         contextIsolation: true,
         enableRemoteModule: false,
-        preload: path.join(__dirname, 'preload.js'),
+        preload: path.join(__dirname, 'preload-enhanced.js'),
         webSecurity: true
       },
       icon: path.join(__dirname, '../../resources/icon.png')
@@ -516,6 +516,12 @@ class WhisperDeskApp {
     ipcMain.handle('app:getVersion', () => app.getVersion());
     ipcMain.handle('app:restart', () => {
       autoUpdater.quitAndInstall();
+    });
+
+    // Debug IPC handler
+    ipcMain.handle('debug:test', async () => {
+      console.log('Debug IPC test called');
+      return { success: true, message: 'IPC communication working' };
     });
   }
 

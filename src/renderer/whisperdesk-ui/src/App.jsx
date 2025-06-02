@@ -3,8 +3,8 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Mic, Package, Clock, Settings } from 'lucide-react'
-import { ModelMarketplace } from '@/components/ModelMarketplace'
-import { TranscriptionTab } from '@/components/TranscriptionTab'
+import { ModelMarketplace } from '@/components/ModelMarketplace-WebCompatible'
+import { TranscriptionTab } from '@/components/TranscriptionTab-WebCompatible'
 import './App.css'
 
 function App() {
@@ -53,17 +53,7 @@ function App() {
 
           {/* Models Tab */}
           <TabsContent value="models" className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Model Marketplace</CardTitle>
-                <CardDescription>
-                  Download and manage transcription models
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <ModelMarketplace />
-              </CardContent>
-            </Card>
+            <ModelMarketplace />
           </TabsContent>
 
           {/* History Tab */}
