@@ -21,7 +21,9 @@
     "build:skip-whisper": "npm run build:renderer && npm run build:main",
     "build:renderer": "cd src/renderer/whisperdesk-ui && pnpm run build",
     "build:main": "echo 'Main process build complete'",
-    "build:whisper": "chmod +x scripts/build-whisper.sh && ./scripts/build-whisper.sh",
+    "build:whisper": "node scripts/build-whisper-cross-platform.js",
+    "build:whisper:bash": "chmod +x scripts/build-whisper.sh && ./scripts/build-whisper.sh",
+    "build:whisper:ps1": "powershell -ExecutionPolicy Bypass -File scripts/build-whisper.ps1",
     "build:whisper:force": "rm -rf binaries && npm run build:whisper",
     
     "pack": "npm run build && electron-builder --dir",
