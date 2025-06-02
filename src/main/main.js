@@ -1,3 +1,4 @@
+// src/main/main.js - FIXED VERSION with proper event forwarding
 const { app, BrowserWindow, ipcMain, dialog, shell, Menu } = require('electron');
 const path = require('path');
 const { autoUpdater } = require('electron-updater');
@@ -157,10 +158,44 @@ class WhisperDeskApp {
       
       // Set up model manager events
       this.setupModelManagerEvents();
+      
+      // Set up transcription service events
+      this.setupTranscriptionServiceEvents();
     } catch (error) {
       console.error('Error initializing services:', error);
       throw error;
     }
+  }
+
+  setupTranscriptionServiceEvents() {
+    // Forward transcription events to renderer process
+    this.transcriptionService.on('progress', (data) => {
+      console.log('Main: Transcription progress:', data);
+      if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+        this.mainWindow.webContents.send('transcription:progress', data);
+      }
+    });
+
+    this.transcriptionService.on('complete', (data) => {
+      console.log('Main: Transcription complete:', data);
+      if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+        this.mainWindow.webContents.send('transcription:complete', data);
+      }
+    });
+
+    this.transcriptionService.on('error', (data) => {
+      console.log('Main: Transcription error:', data);
+      if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+        this.mainWindow.webContents.send('transcription:error', data);
+      }
+    });
+
+    this.transcriptionService.on('start', (data) => {
+      console.log('Main: Transcription started:', data);
+      if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+        this.mainWindow.webContents.send('transcription:start', data);
+      }
+    });
   }
 
   async createWindow() {
@@ -431,6 +466,8 @@ class WhisperDeskApp {
 
     ipcMain.handle('transcription:processFile', async (event, filePath, options) => {
       try {
+        console.log('Main: Processing file request:', filePath, options);
+        
         // Ensure filePath is a string
         if (typeof filePath !== 'string') {
           throw new Error('Invalid file path: must be a string');
@@ -455,11 +492,27 @@ class WhisperDeskApp {
           model: modelName
         };
 
-        console.log('Processing file with options:', mergedOptions);
+        console.log('Main: Processing file with options:', mergedOptions);
+        
+        // Process the file - events will be automatically forwarded
         const result = await this.transcriptionService.processFile(filePath, mergedOptions);
+        
+        console.log('Main: Transcription result received:', {
+          textLength: result.text?.length || 0,
+          segments: result.segments?.length || 0
+        });
+        
         return result;
       } catch (error) {
-        console.error('Error processing file:', error);
+        console.error('Main: Error processing file:', error);
+        
+        // Emit error event
+        if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+          this.mainWindow.webContents.send('transcription:error', {
+            error: error.message
+          });
+        }
+        
         throw error;
       }
     });
@@ -572,4 +625,3 @@ process.on('uncaughtException', (error) => {
 process.on('unhandledRejection', (reason, promise) => {
   console.error('Unhandled Rejection at:', promise, 'reason:', reason);
 });
-

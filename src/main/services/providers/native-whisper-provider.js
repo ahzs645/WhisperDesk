@@ -1,4 +1,4 @@
-// src/main/services/providers/native-whisper-provider.js - FIXED VERSION
+// src/main/services/providers/native-whisper-provider.js - FIXED VERSION with proper event emission
 const { EventEmitter } = require('events');
 const { spawn } = require('child_process');
 const fs = require('fs').promises;
@@ -103,6 +103,9 @@ class NativeWhisperProvider extends EventEmitter {
         throw new Error(`Model ${model} not found. Please download it first.`);
       }
 
+      // Emit initial progress
+      this.emitProgress(0, 'starting', 'Initializing transcription...');
+
       // Build command args - use VTT output which works reliably
       const args = this.buildWhisperArgs({
         modelPath,
@@ -120,11 +123,16 @@ class NativeWhisperProvider extends EventEmitter {
       const result = await this.executeWhisper(args, transcriptionId);
 
       // Parse the VTT format output
-      return this.parseVTTOutput(result.stdout, filePath);
+      const parsedResult = this.parseVTTOutput(result.stdout, filePath);
+
+      // IMPORTANT: Emit completion event immediately after parsing
+      this.emitComplete(parsedResult);
+
+      return parsedResult;
 
     } catch (error) {
       console.error('Native Whisper processing failed:', error);
-      this.emit('error', { transcriptionId, error: error.message });
+      this.emitError(error.message);
       throw error;
     }
   }
@@ -234,30 +242,15 @@ class NativeWhisperProvider extends EventEmitter {
       const match = output.match(pattern);
       if (match) {
         const progress = parseFloat(match[1]);
-        this.emit('progress', {
-          transcriptionId,
-          progress,
-          stage: 'transcribing',
-          message: `Processing: ${progress}%`
-        });
+        this.emitProgress(progress, 'transcribing', `Processing: ${progress}%`);
         break;
       }
     }
 
     if (output.includes('loading model')) {
-      this.emit('progress', {
-        transcriptionId,
-        progress: 10,
-        stage: 'loading_model',
-        message: 'Loading model...'
-      });
+      this.emitProgress(10, 'loading_model', 'Loading model...');
     } else if (output.includes('processing')) {
-      this.emit('progress', {
-        transcriptionId,
-        progress: 25,
-        stage: 'processing_audio',
-        message: 'Processing audio...'
-      });
+      this.emitProgress(25, 'processing_audio', 'Processing audio...');
     }
   }
 
@@ -334,14 +327,6 @@ class NativeWhisperProvider extends EventEmitter {
       };
       
       console.log(`Parsed ${segments.length} segments, total text length: ${fullText.length}`);
-
-      // Emit completion event
-      if (this.currentTranscriptionId) {
-        this.emit('complete', { 
-          transcriptionId: this.currentTranscriptionId, 
-          result 
-        });
-      }
       
       return result;
       
@@ -350,12 +335,7 @@ class NativeWhisperProvider extends EventEmitter {
       console.log('Problematic output:', stdout);
       
       // Emit error event
-      if (this.currentTranscriptionId) {
-        this.emit('error', { 
-          transcriptionId: this.currentTranscriptionId, 
-          error: error.message 
-        });
-      }
+      this.emitError(error.message);
 
       // Return basic result with error info
       return {
@@ -381,6 +361,44 @@ class NativeWhisperProvider extends EventEmitter {
     const milliseconds = parseInt(secondsParts[1]);
     
     return hours * 3600 + minutes * 60 + seconds + milliseconds / 1000;
+  }
+
+  // Helper methods for consistent event emission
+  emitProgress(progress, stage, message) {
+    const data = {
+      transcriptionId: this.currentTranscriptionId,
+      progress: Math.min(100, Math.max(0, progress)),
+      stage,
+      message
+    };
+    
+    console.log('Emitting progress:', data);
+    this.emit('progress', data);
+  }
+
+  emitComplete(result) {
+    const data = {
+      transcriptionId: this.currentTranscriptionId,
+      result
+    };
+    
+    console.log('Emitting completion event:', {
+      transcriptionId: this.currentTranscriptionId,
+      resultLength: result.text.length,
+      segments: result.segments.length
+    });
+    
+    this.emit('complete', data);
+  }
+
+  emitError(message) {
+    const data = {
+      transcriptionId: this.currentTranscriptionId,
+      error: message
+    };
+    
+    console.log('Emitting error:', data);
+    this.emit('error', data);
   }
 
   async cleanup() {
