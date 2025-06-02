@@ -1,6 +1,6 @@
 {
   "name": "whisperdesk-enhanced",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "Advanced cross-platform transcription application with AI-powered speech recognition",
   "main": "src/main/main.js",
   "homepage": "https://whisperdesk.com",
@@ -15,16 +15,26 @@
     "dev": "concurrently \"npm run dev:renderer\" \"npm run dev:main\"",
     "dev:main": "nodemon --watch src/main --exec electron .",
     "dev:renderer": "cd src/renderer/whisperdesk-ui && pnpm run dev",
+    
     "prebuild": "node scripts/download-binaries.js || echo 'Binary download failed, continuing...'",
     "build": "npm run build:renderer && npm run build:main",
     "build:renderer": "cd src/renderer/whisperdesk-ui && pnpm run build",
     "build:main": "echo 'Main process build complete'",
+    
     "pack": "npm run build && electron-builder --dir",
     "dist": "npm run build && electron-builder",
     "dist:win": "npm run build && electron-builder --win",
     "dist:mac": "npm run build && electron-builder --mac",
     "dist:linux": "npm run build && electron-builder --linux",
     "dist:all": "npm run build && electron-builder --win --mac --linux",
+    
+    "build:platform": "chmod +x scripts/build-universal.sh && ./scripts/build-universal.sh",
+    "build:macos": "chmod +x scripts/build-macos.sh && ./scripts/build-macos.sh",
+    "build:linux": "chmod +x scripts/build-linux.sh && ./scripts/build-linux.sh",
+    "build:windows": "powershell -ExecutionPolicy Bypass -File scripts/build-windows.ps1",
+    "build:all-platforms": "chmod +x scripts/build-all.sh && ./scripts/build-all.sh all",
+    "build:docker": "chmod +x scripts/docker-build.sh && ./scripts/docker-build.sh",
+    
     "postinstall": "electron-builder install-app-deps",
     "test": "jest",
     "test:native": "node test-native-services.js",
@@ -34,7 +44,14 @@
     "server": "node transcription-server.js",
     "web": "concurrently \"npm run server\" \"cd src/renderer/whisperdesk-ui && pnpm run dev\"",
     "lint": "eslint src/",
-    "clean": "rimraf dist build node_modules/.cache"
+    "clean": "rimraf dist build node_modules/.cache temp",
+    "clean:all": "npm run clean && rimraf binaries models",
+    
+    "release:prepare": "npm run clean && npm run build:all-platforms",
+    "release:github": "gh release create v$npm_package_version dist/* --generate-notes",
+    "version:patch": "npm version patch && git push && git push --tags",
+    "version:minor": "npm version minor && git push && git push --tags",
+    "version:major": "npm version major && git push && git push --tags"
   },
   "dependencies": {
     "axios": "^1.6.0",
@@ -77,16 +94,17 @@
       {
         "from": "resources/",
         "to": "resources/",
-        "filter": [
-          "**/*"
-        ]
+        "filter": ["**/*"]
       },
       {
         "from": "binaries/",
         "to": "binaries/",
-        "filter": [
-          "**/*"
-        ]
+        "filter": ["**/*"]
+      },
+      {
+        "from": "models/",
+        "to": "models/",
+        "filter": ["**/*"]
       }
     ],
     "mac": {
@@ -99,40 +117,34 @@
       "target": [
         {
           "target": "dmg",
-          "arch": [
-            "x64",
-            "arm64"
-          ]
+          "arch": ["x64", "arm64"]
         },
         {
           "target": "zip",
-          "arch": [
-            "x64",
-            "arm64"
-          ]
+          "arch": ["x64", "arm64"]
         }
-      ]
+      ],
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
     },
     "win": {
       "icon": "resources/icons/icon.ico",
       "target": [
         {
           "target": "nsis",
-          "arch": [
-            "x64",
-            "ia32"
-          ]
+          "arch": ["x64", "ia32"]
         },
         {
           "target": "portable",
-          "arch": [
-            "x64",
-            "ia32"
-          ]
+          "arch": ["x64", "ia32"]
+        },
+        {
+          "target": "zip",
+          "arch": ["x64", "ia32"]
         }
       ],
       "publisherName": "WhisperDesk Team",
-      "verifyUpdateCodeSignature": false
+      "verifyUpdateCodeSignature": false,
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
     },
     "linux": {
       "icon": "resources/icons/",
@@ -140,29 +152,22 @@
       "target": [
         {
           "target": "AppImage",
-          "arch": [
-            "x64"
-          ]
+          "arch": ["x64"]
         },
         {
           "target": "deb",
-          "arch": [
-            "x64"
-          ]
+          "arch": ["x64"]
         },
         {
           "target": "rpm",
-          "arch": [
-            "x64"
-          ]
+          "arch": ["x64"]
         },
         {
           "target": "tar.gz",
-          "arch": [
-            "x64"
-          ]
+          "arch": ["x64"]
         }
-      ]
+      ],
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
     },
     "nsis": {
       "oneClick": false,
@@ -170,7 +175,9 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "WhisperDesk Enhanced",
-      "include": "resources/installer.nsh"
+      "include": "resources/installer.nsh",
+      "installerIcon": "resources/icons/icon.ico",
+      "uninstallerIcon": "resources/icons/icon.ico"
     },
     "dmg": {
       "title": "WhisperDesk Enhanced ${version}",
@@ -199,12 +206,13 @@
     "transcription",
     "speech-to-text",
     "whisper",
-    "deepgram",
+    "ai",
     "audio",
     "voice",
-    "ai",
     "electron",
-    "cross-platform"
+    "cross-platform",
+    "native",
+    "real-time"
   ],
   "repository": {
     "type": "git",
@@ -212,5 +220,8 @@
   },
   "bugs": {
     "url": "https://github.com/whisperdesk/whisperdesk-enhanced/issues"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
   }
-}
