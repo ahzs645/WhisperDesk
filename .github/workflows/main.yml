@@ -1,4 +1,4 @@
-# .github/workflows/main.yml - FIXED VERSION with proper artifact separation
+# .github/workflows/main.yml - FIXED VERSION with proper binary packaging
 name: Build WhisperDesk for All Platforms
 
 on:
@@ -239,14 +239,14 @@ jobs:
         cd src/renderer/whisperdesk-ui
         pnpm run build
 
-    # Configure electron-builder to prevent unwanted architectures
-    - name: Configure electron-builder (Unix)
+    # Configure electron-builder with FIXED binary packaging
+    - name: Configure electron-builder (Unix) - FIXED
       if: runner.os != 'Windows'
       run: |
-        echo "🔧 Configuring electron-builder to build only intended architectures..."
+        echo "🔧 Configuring electron-builder with BINARY PACKAGING..."
         
-        # Create or update electron-builder config to explicitly specify architectures
-        cat > electron-builder-override.json << 'EOF'
+        # Create electron-builder config with proper binary packaging
+        cat > electron-builder-fixed.json << 'EOF'
         {
           "appId": "com.yourcompany.whisperdesk",
           "productName": "WhisperDesk Enhanced",
@@ -254,6 +254,25 @@ jobs:
             "output": "dist"
           },
           "artifactName": "${productName}-${version}-${arch}.${ext}",
+          "files": [
+            "src/main/**/*",
+            "src/renderer/whisperdesk-ui/dist/**/*",
+            "src/shared/**/*",
+            "node_modules/**/*",
+            "package.json"
+          ],
+          "extraResources": [
+            {
+              "from": "binaries/",
+              "to": "binaries/",
+              "filter": ["**/*"]
+            },
+            {
+              "from": "models/",
+              "to": "models/",
+              "filter": ["**/*"]
+            }
+          ],
           "win": {
             "target": [
               {
@@ -264,7 +283,9 @@ jobs:
                 "target": "zip",
                 "arch": ["x64"]
               }
-            ]
+            ],
+            "publisherName": "WhisperDesk Team",
+            "verifyUpdateCodeSignature": false
           },
           "mac": {
             "target": [
@@ -276,7 +297,10 @@ jobs:
                 "target": "zip",
                 "arch": ["x64", "arm64"]
               }
-            ]
+            ],
+            "category": "public.app-category.productivity",
+            "hardenedRuntime": true,
+            "gatekeeperAssess": false
           },
           "linux": {
             "target": [
@@ -296,20 +320,22 @@ jobs:
                 "target": "tar.gz",
                 "arch": ["x64"]
               }
-            ]
+            ],
+            "category": "AudioVideo"
           }
         }
         EOF
         
-        echo "✅ Electron-builder configuration created with version: $APP_VERSION"
+        echo "✅ Electron-builder configuration created with BINARY PACKAGING"
+        echo "📋 Config includes extraResources for binaries/ directory"
 
-    - name: Configure electron-builder (Windows)
+    - name: Configure electron-builder (Windows) - FIXED
       if: runner.os == 'Windows'
       shell: pwsh
       run: |
-        Write-Host "🔧 Configuring electron-builder to build only intended architectures..."
+        Write-Host "🔧 Configuring electron-builder with BINARY PACKAGING..."
         
-        # Create electron-builder config using PowerShell
+        # Create electron-builder config with proper binary packaging
         $config = @"
         {
           "appId": "com.yourcompany.whisperdesk",
@@ -318,6 +344,25 @@ jobs:
             "output": "dist"
           },
           "artifactName": "`${productName}-`${version}-`${arch}.`${ext}",
+          "files": [
+            "src/main/**/*",
+            "src/renderer/whisperdesk-ui/dist/**/*",
+            "src/shared/**/*",
+            "node_modules/**/*",
+            "package.json"
+          ],
+          "extraResources": [
+            {
+              "from": "binaries/",
+              "to": "binaries/",
+              "filter": ["**/*"]
+            },
+            {
+              "from": "models/",
+              "to": "models/",
+              "filter": ["**/*"]
+            }
+          ],
           "win": {
             "target": [
               {
@@ -328,7 +373,9 @@ jobs:
                 "target": "zip",
                 "arch": ["x64"]
               }
-            ]
+            ],
+            "publisherName": "WhisperDesk Team",
+            "verifyUpdateCodeSignature": false
           },
           "mac": {
             "target": [
@@ -340,7 +387,10 @@ jobs:
                 "target": "zip",
                 "arch": ["x64", "arm64"]
               }
-            ]
+            ],
+            "category": "public.app-category.productivity",
+            "hardenedRuntime": true,
+            "gatekeeperAssess": false
           },
           "linux": {
             "target": [
@@ -360,15 +410,17 @@ jobs:
                 "target": "tar.gz",
                 "arch": ["x64"]
               }
-            ]
+            ],
+            "category": "AudioVideo"
           }
         }
         "@
         
         # Write to file
-        $config | Out-File -FilePath "electron-builder-override.json" -Encoding UTF8
+        $config | Out-File -FilePath "electron-builder-fixed.json" -Encoding UTF8
         
-        Write-Host "✅ Electron-builder configuration created with version: $env:APP_VERSION"
+        Write-Host "✅ Electron-builder configuration created with BINARY PACKAGING"
+        Write-Host "📋 Config includes extraResources for binaries/ directory"
 
     # Verify version before building
     - name: Verify version configuration
@@ -418,20 +470,20 @@ jobs:
           exit 1
         fi
 
-    # Build Electron app for specific platform - FIXED ARCHITECTURE HANDLING
+    # Build Electron app for specific platform - FIXED with proper binary packaging
     - name: Build Electron app (macOS)
       if: matrix.platform == 'darwin'
       env:
         CSC_IDENTITY_AUTO_DISCOVERY: false
       run: |
         npm run build:skip-whisper
-        npx electron-builder ${{ matrix.electron_target }} --publish=never --config electron-builder-override.json
+        npx electron-builder ${{ matrix.electron_target }} --publish=never --config electron-builder-fixed.json
 
     - name: Build Electron app (Linux)
       if: matrix.platform == 'linux'
       run: |
         npm run build:skip-whisper
-        npx electron-builder ${{ matrix.electron_target }} --publish=never --config electron-builder-override.json
+        npx electron-builder ${{ matrix.electron_target }} --publish=never --config electron-builder-fixed.json
 
     - name: Build Electron app (Windows)
       if: matrix.platform == 'win32'
@@ -493,9 +545,9 @@ jobs:
             Write-Host "⚠️ Binary test failed: $($_.Exception.Message)"
         }
         
-        # Build the application - ONLY x64, NO ia32
+        # Build the application - USING FIXED CONFIG WITH BINARY PACKAGING
         npm run build:skip-whisper
-        npx electron-builder ${{ matrix.electron_target }} --publish=never --config electron-builder-override.json
+        npx electron-builder ${{ matrix.electron_target }} --publish=never --config electron-builder-fixed.json
 
     # VERIFY: Check for unwanted ia32 builds
     - name: Verify no ia32 builds created
