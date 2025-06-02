@@ -15,10 +15,6 @@ jobs:
         include:
           - os: macos-latest
             platform: darwin
-            arch: x64
-            artifact: WhisperDesk-mac-x64
-          - os: macos-latest
-            platform: darwin
             arch: arm64
             artifact: WhisperDesk-mac-arm64
           - os: ubuntu-latest
@@ -123,13 +119,7 @@ jobs:
         pnpm run build
 
     # Build Electron app for specific platform
-    - name: Build Electron app (macOS x64)
-      if: matrix.platform == 'darwin' && matrix.arch == 'x64'
-      env:
-        CSC_IDENTITY_AUTO_DISCOVERY: false
-      run: npm run dist:mac -- --x64
-
-    - name: Build Electron app (macOS arm64)
+    - name: Build Electron app (macOS ARM64)
       if: matrix.platform == 'darwin' && matrix.arch == 'arm64'
       env:
         CSC_IDENTITY_AUTO_DISCOVERY: false
