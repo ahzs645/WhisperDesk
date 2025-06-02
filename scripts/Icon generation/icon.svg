@@ -1,0 +1,22 @@
+<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background circle for app icon -->
+  <circle cx="50" cy="50" r="45" fill="#2563eb" stroke="none"/>
+  
+  <!-- Sound wave bars of varying heights - optimized for small sizes -->
+  <g fill="white">
+    <!-- Left side - quieter -->
+    <rect x="18" y="44" width="5" height="12" rx="2.5"/>
+    <rect x="26" y="40" width="5" height="20" rx="2.5"/>
+    <rect x="34" y="32" width="5" height="36" rx="2.5"/>
+    
+    <!-- Peak in center -->
+    <rect x="42" y="20" width="5" height="60" rx="2.5"/>
+    <rect x="50" y="15" width="5" height="70" rx="2.5"/>
+    <rect x="58" y="22" width="5" height="56" rx="2.5"/>
+    
+    <!-- Right side - declining -->
+    <rect x="66" y="35" width="5" height="30" rx="2.5"/>
+    <rect x="74" y="42" width="5" height="16" rx="2.5"/>
+    <rect x="82" y="46" width="5" height="8" rx="2.5"/>
+  </g>
+</svg>
