@@ -5,6 +5,7 @@ const os = require('os');
 const { spawn } = require('child_process');
 const axios = require('axios');
 const FormData = require('form-data');
+const transcriptionStore = require('./transcription-store');
 
 // Import providers
 const WhisperProvider = require('./providers/whisper-provider');
@@ -18,9 +19,15 @@ class TranscriptionService extends EventEmitter {
     this.tempDir = path.join(os.tmpdir(), 'whisperdesk-transcription');
     this.defaultProvider = 'whisper';
     this.modelManager = modelManager;
+    this.isInitialized = false;
   }
 
   async initialize() {
+    if (this.isInitialized) {
+      console.log('Transcription service already initialized');
+      return;
+    }
+
     try {
       // Create temp directory
       await fs.mkdir(this.tempDir, { recursive: true });
@@ -28,35 +35,76 @@ class TranscriptionService extends EventEmitter {
       // Initialize providers
       await this.initializeProviders();
       
+      this.isInitialized = true;
       console.log('Transcription service initialized');
       console.log(`Available providers: ${Array.from(this.providers.keys()).join(', ')}`);
     } catch (error) {
       console.error('Error initializing transcription service:', error);
+      this.isInitialized = false;
       throw error;
     }
   }
 
   async initializeProviders() {
     // Initialize Whisper provider
-    const whisperProvider = new WhisperProvider(this.modelManager);
-    await whisperProvider.initialize();
-    this.providers.set('whisper', whisperProvider);
+    if (!this.providers.has('whisper')) {
+      const whisperProvider = new WhisperProvider(this.modelManager);
+      await whisperProvider.initialize();
+      this.providers.set('whisper', whisperProvider);
+    }
 
     // Initialize Deepgram provider
-    const deepgramProvider = new DeepgramProvider();
-    await deepgramProvider.initialize();
-    this.providers.set('deepgram', deepgramProvider);
+    if (!this.providers.has('deepgram')) {
+      const deepgramProvider = new DeepgramProvider();
+      await deepgramProvider.initialize();
+      this.providers.set('deepgram', deepgramProvider);
+    }
   }
 
   getProviders() {
-    return Array.from(this.providers.entries()).map(([id, provider]) => ({
-      id,
-      name: provider.getName(),
-      description: provider.getDescription(),
-      capabilities: provider.getCapabilities(),
-      isAvailable: provider.isAvailable(),
-      models: provider.getAvailableModels ? provider.getAvailableModels() : []
-    }));
+    return Array.from(this.providers.entries()).map(([id, provider]) => {
+      const capabilities = provider.getCapabilities();
+      const availableModels = provider.getAvailableModels ? provider.getAvailableModels() : [];
+      
+      // Handle different model formats
+      const models = Array.isArray(availableModels) ? availableModels.map(model => {
+        // If model is already an object with the required properties
+        if (typeof model === 'object' && model !== null) {
+          return {
+            id: model.id || model,
+            name: model.name || model,
+            size: model.size || 'Unknown',
+            accuracy: model.accuracy || 'Unknown',
+            speed: model.speed || 'Unknown',
+            description: model.description || ''
+          };
+        }
+        // If model is a string
+        return {
+          id: model,
+          name: model,
+          size: provider.getModelSize ? provider.getModelSize(model) : 'Unknown',
+          accuracy: provider.getModelAccuracy ? provider.getModelAccuracy(model) : 'Unknown',
+          speed: provider.getModelSpeed ? provider.getModelSpeed(model) : 'Unknown',
+          description: provider.getModelDescription ? provider.getModelDescription(model) : ''
+        };
+      }) : [];
+
+      return {
+        id,
+        name: provider.getName(),
+        description: provider.getDescription(),
+        capabilities: {
+          realtime: capabilities.realtime || false,
+          fileTranscription: capabilities.fileTranscription || false,
+          speakerDiarization: capabilities.speakerDiarization || false,
+          languageDetection: capabilities.languageDetection || false,
+          wordTimestamps: capabilities.wordTimestamps || false
+        },
+        isAvailable: provider.isAvailable(),
+        models
+      };
+    });
   }
 
   async startTranscription(options = {}) {
@@ -168,22 +216,27 @@ class TranscriptionService extends EventEmitter {
   }
 
   async processFile(filePath, options = {}) {
-    const {
-      provider = this.defaultProvider,
-      model = 'base',
-      language = 'auto',
-      enableSpeakerDiarization = true,
-      enableTimestamps = true,
-      maxSpeakers = 10,
-      outputFormat = 'json'
-    } = options;
-
     const transcriptionId = this.generateTranscriptionId();
-
+    
     try {
-      // Validate file exists
-      await fs.access(filePath);
-      
+      // Get default settings if not provided
+      const {
+        provider = this.defaultProvider,
+        model = 'whisper-base',  // Default to 'whisper-base' if not specified
+        language = 'auto',
+        enableSpeakerDiarization = true,
+        enableTimestamps = true,
+        maxSpeakers = 10,
+        outputFormat = 'json'  // Changed from 'txt' to 'json' for better compatibility
+      } = options;
+
+      console.log('Processing file with options:', {
+        provider,
+        model,
+        language,
+        outputFormat
+      });
+
       const selectedProvider = this.providers.get(provider);
       if (!selectedProvider) {
         throw new Error(`Provider ${provider} not found`);
@@ -193,10 +246,17 @@ class TranscriptionService extends EventEmitter {
         throw new Error(`Provider ${provider} is not available`);
       }
 
+      // Ensure model is a string and not empty
+      if (!model || typeof model !== 'string' || model.trim() === '') {
+        throw new Error('Invalid model: model name must be a non-empty string');
+      }
+
+      // Ensure model has 'whisper-' prefix
+      const modelName = model.startsWith('whisper-') ? model : `whisper-${model}`;
+
       const transcriptionOptions = {
         transcriptionId,
-        filePath,
-        model,
+        model: modelName,
         language,
         enableSpeakerDiarization,
         enableTimestamps,
@@ -204,59 +264,22 @@ class TranscriptionService extends EventEmitter {
         outputFormat
       };
 
-      // Track active transcription
-      this.activeTranscriptions.set(transcriptionId, {
-        provider: selectedProvider,
-        options: transcriptionOptions,
-        startTime: Date.now(),
-        status: 'processing'
-      });
-
       // Set up event forwarding
       this.setupProviderEventForwarding(selectedProvider, transcriptionId);
 
-      this.emit('transcriptionStarted', {
-        transcriptionId,
-        provider,
-        options: transcriptionOptions
-      });
+      // Process the file with the selected provider
+      const result = await selectedProvider.processFile(filePath, transcriptionOptions);
 
-      // Process file with the selected provider
-      const result = await selectedProvider.processFile(transcriptionOptions);
-      
-      // Update transcription status
-      const transcription = this.activeTranscriptions.get(transcriptionId);
-      if (transcription) {
-        transcription.status = 'completed';
-        transcription.endTime = Date.now();
-        transcription.result = result;
-      }
+      // Clean up event handlers
+      this.cleanupProviderEventHandlers(selectedProvider, transcriptionId);
 
-      this.emit('transcriptionComplete', {
-        transcriptionId,
-        result
-      });
-
-      return {
-        success: true,
-        transcriptionId,
-        result
-      };
-
+      return result;
     } catch (error) {
-      // Update transcription status
-      const transcription = this.activeTranscriptions.get(transcriptionId);
-      if (transcription) {
-        transcription.status = 'error';
-        transcription.endTime = Date.now();
-        transcription.error = error.message;
-      }
-
+      console.error('Error processing file:', error);
       this.emit('transcriptionError', {
         transcriptionId,
         error: error.message
       });
-      
       throw error;
     }
   }

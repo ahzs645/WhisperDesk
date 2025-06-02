@@ -16,13 +16,20 @@ class DeepgramProvider extends EventEmitter {
   }
 
   async initialize() {
+    if (this.isInitialized) {
+      console.log('Deepgram provider already initialized');
+      return true;
+    }
+
     try {
       // API key will be set from settings
       this.isInitialized = true;
       console.log('Deepgram provider initialized');
+      return true;
     } catch (error) {
       console.error('Error initializing Deepgram provider:', error);
       this.isInitialized = false;
+      return false;
     }
   }
 

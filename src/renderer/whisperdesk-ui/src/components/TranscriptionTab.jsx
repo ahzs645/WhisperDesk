@@ -26,6 +26,9 @@ import {
   ExternalLink
 } from 'lucide-react'
 
+// Global state for active transcriptions
+const activeTranscriptions = new Map()
+
 export function TranscriptionTab() {
   const [isRecording, setIsRecording] = useState(false)
   const [isPaused, setIsPaused] = useState(false)
@@ -43,10 +46,42 @@ export function TranscriptionTab() {
   const [installedModels, setInstalledModels] = useState([])
   const [hasModels, setHasModels] = useState(false)
   const [modelsLoading, setModelsLoading] = useState(true)
+  const [selectedModel, setSelectedModel] = useState('')
+  const [availableModels, setAvailableModels] = useState([])
+  const [activeTranscriptionId, setActiveTranscriptionId] = useState(null)
   
   const fileInputRef = useRef(null)
   const recordingIntervalRef = useRef(null)
   const dropZoneRef = useRef(null)
+
+  // Load active transcription state on mount
+  useEffect(() => {
+    const loadActiveTranscription = async () => {
+      try {
+        // Clear any existing state first
+        setSelectedFile(null)
+        setTranscriptionResult('')
+        setTranscriptionProgress(0)
+        setActiveTranscriptionId(null)
+        setIsTranscribing(false)
+        
+        const activeTranscription = await window.electronAPI.transcription.getActiveTranscription()
+        if (activeTranscription) {
+          setActiveTranscriptionId(activeTranscription.id)
+          setIsTranscribing(activeTranscription.status === 'processing')
+          setTranscriptionProgress(activeTranscription.progress || 0)
+          setTranscriptionResult(activeTranscription.text || '')
+          if (activeTranscription.file) {
+            setSelectedFile(activeTranscription.file)
+          }
+        }
+      } catch (err) {
+        console.error('Error loading active transcription:', err)
+      }
+    }
+    
+    loadActiveTranscription()
+  }, [])
 
   useEffect(() => {
     loadInstalledModels()
@@ -79,29 +114,72 @@ export function TranscriptionTab() {
 
     // Transcription progress
     window.electronAPI.transcription.onProgress((event, data) => {
-      setTranscriptionProgress(data.progress || 0)
+      console.log('Progress event received:', data)
+      if (data.transcriptionId === activeTranscriptionId) {
+        setTranscriptionProgress(data.progress || 0)
+        window.electronAPI.transcription.updateActiveTranscription({
+          id: activeTranscriptionId,
+          progress: data.progress || 0
+        })
+      }
     })
 
     // Transcription result (partial)
-    window.electronAPI.transcription.onResult((event, data) => {
-      if (data.text) {
-        setTranscriptionResult(prev => prev + data.text + ' ')
+    window.electronAPI.transcription.onResult(async (event, data) => {
+      console.log('Result event received:', data)
+      if (data.transcriptionId === activeTranscriptionId && data.text) {
+        const newText = data.text.trim()
+        if (newText) {
+          setTranscriptionResult(prev => {
+            const updatedText = prev ? `${prev} ${newText}` : newText
+            return updatedText
+          })
+          const currentTranscription = await window.electronAPI.transcription.getActiveTranscription()
+          window.electronAPI.transcription.updateActiveTranscription({
+            id: activeTranscriptionId,
+            text: (currentTranscription?.text || '') + ' ' + newText
+          })
+        }
       }
     })
 
     // Transcription complete
-    window.electronAPI.transcription.onComplete((event, data) => {
-      setIsTranscribing(false)
-      setTranscriptionProgress(100)
-      if (data.text) {
-        setTranscriptionResult(data.text)
+    window.electronAPI.transcription.onComplete(async (event, data) => {
+      console.log('Complete event received:', data)
+      if (data.transcriptionId === activeTranscriptionId) {
+        try {
+          // Get the final transcription result
+          const result = await window.electronAPI.transcription.getActiveTranscription()
+          if (result) {
+            setIsTranscribing(false)
+            setTranscriptionProgress(100)
+            setTranscriptionResult(result.text || '')
+            await window.electronAPI.transcription.updateActiveTranscription({
+              id: activeTranscriptionId,
+              text: result.text,
+              progress: 100,
+              status: 'complete'
+            })
+          }
+        } catch (err) {
+          console.error('Error handling transcription completion:', err)
+          setError('Failed to get final transcription result')
+        }
       }
     })
 
     // Transcription error
     window.electronAPI.transcription.onError((event, data) => {
-      setIsTranscribing(false)
-      setError(`Transcription failed: ${data.error}`)
+      console.log('Error event received:', data)
+      if (data.transcriptionId === activeTranscriptionId) {
+        setIsTranscribing(false)
+        setError(`Transcription failed: ${data.error}`)
+        window.electronAPI.transcription.updateActiveTranscription({
+          id: activeTranscriptionId,
+          status: 'error',
+          error: data.error
+        })
+      }
     })
 
     // Listen for model changes
@@ -163,9 +241,32 @@ export function TranscriptionTab() {
       // Select default provider
       if (availableProviders.length > 0) {
         setSelectedProvider(availableProviders[0].id)
+        // Load models for the default provider
+        if (availableProviders[0].models) {
+          setAvailableModels(availableProviders[0].models)
+          if (availableProviders[0].models.length > 0) {
+            setSelectedModel(availableProviders[0].models[0].id)
+          }
+        }
       }
     } catch (err) {
       console.error('Error loading providers:', err)
+    }
+  }
+
+  const handleProviderChange = (providerId) => {
+    setSelectedProvider(providerId)
+    const provider = providers.find(p => p.id === providerId)
+    if (provider?.models) {
+      setAvailableModels(provider.models)
+      if (provider.models.length > 0) {
+        setSelectedModel(provider.models[0].id)
+      } else {
+        setSelectedModel('')
+      }
+    } else {
+      setAvailableModels([])
+      setSelectedModel('')
     }
   }
 
@@ -231,38 +332,50 @@ export function TranscriptionTab() {
   const handleFileUpload = async (file) => {
     try {
       setError(null)
-      
-      // Check if models are available
-      if (!hasModels) {
-        setError('Please download a transcription model first before uploading files.')
-        return
-      }
-      
-      // Validate file type
-      const allowedTypes = [
-        'audio/mpeg', 'audio/wav', 'audio/flac', 'audio/m4a', 'audio/aac', 'audio/ogg',
-        'video/mp4', 'video/avi', 'video/mov', 'video/mkv', 'video/webm'
-      ]
-      
-      if (!allowedTypes.includes(file.type) && !file.name.match(/\.(mp3|wav|flac|m4a|aac|ogg|mp4|avi|mov|mkv|webm)$/i)) {
-        setError('Unsupported file format. Please select an audio or video file.')
-        return
-      }
-      
-      setSelectedFile(file)
+      setIsTranscribing(true)
+      setTranscriptionProgress(0)
       setTranscriptionResult('')
+
+      // Get the file path from the file object
+      const filePath = file.path
+
+      // Get transcription settings
+      const settings = await window.electronAPI.settings.getAll()
       
-      // Start transcription
-      if (selectedProvider) {
-        setIsTranscribing(true)
-        setTranscriptionProgress(0)
-        
-        await window.electronAPI.transcription.processFile(file.path, {
-          provider: selectedProvider
-        })
+      // Prepare transcription options
+      const options = {
+        provider: selectedProvider || settings.defaultProvider,
+        model: selectedModel || settings.defaultModel,
+        language: settings.language || 'auto',
+        enableTimestamps: settings.enableTimestamps ?? true,
+        enableSpeakerDiarization: settings.enableSpeakerDiarization ?? true,
+        maxSpeakers: settings.maxSpeakers || 10,
+        outputFormat: 'json'
       }
+
+      console.log('Starting transcription with options:', options)
+
+      // Start transcription
+      const result = await window.electronAPI.transcription.processFile(filePath, options)
+      
+      // Set active transcription
+      const transcriptionId = result.transcriptionId
+      setActiveTranscriptionId(transcriptionId)
+      
+      // Update active transcription in store
+      await window.electronAPI.transcription.setActiveTranscription({
+        id: transcriptionId,
+        file: filePath,
+        status: 'processing',
+        progress: 0,
+        text: '',
+        options
+      })
+
+      setSelectedFile(file)
     } catch (err) {
-      setError(`Failed to process file: ${err.message}`)
+      console.error('Error processing file:', err)
+      setError(err.message || 'Failed to process file')
       setIsTranscribing(false)
     }
   }
@@ -295,10 +408,11 @@ export function TranscriptionTab() {
     }
   }
 
-  const handleClearFile = () => {
+  const handleClearFile = async () => {
     setSelectedFile(null)
     setTranscriptionResult('')
     setTranscriptionProgress(0)
+    setActiveTranscriptionId(null)
     if (fileInputRef.current) {
       fileInputRef.current.value = ''
     }
@@ -383,7 +497,7 @@ export function TranscriptionTab() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <label className="text-sm font-medium">Transcription Provider</label>
-              <Select value={selectedProvider} onValueChange={setSelectedProvider}>
+              <Select value={selectedProvider} onValueChange={handleProviderChange}>
                 <SelectTrigger>
                   <SelectValue placeholder="Select provider" />
                 </SelectTrigger>
@@ -396,6 +510,29 @@ export function TranscriptionTab() {
                 </SelectContent>
               </Select>
             </div>
+            
+            {availableModels.length > 0 && (
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Model</label>
+                <Select value={selectedModel} onValueChange={setSelectedModel}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select model" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableModels.map((model) => (
+                      <SelectItem key={model.id} value={model.id}>
+                        <div className="flex items-center justify-between w-full">
+                          <span>{model.name}</span>
+                          <Badge variant="secondary" className="ml-2 text-xs">
+                            {model.size}
+                          </Badge>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             
             <div className="space-y-2">
               <label className="text-sm font-medium">Audio Device</label>
@@ -516,15 +653,11 @@ export function TranscriptionTab() {
                   </Button>
                 </div>
                 
-                {isTranscribing && (
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-center space-x-2">
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      <span className="text-sm">Transcribing...</span>
-                    </div>
-                    <Progress value={transcriptionProgress} className="w-full max-w-xs mx-auto" />
-                  </div>
-                )}
+                <TranscriptionProgress 
+                  isTranscribing={isTranscribing}
+                  activeTranscriptionId={activeTranscriptionId}
+                  progress={transcriptionProgress}
+                />
               </div>
             ) : (
               <div className="space-y-4">
@@ -560,13 +693,15 @@ export function TranscriptionTab() {
       </Card>
 
       {/* Transcription Result */}
-      {transcriptionResult && (
+      {(transcriptionResult || isTranscribing) && (
         <Card>
           <CardHeader>
             <div className="flex items-center justify-between">
               <div>
                 <CardTitle>Transcription Result</CardTitle>
-                <CardDescription>Your transcribed text</CardDescription>
+                <CardDescription>
+                  {isTranscribing ? 'Transcribing in progress...' : 'Your transcribed text'}
+                </CardDescription>
               </div>
               <div className="flex space-x-2">
                 <Button onClick={handleCopyResult} variant="outline" size="sm">
@@ -581,16 +716,83 @@ export function TranscriptionTab() {
             </div>
           </CardHeader>
           <CardContent>
-            <Textarea
-              value={transcriptionResult}
-              onChange={(e) => setTranscriptionResult(e.target.value)}
-              placeholder="Transcription will appear here..."
-              className="min-h-[200px] resize-none"
-              readOnly={isTranscribing}
-            />
+            <div className="space-y-4">
+              {isTranscribing && (
+                <div className="flex items-center space-x-2 text-primary">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span className="text-sm">Recognizing speech...</span>
+                </div>
+              )}
+              <Textarea
+                value={transcriptionResult}
+                onChange={(e) => setTranscriptionResult(e.target.value)}
+                placeholder="Transcription will appear here..."
+                className="min-h-[200px] resize-none"
+                readOnly={isTranscribing}
+              />
+              {isTranscribing && (
+                <div className="flex items-center justify-center">
+                  <Progress value={transcriptionProgress} className="w-full max-w-xs" />
+                </div>
+              )}
+            </div>
           </CardContent>
         </Card>
       )}
+    </div>
+  )
+}
+
+// Separate component for transcription progress
+function TranscriptionProgress({ isTranscribing, activeTranscriptionId, progress }) {
+  const [isProcessing, setIsProcessing] = useState(false)
+  const [status, setStatus] = useState('processing')
+
+  useEffect(() => {
+    const checkStatus = async () => {
+      if (activeTranscriptionId) {
+        try {
+          const activeTranscription = await window.electronAPI.transcription.getActiveTranscription()
+          setIsProcessing(activeTranscription?.status === 'processing')
+          setStatus(activeTranscription?.status || 'processing')
+        } catch (err) {
+          console.error('Error checking transcription status:', err)
+        }
+      }
+    }
+    
+    const interval = setInterval(checkStatus, 1000)
+    checkStatus() // Check immediately
+    
+    return () => clearInterval(interval)
+  }, [activeTranscriptionId])
+
+  if (!isTranscribing && !isProcessing) return null
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-center space-x-2">
+        {status === 'processing' ? (
+          <>
+            <Loader2 className="w-4 h-4 animate-spin" />
+            <span className="text-sm">Transcribing...</span>
+          </>
+        ) : status === 'complete' ? (
+          <>
+            <CheckCircle className="w-4 h-4 text-green-500" />
+            <span className="text-sm text-green-500">Transcription complete</span>
+          </>
+        ) : (
+          <>
+            <AlertCircle className="w-4 h-4 text-yellow-500" />
+            <span className="text-sm text-yellow-500">Processing...</span>
+          </>
+        )}
+      </div>
+      <Progress 
+        value={progress} 
+        className="w-full max-w-xs mx-auto" 
+      />
     </div>
   )
 }

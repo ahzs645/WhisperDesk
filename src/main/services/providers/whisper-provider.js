@@ -3,6 +3,7 @@ const { spawn } = require('child_process');
 const fs = require('fs').promises;
 const path = require('path');
 const os = require('os');
+const process = require('process');
 
 class WhisperProvider extends EventEmitter {
   constructor(modelManager) {
@@ -39,6 +40,10 @@ class WhisperProvider extends EventEmitter {
   }
 
   async initialize() {
+    if (this.isInitialized) {
+      return true;
+    }
+
     try {
       // Create models directory
       await fs.mkdir(this.modelPath, { recursive: true });
@@ -102,86 +107,32 @@ class WhisperProvider extends EventEmitter {
       const outputDir = path.join(os.tmpdir(), 'whisperdesk-transcription');
       await fs.mkdir(outputDir, { recursive: true });
 
-      // Prepare Whisper command
+      // Prepare Whisper command arguments
       const args = [
-        '-c',
-        `
-import whisper
-import json
-import sys
-import os
-
-try:
-    # Load model
-    print("Loading Whisper model: ${model}", file=sys.stderr)
-    model = whisper.load_model("${model}")
-    
-    # Transcribe audio
-    print("Transcribing audio file...", file=sys.stderr)
-    result = model.transcribe(
-        "${filePath}",
-        language=${language === 'auto' ? 'None' : `"${language}"`},
-        task="${task}",
-        temperature=${temperature},
-        best_of=${bestOf},
-        beam_size=${beamSize},
-        word_timestamps=${enableWordTimestamps ? 'True' : 'False'}
-    )
-    
-    # Format output
-    output = {
-        "text": result["text"],
-        "language": result["language"],
-        "segments": []
-    }
-    
-    for segment in result["segments"]:
-        segment_data = {
-            "id": segment["id"],
-            "start": segment["start"],
-            "end": segment["end"],
-            "text": segment["text"],
-            "confidence": segment.get("avg_logprob", 0.0),
-            "no_speech_prob": segment.get("no_speech_prob", 0.0)
-        }
-        
-        if "words" in segment and segment["words"]:
-            segment_data["words"] = [
-                {
-                    "word": word["word"],
-                    "start": word["start"],
-                    "end": word["end"],
-                    "confidence": word.get("probability", 0.0)
-                }
-                for word in segment["words"]
-            ]
-        
-        output["segments"].append(segment_data)
-    
-    # Add metadata
-    output["metadata"] = {
-        "provider": "whisper",
-        "model": "${model}",
-        "language": result["language"],
-        "duration": max([s["end"] for s in result["segments"]] + [0]),
-        "task": "${task}",
-        "created_at": "$(new Date().toISOString())"
-    }
-    
-    print(json.dumps(output, ensure_ascii=False, indent=2))
-    
-except Exception as e:
-    error_output = {
-        "error": str(e),
-        "type": type(e).__name__
-    }
-    print(json.dumps(error_output), file=sys.stderr)
-    sys.exit(1)
-        `
+        filePath,
+        '--model', model,
+        '--output_dir', outputDir,
+        '--output_format', outputFormat,
+        '--temperature', temperature.toString(),
+        '--best_of', bestOf.toString(),
+        '--beam_size', beamSize.toString()
       ];
 
+      // Add word timestamps if enabled
+      if (enableWordTimestamps) {
+        args.push('--word_timestamps', 'True');
+      }
+
+      if (language !== 'auto') {
+        args.push('--language', language);
+      }
+
+      if (task === 'translate') {
+        args.push('--task', 'translate');
+      }
+
       return new Promise((resolve, reject) => {
-        const whisperProcess = spawn('python3', args, {
+        const whisperProcess = spawn('whisper', args, {
           stdio: ['pipe', 'pipe', 'pipe']
         });
 
@@ -196,43 +147,38 @@ except Exception as e:
           stderr += data.toString();
           
           // Emit progress events based on stderr output
-          if (stderr.includes('Loading Whisper model')) {
+          if (stderr.includes('Loading model')) {
             this.emit('progress', { stage: 'loading_model', progress: 10 });
-          } else if (stderr.includes('Transcribing audio')) {
+          } else if (stderr.includes('Transcribing')) {
             this.emit('progress', { stage: 'transcribing', progress: 50 });
           }
         });
 
-        whisperProcess.on('close', (code) => {
+        whisperProcess.on('close', async (code) => {
           if (code === 0) {
             try {
-              const result = JSON.parse(stdout);
-              this.emit('progress', { stage: 'complete', progress: 100 });
-              resolve(result);
-            } catch (parseError) {
-              reject(new Error(`Failed to parse Whisper output: ${parseError.message}`));
+              // Read the output file
+              const outputFile = path.join(outputDir, path.basename(filePath, path.extname(filePath)) + '.json');
+              const output = JSON.parse(await fs.readFile(outputFile, 'utf8'));
+              
+              // Clean up
+              await fs.rm(outputDir, { recursive: true, force: true });
+              
+              resolve(output);
+            } catch (error) {
+              reject(new Error(`Failed to read transcription output: ${error.message}`));
             }
           } else {
-            try {
-              const errorInfo = JSON.parse(stderr);
-              reject(new Error(`Whisper transcription failed: ${errorInfo.error}`));
-            } catch {
-              reject(new Error(`Whisper transcription failed with code ${code}: ${stderr}`));
-            }
+            reject(new Error(`Transcription failed: ${stderr}`));
           }
         });
 
         whisperProcess.on('error', (error) => {
-          reject(new Error(`Failed to start Whisper process: ${error.message}`));
+          reject(new Error(`Failed to start transcription process: ${error.message}`));
         });
-
-        // Emit start event
-        this.emit('progress', { stage: 'starting', progress: 0 });
       });
-
     } catch (error) {
-      console.error('Whisper transcription error:', error);
-      throw error;
+      throw new Error(`Transcription failed: ${error.message}`);
     }
   }
 
@@ -387,6 +333,212 @@ except:
   async cleanup() {
     // Cleanup any temporary files or processes
     console.log('Whisper provider cleanup complete');
+  }
+
+  async processFile(filePath, options = {}) {
+    const {
+      transcriptionId,
+      model = 'base',
+      language = 'auto',
+      task = 'transcribe',
+      outputFormat = 'json',
+      enableTimestamps = true,
+      enableWordTimestamps = true,
+      temperature = 0.0,
+      bestOf = 5,
+      beamSize = 5
+    } = options;
+
+    if (!this.isInitialized) {
+      throw new Error('Whisper provider not initialized');
+    }
+
+    try {
+      // Extract base model name (remove 'whisper-' prefix if present)
+      const baseModelName = model.replace('whisper-', '');
+
+      // Validate model
+      if (!this.availableModels.includes(baseModelName)) {
+        throw new Error(`Invalid model: ${model}. Available models: ${this.availableModels.map(m => `whisper-${m}`).join(', ')}`);
+      }
+
+      // Ensure filePath is a string
+      if (typeof filePath !== 'string') {
+        throw new Error('Invalid file path: must be a string');
+      }
+
+      // Check if model is available and download if needed
+      const isAvailable = await this.isModelAvailable(baseModelName);
+      if (!isAvailable) {
+        this.emit('progress', { transcriptionId, stage: 'downloading_model', progress: 0 });
+        try {
+          await this.downloadModel(baseModelName);
+        } catch (error) {
+          // If the error is about the model being already installed, we can continue
+          if (!error.message.includes('already installed')) {
+            throw error;
+          }
+        }
+      }
+
+      // Create output directory
+      const outputDir = path.join(process.cwd(), 'transcriptions');
+      await fs.mkdir(outputDir, { recursive: true });
+
+      // Prepare Whisper command arguments
+      const args = [
+        filePath,
+        '--model', baseModelName,
+        '--output_dir', outputDir,
+        '--output_format', outputFormat,
+        '--temperature', temperature.toString(),
+        '--best_of', bestOf.toString(),
+        '--beam_size', beamSize.toString(),
+        '--verbose', 'True'  // Add verbose output for better progress tracking
+      ];
+
+      // Add word timestamps if enabled
+      if (enableWordTimestamps) {
+        args.push('--word_timestamps', 'True');
+      }
+
+      if (language !== 'auto') {
+        args.push('--language', language);
+      }
+
+      if (task === 'translate') {
+        args.push('--task', 'translate');
+      }
+
+      return new Promise((resolve, reject) => {
+        console.log('Starting Whisper process with args:', args);
+        
+        const whisperProcess = spawn('whisper', args, {
+          stdio: ['pipe', 'pipe', 'pipe']
+        });
+
+        let stdout = '';
+        let stderr = '';
+        let progress = 0;
+
+        whisperProcess.stdout.on('data', (data) => {
+          stdout += data.toString();
+        });
+
+        whisperProcess.stderr.on('data', (data) => {
+          stderr += data.toString();
+          console.log('Whisper stderr:', stderr);
+          
+          // Emit progress events based on stderr output
+          if (stderr.includes('Loading model')) {
+            progress = 10;
+            this.emit('progress', { transcriptionId, stage: 'loading_model', progress });
+          } else if (stderr.includes('Transcribing')) {
+            progress = 50;
+            this.emit('progress', { transcriptionId, stage: 'transcribing', progress });
+          } else if (stderr.includes('Processing audio')) {
+            progress = 75;
+            this.emit('progress', { transcriptionId, stage: 'processing', progress });
+          }
+        });
+
+        whisperProcess.on('close', async (code) => {
+          console.log('Whisper process exited with code:', code);
+          
+          if (code === 0) {
+            try {
+              // Get the base filename without extension
+              const baseFileName = path.basename(filePath, path.extname(filePath));
+              
+              // Read the output file based on format
+              let output;
+              if (outputFormat === 'json') {
+                const outputFile = path.join(outputDir, `${baseFileName}.json`);
+                output = JSON.parse(await fs.readFile(outputFile, 'utf8'));
+              } else {
+                const outputFile = path.join(outputDir, `${baseFileName}.${outputFormat}`);
+                const text = await fs.readFile(outputFile, 'utf8');
+                output = { text };
+              }
+              
+              // Emit completion event
+              this.emit('complete', { 
+                transcriptionId, 
+                result: {
+                  text: output.text,
+                  segments: output.segments || [],
+                  language: output.language || 'unknown'
+                }
+              });
+              
+              // Clean up
+              await fs.rm(outputDir, { recursive: true, force: true });
+              
+              resolve(output);
+            } catch (error) {
+              console.error('Error reading transcription output:', error);
+              this.emit('error', { transcriptionId, error: error.message });
+              reject(new Error(`Failed to read transcription output: ${error.message}`));
+            }
+          } else {
+            console.error('Transcription failed:', stderr);
+            this.emit('error', { transcriptionId, error: stderr });
+            reject(new Error(`Transcription failed: ${stderr}`));
+          }
+        });
+
+        whisperProcess.on('error', (error) => {
+          console.error('Failed to start transcription process:', error);
+          this.emit('error', { transcriptionId, error: error.message });
+          reject(new Error(`Failed to start transcription process: ${error.message}`));
+        });
+      });
+    } catch (error) {
+      console.error('Transcription error:', error);
+      this.emit('error', { transcriptionId, error: error.message });
+      throw new Error(`Transcription failed: ${error.message}`);
+    }
+  }
+
+  async startTranscription(options = {}) {
+    if (!this.isInitialized) {
+      throw new Error('Whisper provider not initialized');
+    }
+
+    const {
+      model = 'base',
+      language = 'auto',
+      task = 'transcribe',
+      outputFormat = 'json',
+      enableTimestamps = true,
+      enableWordTimestamps = true,
+      temperature = 0.0,
+      bestOf = 5,
+      beamSize = 5
+    } = options;
+
+    try {
+      // Validate model
+      if (!this.availableModels.includes(model)) {
+        throw new Error(`Invalid model: ${model}. Available models: ${this.availableModels.join(', ')}`);
+      }
+
+      // For now, we'll just return success since real-time transcription is not implemented
+      return {
+        success: true,
+        message: 'Real-time transcription is not supported by Whisper provider'
+      };
+    } catch (error) {
+      throw new Error(`Failed to start transcription: ${error.message}`);
+    }
+  }
+
+  async stopTranscription(transcriptionId) {
+    // For now, we'll just return success since real-time transcription is not implemented
+    return {
+      success: true,
+      message: 'Real-time transcription is not supported by Whisper provider'
+    };
   }
 }
 

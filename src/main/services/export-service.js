@@ -11,6 +11,11 @@ class ExportService {
     };
   }
 
+  async initialize() {
+    // No initialization needed for export service
+    console.log('Export service initialized');
+  }
+
   async exportText(transcriptionData, format, options = {}) {
     try {
       let content = '';

@@ -47,6 +47,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   transcription: {
     start: (options) => ipcRenderer.invoke('transcription:start', options),
     stop: () => ipcRenderer.invoke('transcription:stop'),
+    getActiveTranscription: () => ipcRenderer.invoke('transcription:getActiveTranscription'),
+    setActiveTranscription: (transcription) => ipcRenderer.invoke('transcription:setActiveTranscription', transcription),
+    updateActiveTranscription: (updates) => ipcRenderer.invoke('transcription:updateActiveTranscription', updates),
+    clearActiveTranscription: () => ipcRenderer.invoke('transcription:clearActiveTranscription'),
     processFile: (filePath, options) => ipcRenderer.invoke('transcription:processFile', filePath, options),
     getProviders: () => ipcRenderer.invoke('transcription:getProviders'),
     

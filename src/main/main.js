@@ -2,6 +2,7 @@ const { app, BrowserWindow, ipcMain, dialog, shell, Menu } = require('electron')
 const path = require('path');
 const { autoUpdater } = require('electron-updater');
 const Store = require('electron-store');
+const fs = require('fs');
 
 // Services
 const ModelManager = require('./services/model-manager');
@@ -10,29 +11,156 @@ const AudioService = require('./services/audio-service');
 const SettingsService = require('./services/settings-service');
 const ExportService = require('./services/export-service');
 
-// Initialize store
+// Initialize stores
 const store = new Store();
+const transcriptionStore = new Store({
+  name: 'transcription',
+  defaults: {
+    activeTranscription: null
+  }
+});
+
+// Prevent multiple instances
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+  return;
+}
+
+// Global reference to the app instance
+let whisperDeskApp = null;
 
 class WhisperDeskApp {
   constructor() {
+    if (whisperDeskApp) {
+      console.log('App instance already exists, returning existing instance');
+      return whisperDeskApp;
+    }
+    
+    this.app = app;
     this.mainWindow = null;
     this.isQuitting = false;
+    this.modelManager = null;
+    this.transcriptionService = null;
+    this.audioService = null;
+    this.settingsService = null;
+    this.isInitialized = false;
     
-    // Initialize services
-    this.modelManager = new ModelManager();
-    this.transcriptionService = new TranscriptionService(this.modelManager);
-    this.audioService = new AudioService();
-    this.settingsService = new SettingsService();
-    this.exportService = new ExportService();
+    // Always clear transcription state when app starts
+    if (transcriptionStore) {
+      transcriptionStore.clear();
+    }
     
-    this.setupEventHandlers();
+    // Store the instance
+    whisperDeskApp = this;
   }
 
-  async initialize() {
-    await this.createWindow();
-    this.setupMenu();
-    this.setupAutoUpdater();
-    await this.initializeServices();
+  static getInstance() {
+    if (!whisperDeskApp) {
+      console.log('Creating new WhisperDesk app instance');
+      whisperDeskApp = new WhisperDeskApp();
+    } else {
+      console.log('Using existing WhisperDesk app instance');
+    }
+    return whisperDeskApp;
+  }
+
+  setupBasicEventHandlers() {
+    // App event handlers
+    let initializationPromise = null;
+    
+    app.whenReady().then(async () => {
+      if (this.isInitialized) {
+        console.log('App already initialized, skipping initialization');
+        return;
+      }
+      
+      if (initializationPromise) {
+        console.log('Initialization already in progress, waiting...');
+        await initializationPromise;
+        return;
+      }
+      
+      initializationPromise = (async () => {
+        try {
+          // Initialize services first
+          await this.initializeServices();
+          
+          // Set up IPC handlers after services are initialized
+          this.setupIpcHandlers();
+          
+          // Create window and setup menu
+          await this.createWindow();
+          this.setupMenu();
+          this.setupAutoUpdater();
+          
+          this.isInitialized = true;
+          console.log('App initialization complete');
+        } catch (error) {
+          console.error('Error during initialization:', error);
+          app.quit();
+        } finally {
+          initializationPromise = null;
+        }
+      })();
+      
+      await initializationPromise;
+    });
+
+    app.on('window-all-closed', () => {
+      if (process.platform !== 'darwin') {
+        app.quit();
+      }
+    });
+
+    app.on('activate', async () => {
+      if (BrowserWindow.getAllWindows().length === 0) {
+        // Only create window if not initialized
+        if (!this.isInitialized) {
+          await this.initializeServices();
+          this.setupIpcHandlers();
+          this.setupMenu();
+          this.setupAutoUpdater();
+          this.isInitialized = true;
+        }
+        await this.createWindow();
+      } else if (this.mainWindow) {
+        this.mainWindow.show();
+      }
+    });
+
+    app.on('before-quit', () => {
+      this.isQuitting = true;
+    });
+  }
+
+  async initializeServices() {
+    try {
+      // Initialize Model Manager
+      this.modelManager = new ModelManager();
+      await this.modelManager.initialize();
+      
+      // Initialize Transcription Service
+      this.transcriptionService = new TranscriptionService(this.modelManager);
+      await this.transcriptionService.initialize();
+      
+      // Initialize Audio Service
+      this.audioService = new AudioService();
+      await this.audioService.initialize();
+      
+      // Initialize Settings Service
+      this.settingsService = new SettingsService();
+      await this.settingsService.initialize();
+      
+      // Initialize Export Service
+      this.exportService = new ExportService();
+      await this.exportService.initialize();
+      
+      // Set up model manager events
+      this.setupModelManagerEvents();
+    } catch (error) {
+      console.error('Error initializing services:', error);
+      throw error;
+    }
   }
 
   async createWindow() {
@@ -229,23 +357,6 @@ class WhisperDeskApp {
     }
   }
 
-  async initializeServices() {
-    try {
-      await this.modelManager.initialize();
-      
-      // Set up ModelManager event forwarding to renderer
-      this.setupModelManagerEvents();
-      
-      await this.transcriptionService.initialize();
-      await this.audioService.initialize();
-      await this.settingsService.initialize();
-      
-      console.log('All services initialized successfully');
-    } catch (error) {
-      console.error('Error initializing services:', error);
-    }
-  }
-
   setupModelManagerEvents() {
     // Forward ModelManager events to renderer process
     this.modelManager.on('downloadQueued', (downloadInfo) => {
@@ -285,32 +396,6 @@ class WhisperDeskApp {
     });
   }
 
-  setupEventHandlers() {
-    // App event handlers
-    app.whenReady().then(() => this.initialize());
-
-    app.on('window-all-closed', () => {
-      if (process.platform !== 'darwin') {
-        app.quit();
-      }
-    });
-
-    app.on('activate', async () => {
-      if (BrowserWindow.getAllWindows().length === 0) {
-        await this.createWindow();
-      } else if (this.mainWindow) {
-        this.mainWindow.show();
-      }
-    });
-
-    app.on('before-quit', () => {
-      this.isQuitting = true;
-    });
-
-    // IPC handlers
-    this.setupIpcHandlers();
-  }
-
   setupIpcHandlers() {
     // Model management
     ipcMain.handle('model:getAvailable', () => this.modelManager.getAvailableModels());
@@ -320,15 +405,97 @@ class WhisperDeskApp {
     ipcMain.handle('model:getInfo', (event, modelId) => this.modelManager.getModelInfo(modelId));
 
     // Transcription
-    ipcMain.handle('transcription:start', (event, options) => this.transcriptionService.startTranscription(options));
-    ipcMain.handle('transcription:stop', () => this.transcriptionService.stopTranscription());
-    ipcMain.handle('transcription:processFile', (event, filePath, options) => this.transcriptionService.processFile(filePath, options));
-    ipcMain.handle('transcription:getProviders', () => this.transcriptionService.getProviders());
+    ipcMain.handle('transcription:getActiveTranscription', () => {
+      return transcriptionStore.get('activeTranscription');
+    });
+
+    ipcMain.handle('transcription:setActiveTranscription', (event, transcription) => {
+      transcriptionStore.set('activeTranscription', transcription);
+      return true;
+    });
+
+    ipcMain.handle('transcription:updateActiveTranscription', (event, updates) => {
+      const currentTranscription = transcriptionStore.get('activeTranscription');
+      if (currentTranscription) {
+        const updatedTranscription = { ...currentTranscription, ...updates };
+        transcriptionStore.set('activeTranscription', updatedTranscription);
+        return updatedTranscription;
+      }
+      return null;
+    });
+
+    ipcMain.handle('transcription:clearActiveTranscription', () => {
+      transcriptionStore.delete('activeTranscription');
+      return true;
+    });
+
+    ipcMain.handle('transcription:processFile', async (event, filePath, options) => {
+      try {
+        // Ensure filePath is a string
+        if (typeof filePath !== 'string') {
+          throw new Error('Invalid file path: must be a string');
+        }
+
+        // Validate file exists using fs.promises
+        await fs.promises.access(filePath);
+
+        // Get transcription settings
+        const transcriptionSettings = this.settingsService.getTranscriptionSettings();
+        
+        // Ensure model name is properly formatted
+        let modelName = options.model || transcriptionSettings.defaultModel;
+        if (!modelName.startsWith('whisper-')) {
+          modelName = `whisper-${modelName}`;
+        }
+        
+        // Merge settings with provided options
+        const mergedOptions = {
+          ...transcriptionSettings,
+          ...options,
+          model: modelName
+        };
+
+        console.log('Processing file with options:', mergedOptions);
+        const result = await this.transcriptionService.processFile(filePath, mergedOptions);
+        return result;
+      } catch (error) {
+        console.error('Error processing file:', error);
+        throw error;
+      }
+    });
+
+    ipcMain.handle('transcription:getProviders', () => {
+      return this.transcriptionService.getProviders();
+    });
 
     // Audio
-    ipcMain.handle('audio:getDevices', () => this.audioService.getDevices());
-    ipcMain.handle('audio:startRecording', (event, deviceId) => this.audioService.startRecording(deviceId));
-    ipcMain.handle('audio:stopRecording', () => this.audioService.stopRecording());
+    ipcMain.handle('audio:getDevices', async () => {
+      try {
+        return await this.audioService.getDevices();
+      } catch (error) {
+        console.error('Error getting audio devices:', error);
+        throw error;
+      }
+    });
+
+    ipcMain.handle('audio:startRecording', async (event, deviceId) => {
+      try {
+        return await this.audioService.startRecording(deviceId);
+      } catch (error) {
+        console.error('Error starting recording:', error);
+        throw error;
+      }
+    });
+
+    ipcMain.handle('audio:stopRecording', async () => {
+      try {
+        return await this.audioService.stopRecording();
+      } catch (error) {
+        console.error('Error stopping recording:', error);
+        throw error;
+      }
+    });
+
     ipcMain.handle('audio:getWaveform', (event, filePath) => this.audioService.getWaveform(filePath));
 
     // Settings
@@ -387,8 +554,9 @@ class WhisperDeskApp {
   }
 }
 
-// Create and start the app
-const whisperDeskApp = new WhisperDeskApp();
+// Create the app instance and set up event handlers
+const whisperDeskInstance = WhisperDeskApp.getInstance();
+whisperDeskInstance.setupBasicEventHandlers();
 
 // Handle uncaught exceptions
 process.on('uncaughtException', (error) => {
