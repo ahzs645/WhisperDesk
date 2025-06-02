@@ -1,4 +1,4 @@
-# .github/workflows/main.yml - FIXED VERSION with proper binary packaging
+# .github/workflows/main.yml - UPDATED with official whisper.cpp build approach
 name: Build WhisperDesk for All Platforms
 
 on:
@@ -79,13 +79,9 @@ jobs:
         # Install cmake via homebrew
         brew install cmake
 
-    - name: Install Windows dependencies
+    - name: Add MSBuild to PATH (Windows)
       if: runner.os == 'Windows'
-      run: |
-        # Install Visual Studio Build Tools
-        choco install visualstudio2022buildtools --package-parameters "--add Microsoft.VisualStudio.Workload.VCTools" -y
-        # Install cmake
-        choco install cmake -y
+      uses: microsoft/setup-msbuild@v2
 
     # Extract version from tag and update package.json
     - name: Set version from tag
@@ -147,34 +143,38 @@ jobs:
         
         pnpm install --frozen-lockfile
 
-    # Build whisper.cpp from source - MODERN CMAKE APPROACH
+    # Build whisper.cpp from source - UNIX platforms
     - name: Build whisper.cpp (Linux/macOS)
       if: runner.os != 'Windows'
       run: |
-        echo "🔨 Building whisper.cpp with modern cmake approach..."
+        echo "🔨 Building whisper.cpp with cmake for Unix platforms..."
         
-        # Clone whisper.cpp
-        git clone https://github.com/ggerganov/whisper.cpp.git /tmp/whisper.cpp
+        # Clone whisper.cpp from OFFICIAL repository
+        git clone https://github.com/ggml-org/whisper.cpp.git /tmp/whisper.cpp
         cd /tmp/whisper.cpp
         
-        # Use modern cmake build approach (not make)
+        # Use modern cmake build approach
         cmake -B build -DCMAKE_BUILD_TYPE=Release
         cmake --build build --config Release --parallel $(nproc 2>/dev/null || sysctl -n hw.ncpu || echo 4)
         
-        # The binary should be in build/bin/whisper-cli
-        echo "📋 Checking for built binary..."
-        ls -la build/bin/ || echo "No build/bin directory"
-        ls -la bin/ || echo "No bin directory"
+        # Find the whisper binary (different names in different versions)
+        WHISPER_BINARY=""
+        for name in "whisper-cli" "main" "whisper"; do
+          if [ -f "build/bin/${name}" ]; then
+            WHISPER_BINARY="build/bin/${name}"
+            break
+          elif [ -f "bin/${name}" ]; then
+            WHISPER_BINARY="bin/${name}"
+            break
+          fi
+        done
         
-        # Find the whisper-cli binary
-        if [ -f "build/bin/whisper-cli" ]; then
-          WHISPER_BINARY="build/bin/whisper-cli"
-        elif [ -f "bin/whisper-cli" ]; then
-          WHISPER_BINARY="bin/whisper-cli"
-        else
-          echo "❌ Could not find whisper-cli binary"
-          echo "📋 Available files:"
-          find . -name "*whisper*" -type f | head -10
+        if [ -z "$WHISPER_BINARY" ]; then
+          echo "❌ Could not find whisper binary"
+          echo "📋 Available files in build/bin:"
+          ls -la build/bin/ 2>/dev/null || echo "No build/bin directory"
+          echo "📋 Available files in bin:"
+          ls -la bin/ 2>/dev/null || echo "No bin directory"
           exit 1
         fi
         
@@ -186,46 +186,177 @@ jobs:
         chmod +x "$GITHUB_WORKSPACE/binaries/whisper"
         
         # Verify the binary works
+        echo "🧪 Testing binary..."
         "$GITHUB_WORKSPACE/binaries/whisper" --help || echo "Binary test failed but continuing..."
         
         echo "✅ whisper.cpp built and installed successfully"
 
-    - name: Build whisper.cpp (Windows)
+    # Build whisper.cpp from source - Windows with MSVC (official approach)
+    - name: Build whisper.cpp (Windows) - Official MSVC Approach
       if: runner.os == 'Windows'
       shell: pwsh
       run: |
-        Write-Host "🔨 Building whisper.cpp for Windows with cmake..."
+        Write-Host "🔨 Building whisper.cpp for Windows using MSVC (official approach)..."
         
-        # Clone whisper.cpp
-        git clone https://github.com/ggerganov/whisper.cpp.git C:\temp\whisper.cpp
+        # Clone whisper.cpp from OFFICIAL repository
+        git clone https://github.com/ggml-org/whisper.cpp.git C:\temp\whisper.cpp
         Set-Location C:\temp\whisper.cpp
         
-        # Use modern cmake build approach
-        cmake -B build -DCMAKE_BUILD_TYPE=Release
-        cmake --build build --config Release --parallel
+        Write-Host "✅ Cloned whisper.cpp from official repository"
         
-        # Find the whisper-cli binary
-        $whisperBinary = $null
-        if (Test-Path "build\bin\Release\whisper-cli.exe") {
-            $whisperBinary = "build\bin\Release\whisper-cli.exe"
-        } elseif (Test-Path "bin\Release\whisper-cli.exe") {
-            $whisperBinary = "bin\Release\whisper-cli.exe"
-        } elseif (Test-Path "build\Release\whisper-cli.exe") {
-            $whisperBinary = "build\Release\whisper-cli.exe"
+        # Configure with MSVC (same as official whisper.cpp CI)
+        cmake -S . -B ./build -A x64 -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON
+        
+        Write-Host "✅ Configured with MSVC"
+        
+        # Build using MSBuild (Visual Studio's build system)
+        Set-Location build
+        msbuild ALL_BUILD.vcxproj -t:build -p:configuration=Release -p:platform=x64
+        
+        Write-Host "✅ Built with MSBuild"
+        
+        # Find and copy the whisper executable and DLLs
+        $buildDir = "bin\Release"
+        $targetDir = "$env:GITHUB_WORKSPACE\binaries"
+        
+        # Create target directory
+        New-Item -ItemType Directory -Force -Path $targetDir
+        
+        # Find the main executable (try different names)
+        $exeNames = @("main.exe", "whisper-cli.exe", "whisper.exe")
+        $foundExe = $null
+        
+        foreach ($exeName in $exeNames) {
+            $exePath = Join-Path $buildDir $exeName
+            if (Test-Path $exePath) {
+                $foundExe = $exePath
+                break
+            }
+        }
+        
+        if ($foundExe) {
+            Copy-Item $foundExe "$targetDir\whisper.exe" -Force
+            Write-Host "✅ Copied $foundExe -> whisper.exe"
         } else {
-            Write-Host "❌ Could not find whisper-cli.exe binary"
-            Write-Host "📋 Available files in build:"
-            Get-ChildItem -Recurse -Filter "*whisper*" | Select-Object FullName
+            Write-Host "❌ Could not find whisper executable"
+            Write-Host "📋 Available files in $buildDir:"
+            Get-ChildItem $buildDir -ErrorAction SilentlyContinue | Select-Object Name, Length
             exit 1
         }
         
-        Write-Host "✅ Found whisper binary at: $whisperBinary"
+        # Copy all DLLs from the build directory
+        $dlls = Get-ChildItem -Path $buildDir -Filter "*.dll" -ErrorAction SilentlyContinue
         
-        # Copy to project binaries directory
-        New-Item -ItemType Directory -Force -Path "$env:GITHUB_WORKSPACE\binaries"
-        Copy-Item "$whisperBinary" "$env:GITHUB_WORKSPACE\binaries\whisper.exe" -Force
+        if ($dlls.Count -gt 0) {
+            foreach ($dll in $dlls) {
+                Copy-Item $dll.FullName $targetDir -Force
+                Write-Host "✅ Copied DLL: $($dll.Name)"
+            }
+            Write-Host "📋 Total DLLs copied: $($dlls.Count)"
+        } else {
+            Write-Host "⚠️ No DLLs found in build directory"
+        }
         
         Write-Host "✅ whisper.cpp built and installed successfully"
+
+    # Package Visual C++ Runtime Dependencies (Windows)
+    - name: Package VC++ Runtime (Windows)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        Write-Host "📦 Packaging Visual C++ Runtime Dependencies..."
+        
+        $targetDir = "$env:GITHUB_WORKSPACE\binaries"
+        
+        # Download VC++ Redistributable for users who need it
+        $vcredistUrl = "https://aka.ms/vs/17/release/vc_redist.x64.exe"
+        $vcredistPath = "$targetDir\vc_redist.x64.exe"
+        
+        try {
+            Write-Host "⬇️ Downloading VC++ Redistributable..."
+            Invoke-WebRequest -Uri $vcredistUrl -OutFile $vcredistPath -UseBasicParsing
+            Write-Host "✅ Downloaded VC++ Redistributable installer"
+        } catch {
+            Write-Host "⚠️ Failed to download VC++ Redistributable: $($_.Exception.Message)"
+        }
+        
+        # Try to copy runtime DLLs from system (if available)
+        $runtimeDlls = @(
+            @{ Name = "msvcp140.dll"; Path = "C:\Windows\System32\msvcp140.dll" },
+            @{ Name = "vcruntime140.dll"; Path = "C:\Windows\System32\vcruntime140.dll" },
+            @{ Name = "vcruntime140_1.dll"; Path = "C:\Windows\System32\vcruntime140_1.dll" }
+        )
+        
+        foreach ($dll in $runtimeDlls) {
+            if (Test-Path $dll.Path) {
+                try {
+                    Copy-Item $dll.Path $targetDir -Force
+                    Write-Host "✅ Copied runtime DLL: $($dll.Name)"
+                } catch {
+                    Write-Host "⚠️ Could not copy $($dll.Name): $($_.Exception.Message)"
+                }
+            } else {
+                Write-Host "⚠️ Runtime DLL not found: $($dll.Name)"
+            }
+        }
+
+    # Test Windows binary
+    - name: Test Windows binary
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        Write-Host "🧪 Testing Windows binary..."
+        
+        $binaryPath = "$env:GITHUB_WORKSPACE\binaries\whisper.exe"
+        
+        if (-not (Test-Path $binaryPath)) {
+            Write-Host "❌ Binary not found at: $binaryPath"
+            exit 1
+        }
+        
+        # Set PATH to include our binaries directory for DLL loading
+        $env:PATH = "$env:GITHUB_WORKSPACE\binaries;$env:PATH"
+        
+        try {
+            $process = Start-Process -FilePath $binaryPath -ArgumentList "--help" -Wait -NoNewWindow -PassThru -RedirectStandardOutput "test_output.txt" -RedirectStandardError "test_error.txt"
+            
+            if ($process.ExitCode -eq 0) {
+                Write-Host "✅ Binary test passed!"
+                
+                # Show some output
+                if (Test-Path "test_output.txt") {
+                    $output = Get-Content "test_output.txt" -Raw
+                    $firstLine = ($output -split "`n")[0]
+                    Write-Host "📋 Binary works: $firstLine"
+                }
+            } else {
+                Write-Host "⚠️ Binary test failed with exit code: $($process.ExitCode)"
+                
+                # Check for specific error codes
+                if ($process.ExitCode -eq 3221225781 -or $process.ExitCode -eq -1073741515) {
+                    Write-Host "❌ This appears to be a missing Visual C++ runtime issue"
+                    Write-Host "💡 The bundled vc_redist.x64.exe should fix this for end users"
+                } else {
+                    Write-Host "❌ Unknown error, but continuing with build..."
+                }
+                
+                if (Test-Path "test_error.txt") {
+                    $error = Get-Content "test_error.txt" -Raw
+                    Write-Host "Error output: $($error.Substring(0, [Math]::Min(200, $error.Length)))"
+                }
+            }
+        } catch {
+            Write-Host "⚠️ Binary test failed with exception: $($_.Exception.Message)"
+            Write-Host "💡 This may be resolved by the VC++ redistributable for end users"
+        } finally {
+            # Clean up test files
+            Remove-Item "test_output.txt" -ErrorAction SilentlyContinue
+            Remove-Item "test_error.txt" -ErrorAction SilentlyContinue
+        }
+        
+        # Show final directory contents
+        Write-Host "📋 Final binaries directory contents:"
+        Get-ChildItem "$env:GITHUB_WORKSPACE\binaries" | Format-Table Name, Length -AutoSize
 
     # Download tiny model for inclusion
     - name: Download tiny model
@@ -243,9 +374,9 @@ jobs:
     - name: Configure electron-builder (Unix) - FIXED
       if: runner.os != 'Windows'
       run: |
-        echo "🔧 Configuring electron-builder with BINARY PACKAGING..."
+        echo "🔧 Configuring electron-builder with BINARY PACKAGING and platform-specific naming..."
         
-        # Create electron-builder config with proper binary packaging
+        # Create electron-builder config with proper binary packaging and unique naming and unique naming
         cat > electron-builder-fixed.json << 'EOF'
         {
           "appId": "com.yourcompany.whisperdesk",
@@ -253,7 +384,7 @@ jobs:
           "directories": {
             "output": "dist"
           },
-          "artifactName": "${productName}-${version}-${arch}.${ext}",
+          "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
           "files": [
             "src/main/**/*",
             "src/renderer/whisperdesk-ui/dist/**/*",
@@ -326,14 +457,13 @@ jobs:
         }
         EOF
         
-        echo "✅ Electron-builder configuration created with BINARY PACKAGING"
-        echo "📋 Config includes extraResources for binaries/ directory"
+        echo "✅ Electron-builder configuration created with PLATFORM-SPECIFIC NAMING"
 
     - name: Configure electron-builder (Windows) - FIXED
       if: runner.os == 'Windows'
       shell: pwsh
       run: |
-        Write-Host "🔧 Configuring electron-builder with BINARY PACKAGING..."
+        Write-Host "🔧 Configuring electron-builder with BINARY PACKAGING and platform-specific naming..."
         
         # Create electron-builder config with proper binary packaging
         $config = @"
@@ -343,7 +473,7 @@ jobs:
           "directories": {
             "output": "dist"
           },
-          "artifactName": "`${productName}-`${version}-`${arch}.`${ext}",
+          "artifactName": "`${productName}-`${version}-`${os}-`${arch}.`${ext}",
           "files": [
             "src/main/**/*",
             "src/renderer/whisperdesk-ui/dist/**/*",
@@ -419,8 +549,7 @@ jobs:
         # Write to file
         $config | Out-File -FilePath "electron-builder-fixed.json" -Encoding UTF8
         
-        Write-Host "✅ Electron-builder configuration created with BINARY PACKAGING"
-        Write-Host "📋 Config includes extraResources for binaries/ directory"
+        Write-Host "✅ Electron-builder configuration created with PLATFORM-SPECIFIC NAMING"
 
     # Verify version before building
     - name: Verify version configuration
@@ -456,13 +585,6 @@ jobs:
         if [ -f "$BINARY_PATH" ]; then
           echo "✅ Binary exists at: $BINARY_PATH"
           ls -la "$BINARY_PATH"
-          
-          # Test the binary (allow failure since it might need models)
-          if [ "${{ runner.os }}" = "Windows" ]; then
-            ./binaries/whisper.exe --help || echo "Binary test failed but file exists"
-          else
-            ./binaries/whisper --help || echo "Binary test failed but file exists"
-          fi
         else
           echo "❌ Binary not found at: $BINARY_PATH"
           echo "📋 Contents of binaries directory:"
@@ -470,7 +592,7 @@ jobs:
           exit 1
         fi
 
-    # Build Electron app for specific platform - FIXED with proper binary packaging
+    # Build Electron app for specific platform
     - name: Build Electron app (macOS)
       if: matrix.platform == 'darwin'
       env:
@@ -489,63 +611,7 @@ jobs:
       if: matrix.platform == 'win32'
       env:
         CSC_IDENTITY_AUTO_DISCOVERY: false
-      shell: pwsh
       run: |
-        # Get required DLLs from whisper.cpp build
-        $whisperBuildDir = "C:\temp\whisper.cpp\build\bin\Release"
-        
-        # Create binaries directory if it doesn't exist
-        New-Item -ItemType Directory -Force -Path "binaries"
-        
-        # Copy whisper.exe and its dependencies
-        Copy-Item "$whisperBuildDir\whisper-cli.exe" "binaries\whisper.exe" -Force
-        Write-Host "✅ Copied whisper-cli.exe -> whisper.exe"
-        
-        # Copy required DLL files if they exist
-        $requiredDlls = @("ggml-base.dll", "ggml-cpu.dll", "ggml.dll", "whisper.dll")
-        $copiedDlls = @()
-        
-        foreach ($dll in $requiredDlls) {
-            $dllPath = Join-Path $whisperBuildDir $dll
-            if (Test-Path $dllPath) {
-                Copy-Item $dllPath "binaries\" -Force
-                $copiedDlls += $dll
-                Write-Host "✅ Copied DLL: $dll"
-            } else {
-                Write-Host "⚠️ DLL not found: $dll"
-            }
-        }
-        
-        # Copy any additional DLLs we might have missed
-        $additionalDlls = Get-ChildItem -Path "$whisperBuildDir" -Filter "*.dll" | Where-Object { $_.Name -notin $requiredDlls }
-        foreach ($dll in $additionalDlls) {
-            Copy-Item $dll.FullName "binaries\" -Force
-            $copiedDlls += $dll.Name
-            Write-Host "✅ Copied additional DLL: $($dll.Name)"
-        }
-        
-        Write-Host "📋 Total DLLs copied: $($copiedDlls.Count)"
-        Write-Host "📋 DLL list: $($copiedDlls -join ', ')"
-        
-        # Verify all files are in place
-        Write-Host "📋 Final binaries directory contents:"
-        Get-ChildItem "binaries" | Format-Table Name, Length -AutoSize
-        
-        # Test the binary with dependencies
-        Write-Host "🧪 Testing whisper.exe with dependencies..."
-        $env:PATH = "$(Get-Location)\binaries;$env:PATH"
-        try {
-            & "binaries\whisper.exe" --help | Out-Null
-            if ($LASTEXITCODE -eq 0) {
-                Write-Host "✅ Binary test passed - all dependencies found"
-            } else {
-                Write-Host "⚠️ Binary test failed with exit code: $LASTEXITCODE"
-            }
-        } catch {
-            Write-Host "⚠️ Binary test failed: $($_.Exception.Message)"
-        }
-        
-        # Build the application - USING FIXED CONFIG WITH BINARY PACKAGING
         npm run build:skip-whisper
         npx electron-builder ${{ matrix.electron_target }} --publish=never --config electron-builder-fixed.json
 
@@ -568,7 +634,7 @@ jobs:
         echo "📋 Built files:"
         find dist/ -type f -name "*.exe" -o -name "*.dmg" -o -name "*.zip" -o -name "*.AppImage" -o -name "*.deb" -o -name "*.rpm" -o -name "*.tar.gz" | sort
 
-    # FIXED: Upload artifacts with clear platform separation
+    # Upload artifacts with clear platform separation
     - name: Upload macOS artifacts
       if: matrix.platform == 'darwin'
       uses: actions/upload-artifact@v4
@@ -601,7 +667,7 @@ jobs:
           dist/*.zip
         retention-days: 30
 
-  # FIXED: Create release with proper file organization
+  # Create release with proper file organization
   release:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: build
@@ -691,20 +757,6 @@ jobs:
         echo "📋 Final release file structure:"
         find release-files/ -type f | sort
 
-    - name: Display structure of organized files
-      run: |
-        echo "📁 Organized file structure:"
-        ls -la release-files/
-        echo ""
-        echo "🖥️ Windows files:"
-        ls -la release-files/windows/ || echo "No Windows files"
-        echo ""
-        echo "🍎 macOS files:"
-        ls -la release-files/macos/ || echo "No macOS files"
-        echo ""
-        echo "🐧 Linux files:"
-        ls -la release-files/linux/ || echo "No Linux files"
-
     - name: Create Release
       uses: softprops/action-gh-release@v1
       with:
@@ -721,17 +773,20 @@ jobs:
           ### 📦 Download Options:
           
           **🖥️ Windows (64-bit only)**:
-          - `WhisperDesk-Enhanced-${{ steps.version.outputs.clean }}-x64.exe` - Installer
-          - `WhisperDesk-Enhanced-${{ steps.version.outputs.clean }}-x64.zip` - Portable version
+          - `WhisperDesk-Enhanced-${{ steps.version.outputs.clean }}-win-x64.exe` - Installer
+          - `WhisperDesk-Enhanced-${{ steps.version.outputs.clean }}-win-x64.zip` - Portable version
           
           **🍎 macOS**:
-          - `WhisperDesk-Enhanced-${{ steps.version.outputs.clean }}-x64.dmg` - Intel Macs
-          - `WhisperDesk-Enhanced-${{ steps.version.outputs.clean }}-arm64.dmg` - Apple Silicon Macs
+          - `WhisperDesk-Enhanced-${{ steps.version.outputs.clean }}-mac-x64.dmg` - Intel Macs
+          - `WhisperDesk-Enhanced-${{ steps.version.outputs.clean }}-mac-x64.zip` - Intel Macs (Portable)
+          - `WhisperDesk-Enhanced-${{ steps.version.outputs.clean }}-mac-arm64.dmg` - Apple Silicon Macs
+          - `WhisperDesk-Enhanced-${{ steps.version.outputs.clean }}-mac-arm64.zip` - Apple Silicon Macs (Portable)
           
           **🐧 Linux**:
-          - `WhisperDesk-Enhanced-${{ steps.version.outputs.clean }}-x64.AppImage` - Portable (recommended)
-          - `WhisperDesk-Enhanced-${{ steps.version.outputs.clean }}-x64.deb` - Debian/Ubuntu package
-          - `WhisperDesk-Enhanced-${{ steps.version.outputs.clean }}-x64.rpm` - Red Hat/Fedora package
+          - `WhisperDesk-Enhanced-${{ steps.version.outputs.clean }}-linux-x64.AppImage` - Portable (recommended)
+          - `WhisperDesk-Enhanced-${{ steps.version.outputs.clean }}-linux-x64.deb` - Debian/Ubuntu package
+          - `WhisperDesk-Enhanced-${{ steps.version.outputs.clean }}-linux-x64.rpm` - Red Hat/Fedora package
+          - `WhisperDesk-Enhanced-${{ steps.version.outputs.clean }}-linux-x64.tar.gz` - Generic Linux archive
           
           ### ✨ Features:
           - 🎵 Native whisper.cpp integration for fast, offline transcription
@@ -745,15 +800,15 @@ jobs:
           ### 🚀 Quick Start:
           1. **Download**: Choose the appropriate file for your platform above
           2. **Install**: 
-             - Windows: Run the installer or use portable version
-             - macOS: Open the .dmg and drag to Applications
-             - Linux: Make AppImage executable or install package
+             - Windows: Run the installer or extract the zip
+             - macOS: Open the .dmg and drag to Applications, or extract the zip
+             - Linux: Make AppImage executable, install package, or extract archive
           3. **Setup**: Launch WhisperDesk and go to Models tab
           4. **Download Model**: Download a transcription model (start with Tiny)
           5. **Transcribe**: Upload audio/video files and start transcribing!
           
           ### 🔧 Troubleshooting:
-          - **Windows**: Use the portable version if installer doesn't work
+          - **Windows**: If you get a "missing DLL" error, run the included `vc_redist.x64.exe` redistributable
           - **macOS**: Right-click → Open if blocked by Gatekeeper
           - **Linux**: `chmod +x *.AppImage` to make executable
           
