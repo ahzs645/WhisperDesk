@@ -1,62 +1,96 @@
 #!/bin/bash
 
-echo "🎙️  WhisperDesk Setup Script"
-echo "=========================="
-echo ""
+echo "🚀 WhisperDesk Native Setup Script"
+echo "=================================="
 
-# Check if we're in the right directory
-if [ ! -f "package.json" ]; then
-    echo "❌ Error: Please run this script from the WhisperDesk root directory"
+# Check if Node.js is installed
+if ! command -v node &> /dev/null; then
+    echo "❌ Node.js is not installed. Please install Node.js 18+ first."
     exit 1
 fi
 
+echo "✅ Node.js found: $(node --version)"
+
+# Install main dependencies
 echo "📦 Installing main dependencies..."
 npm install
 
-if [ $? -ne 0 ]; then
-    echo "❌ Failed to install main dependencies"
-    exit 1
-fi
-
-echo ""
-echo "🎨 Installing renderer dependencies..."
+# Install renderer dependencies
+echo "📦 Installing renderer dependencies..."
 cd src/renderer/whisperdesk-ui
 npm install --legacy-peer-deps
-
-if [ $? -ne 0 ]; then
-    echo "❌ Failed to install renderer dependencies"
-    exit 1
-fi
-
-echo ""
-echo "🔨 Building renderer..."
-npm run build
-
-if [ $? -ne 0 ]; then
-    echo "❌ Failed to build renderer"
-    exit 1
-fi
-
 cd ../../..
 
+# Check if whisper binary exists
+if [ -f "binaries/whisper" ]; then
+    echo "✅ Whisper binary found"
+    chmod +x binaries/whisper
+else
+    echo "⚠️  Whisper binary not found"
+    echo "📋 Choose setup option:"
+    echo "1) Build from source (recommended)"
+    echo "2) Skip binary setup (web interface only)"
+    read -p "Enter choice (1 or 2): " choice
+    
+    if [ "$choice" = "1" ]; then
+        echo "🔨 Building whisper.cpp from source..."
+        
+        # Check for build dependencies
+        if ! command -v make &> /dev/null; then
+            echo "Installing build dependencies..."
+            if command -v apt-get &> /dev/null; then
+                sudo apt-get update
+                sudo apt-get install -y build-essential cmake
+            elif command -v brew &> /dev/null; then
+                brew install cmake
+            else
+                echo "❌ Please install build tools (make, cmake) manually"
+                exit 1
+            fi
+        fi
+        
+        # Clone and build whisper.cpp
+        echo "📥 Cloning whisper.cpp..."
+        git clone https://github.com/ggerganov/whisper.cpp.git /tmp/whisper.cpp
+        
+        echo "🔨 Building whisper.cpp..."
+        cd /tmp/whisper.cpp
+        make -j$(nproc)
+        
+        echo "📋 Installing binary..."
+        mkdir -p "$OLDPWD/binaries"
+        cp build/bin/whisper-cli "$OLDPWD/binaries/whisper"
+        chmod +x "$OLDPWD/binaries/whisper"
+        cd "$OLDPWD"
+        
+        echo "✅ Whisper binary built and installed"
+    else
+        echo "⏭️  Skipping binary setup"
+    fi
+fi
+
+# Check for models
+echo "🔍 Checking for models..."
+MODELS_DIR="$HOME/.config/whisperdesk-enhanced/models"
+mkdir -p "$MODELS_DIR"
+
+if [ ! -f "$MODELS_DIR/ggml-tiny.bin" ]; then
+    echo "📥 Downloading tiny model for testing..."
+    wget -q --show-progress \
+        https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin \
+        -O "$MODELS_DIR/ggml-tiny.bin"
+    echo "✅ Tiny model downloaded"
+else
+    echo "✅ Models found"
+fi
+
 echo ""
-echo "✅ Setup complete!"
+echo "🎉 Setup complete!"
 echo ""
-echo "🚀 To start the application:"
-echo "   npm start"
+echo "📋 Next steps:"
+echo "1. Test native services: npm run test:native"
+echo "2. Start development: npm run dev"
+echo "3. Or start web interface: node transcription-server.js"
 echo ""
-echo "📋 Available commands:"
-echo "   npm start          - Start the application"
-echo "   npm run dev        - Start in development mode"
-echo "   npm run build      - Build for production"
-echo "   npm run dist       - Create distribution packages"
-echo ""
-echo "🎯 Features available:"
-echo "   • Model marketplace with 6 Whisper models"
-echo "   • Drag-and-drop file transcription"
-echo "   • File picker for audio/video files"
-echo "   • Recording with microphone"
-echo "   • System audio recording (What U Hear)"
-echo "   • Combined microphone + system audio"
-echo ""
+echo "📖 See SETUP_GUIDE.md for detailed instructions"
 
