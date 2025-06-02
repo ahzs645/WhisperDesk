@@ -1,4 +1,4 @@
-# .github/workflows/main.yml - FIXED VERSION with modern whisper.cpp build
+# .github/workflows/main.yml - FIXED VERSION with proper artifact separation
 name: Build WhisperDesk for All Platforms
 
 on:
@@ -23,18 +23,26 @@ jobs:
             platform: darwin
             arch: x64
             artifact: WhisperDesk-mac-x64
+            electron_arch: x64
+            electron_target: --mac --x64
           - os: macos-latest
             platform: darwin
             arch: arm64
             artifact: WhisperDesk-mac-arm64
+            electron_arch: arm64
+            electron_target: --mac --arm64
           - os: ubuntu-latest
             platform: linux
             arch: x64
             artifact: WhisperDesk-linux-x64
+            electron_arch: x64
+            electron_target: --linux --x64
           - os: windows-latest
             platform: win32
             arch: x64
             artifact: WhisperDesk-windows-x64
+            electron_arch: x64
+            electron_target: --win --x64
 
     runs-on: ${{ matrix.os }}
 
@@ -181,6 +189,68 @@ jobs:
         cd src/renderer/whisperdesk-ui
         pnpm run build
 
+    # Configure electron-builder to prevent unwanted architectures
+    - name: Configure electron-builder
+      run: |
+        echo "🔧 Configuring electron-builder to build only intended architectures..."
+        
+        # Create or update electron-builder config to explicitly specify architectures
+        cat > electron-builder-override.json << 'EOF'
+        {
+          "appId": "com.yourcompany.whisperdesk",
+          "productName": "WhisperDesk Enhanced",
+          "directories": {
+            "output": "dist"
+          },
+          "win": {
+            "target": [
+              {
+                "target": "nsis",
+                "arch": ["x64"]
+              },
+              {
+                "target": "zip",
+                "arch": ["x64"]
+              }
+            ]
+          },
+          "mac": {
+            "target": [
+              {
+                "target": "dmg",
+                "arch": ["x64", "arm64"]
+              },
+              {
+                "target": "zip",
+                "arch": ["x64", "arm64"]
+              }
+            ]
+          },
+          "linux": {
+            "target": [
+              {
+                "target": "AppImage",
+                "arch": ["x64"]
+              },
+              {
+                "target": "deb",
+                "arch": ["x64"]
+              },
+              {
+                "target": "rpm",
+                "arch": ["x64"]
+              },
+              {
+                "target": "tar.gz",
+                "arch": ["x64"]
+              }
+            ]
+          }
+        }
+        EOF
+        
+        echo "✅ Electron-builder configuration created"
+
     # Verify binary before building Electron app
     - name: Verify whisper binary
       shell: bash
@@ -210,22 +280,20 @@ jobs:
           exit 1
         fi
 
-    # Build Electron app for specific platform
-    - name: Build Electron app (macOS x64)
-      if: matrix.platform == 'darwin' && matrix.arch == 'x64'
+    # Build Electron app for specific platform - FIXED ARCHITECTURE HANDLING
+    - name: Build Electron app (macOS)
+      if: matrix.platform == 'darwin'
       env:
         CSC_IDENTITY_AUTO_DISCOVERY: false
-      run: npm run build:skip-whisper && npx electron-builder --mac --x64 --publish=never
-
-    - name: Build Electron app (macOS ARM64)
-      if: matrix.platform == 'darwin' && matrix.arch == 'arm64'
-      env:
-        CSC_IDENTITY_AUTO_DISCOVERY: false
-      run: npm run build:skip-whisper && npx electron-builder --mac --arm64 --publish=never
+      run: |
+        npm run build:skip-whisper
+        npx electron-builder ${{ matrix.electron_target }} --publish=never --config electron-builder-override.json
 
     - name: Build Electron app (Linux)
       if: matrix.platform == 'linux'
-      run: npm run build:skip-whisper && npx electron-builder --linux --publish=never
+      run: |
+        npm run build:skip-whisper
+        npx electron-builder ${{ matrix.electron_target }} --publish=never --config electron-builder-override.json
 
     - name: Build Electron app (Windows)
       if: matrix.platform == 'win32'
@@ -287,11 +355,30 @@ jobs:
             Write-Host "⚠️ Binary test failed: $($_.Exception.Message)"
         }
         
-        # Build the application
+        # Build the application - ONLY x64, NO ia32
         npm run build:skip-whisper
-        npx electron-builder --win --publish=never
+        npx electron-builder ${{ matrix.electron_target }} --publish=never --config electron-builder-override.json
 
-    # Upload artifacts
+    # VERIFY: Check for unwanted ia32 builds
+    - name: Verify no ia32 builds created
+      shell: bash
+      run: |
+        echo "🔍 Checking for unwanted ia32/32-bit builds..."
+        
+        # Check for ia32 in filenames
+        if find dist/ -name "*ia32*" 2>/dev/null | grep -q .; then
+          echo "❌ ERROR: Found ia32 builds when only x64 was expected!"
+          find dist/ -name "*ia32*"
+          exit 1
+        else
+          echo "✅ No ia32 builds found - good!"
+        fi
+        
+        # List all built files for verification
+        echo "📋 Built files:"
+        find dist/ -type f -name "*.exe" -o -name "*.dmg" -o -name "*.zip" -o -name "*.AppImage" -o -name "*.deb" -o -name "*.rpm" -o -name "*.tar.gz" | sort
+
+    # FIXED: Upload artifacts with clear platform separation
     - name: Upload macOS artifacts
       if: matrix.platform == 'darwin'
       uses: actions/upload-artifact@v4
@@ -324,7 +411,7 @@ jobs:
           dist/*.zip
         retention-days: 30
 
-  # Create release if this is a tag
+  # FIXED: Create release with proper file organization
   release:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: build
@@ -346,16 +433,83 @@ jobs:
       with:
         path: artifacts
 
-    - name: Display structure of downloaded files
+    - name: Organize release files
       run: |
-        echo "Artifact structure:"
-        ls -la artifacts/
-        find artifacts/ -type f -name "*.dmg" -o -name "*.zip" -o -name "*.exe" -o -name "*.AppImage" -o -name "*.deb" -o -name "*.rpm" | head -20
+        echo "🔧 Organizing release files by platform with deduplication..."
+        mkdir -p release-files
+        
+        # Function to copy file with unique naming if duplicate exists
+        copy_unique() {
+          local src="$1"
+          local dst="$2"
+          local filename=$(basename "$src")
+          local counter=1
+          local target="$dst/$filename"
+          
+          # If file already exists, add counter
+          while [ -f "$target" ]; do
+            local base="${filename%.*}"
+            local ext="${filename##*.}"
+            if [ "$base" = "$filename" ]; then
+              # No extension
+              target="$dst/${base}-${counter}"
+            else
+              # Has extension
+              target="$dst/${base}-${counter}.${ext}"
+            fi
+            counter=$((counter + 1))
+          done
+          
+          cp "$src" "$target"
+          echo "📁 Copied: $src -> $target"
+        }
+        
+        # Process each artifact directory
+        for artifact_dir in artifacts/*/; do
+          echo "🔍 Processing: $artifact_dir"
+          
+          # Determine platform from directory name
+          if [[ "$artifact_dir" == *"windows"* ]]; then
+            platform="windows"
+          elif [[ "$artifact_dir" == *"mac"* ]]; then
+            platform="macos"
+          elif [[ "$artifact_dir" == *"linux"* ]]; then
+            platform="linux"
+          else
+            echo "⚠️ Unknown platform for $artifact_dir, skipping..."
+            continue
+          fi
+          
+          # Create platform directory
+          mkdir -p "release-files/$platform"
+          
+          # Copy files with deduplication
+          find "$artifact_dir" -type f \( -name "*.exe" -o -name "*.dmg" -o -name "*.zip" -o -name "*.AppImage" -o -name "*.deb" -o -name "*.rpm" -o -name "*.tar.gz" \) | while read -r file; do
+            copy_unique "$file" "release-files/$platform"
+          done
+        done
+        
+        echo "📋 Final release file structure:"
+        find release-files/ -type f | sort
+
+    - name: Display structure of organized files
+      run: |
+        echo "📁 Organized file structure:"
+        ls -la release-files/
+        echo ""
+        echo "🖥️ Windows files:"
+        ls -la release-files/windows/ || echo "No Windows files"
+        echo ""
+        echo "🍎 macOS files:"
+        ls -la release-files/macos/ || echo "No macOS files"
+        echo ""
+        echo "🐧 Linux files:"
+        ls -la release-files/linux/ || echo "No Linux files"
 
     - name: Create Release
       uses: softprops/action-gh-release@v1
       with:
-        files: artifacts/**/*
+        files: release-files/**/*
         draft: false
         prerelease: false
         generate_release_notes: true
@@ -366,10 +520,19 @@ jobs:
           🎉 **New Release Available!**
           
           ### 📦 Download Options:
-          - **Windows**: `WhisperDesk-windows-x64.exe` 
-          - **macOS Intel**: `WhisperDesk-mac-x64.dmg`
-          - **macOS Apple Silicon**: `WhisperDesk-mac-arm64.dmg`
-          - **Linux**: `WhisperDesk-linux-x64.AppImage` (portable) or `.deb`/`.rpm` packages
+          
+          **🖥️ Windows (64-bit only)**:
+          - `WhisperDesk-Enhanced-*-x64.exe` - Installer
+          - `WhisperDesk-Enhanced-*-x64.zip` - Portable version
+          
+          **🍎 macOS**:
+          - `WhisperDesk-Enhanced-*-mac-x64.dmg` - Intel Macs
+          - `WhisperDesk-Enhanced-*-mac-arm64.dmg` - Apple Silicon Macs
+          
+          **🐧 Linux**:
+          - `WhisperDesk-Enhanced-*-linux-x64.AppImage` - Portable (recommended)
+          - `WhisperDesk-Enhanced-*-linux-x64.deb` - Debian/Ubuntu package
+          - `WhisperDesk-Enhanced-*-linux-x64.rpm` - Red Hat/Fedora package
           
           ### ✨ Features:
           - 🎵 Native whisper.cpp integration for fast, offline transcription
@@ -381,11 +544,21 @@ jobs:
           - 🎨 Modern, responsive UI
           
           ### 🚀 Quick Start:
-          1. Download the appropriate file for your platform
-          2. Install and launch WhisperDesk
-          3. Go to Models tab and download a transcription model
-          4. Upload audio/video files and start transcribing!
+          1. **Download**: Choose the appropriate file for your platform above
+          2. **Install**: 
+             - Windows: Run the installer or use portable version
+             - macOS: Open the .dmg and drag to Applications
+             - Linux: Make AppImage executable or install package
+          3. **Setup**: Launch WhisperDesk and go to Models tab
+          4. **Download Model**: Download a transcription model (start with Tiny)
+          5. **Transcribe**: Upload audio/video files and start transcribing!
           
+          ### 🔧 Troubleshooting:
+          - **Windows**: Use the portable version if installer doesn't work
+          - **macOS**: Right-click → Open if blocked by Gatekeeper
+          - **Linux**: `chmod +x *.AppImage` to make executable
+          
+          ---
           Auto-generated release notes below ⬇️
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
