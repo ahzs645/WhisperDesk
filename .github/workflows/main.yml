@@ -232,7 +232,64 @@ jobs:
       env:
         CSC_IDENTITY_AUTO_DISCOVERY: false
       shell: pwsh
-      run: npm run build:skip-whisper; npx electron-builder --win --publish=never
+      run: |
+        # Get required DLLs from whisper.cpp build
+        $whisperBuildDir = "C:\temp\whisper.cpp\build\bin\Release"
+        
+        # Create binaries directory if it doesn't exist
+        New-Item -ItemType Directory -Force -Path "binaries"
+        
+        # Copy whisper.exe and its dependencies
+        Copy-Item "$whisperBuildDir\whisper-cli.exe" "binaries\whisper.exe" -Force
+        Write-Host "✅ Copied whisper-cli.exe -> whisper.exe"
+        
+        # Copy required DLL files if they exist
+        $requiredDlls = @("ggml-base.dll", "ggml-cpu.dll", "ggml.dll", "whisper.dll")
+        $copiedDlls = @()
+        
+        foreach ($dll in $requiredDlls) {
+            $dllPath = Join-Path $whisperBuildDir $dll
+            if (Test-Path $dllPath) {
+                Copy-Item $dllPath "binaries\" -Force
+                $copiedDlls += $dll
+                Write-Host "✅ Copied DLL: $dll"
+            } else {
+                Write-Host "⚠️ DLL not found: $dll"
+            }
+        }
+        
+        # Copy any additional DLLs we might have missed
+        $additionalDlls = Get-ChildItem -Path "$whisperBuildDir" -Filter "*.dll" | Where-Object { $_.Name -notin $requiredDlls }
+        foreach ($dll in $additionalDlls) {
+            Copy-Item $dll.FullName "binaries\" -Force
+            $copiedDlls += $dll.Name
+            Write-Host "✅ Copied additional DLL: $($dll.Name)"
+        }
+        
+        Write-Host "📋 Total DLLs copied: $($copiedDlls.Count)"
+        Write-Host "📋 DLL list: $($copiedDlls -join ', ')"
+        
+        # Verify all files are in place
+        Write-Host "📋 Final binaries directory contents:"
+        Get-ChildItem "binaries" | Format-Table Name, Length -AutoSize
+        
+        # Test the binary with dependencies
+        Write-Host "🧪 Testing whisper.exe with dependencies..."
+        $env:PATH = "$(Get-Location)\binaries;$env:PATH"
+        try {
+            & "binaries\whisper.exe" --help | Out-Null
+            if ($LASTEXITCODE -eq 0) {
+                Write-Host "✅ Binary test passed - all dependencies found"
+            } else {
+                Write-Host "⚠️ Binary test failed with exit code: $LASTEXITCODE"
+            }
+        } catch {
+            Write-Host "⚠️ Binary test failed: $($_.Exception.Message)"
+        }
+        
+        # Build the application
+        npm run build:skip-whisper
+        npx electron-builder --win --publish=never
 
     # Upload artifacts
     - name: Upload macOS artifacts

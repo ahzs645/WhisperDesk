@@ -157,9 +157,9 @@
       "artifactName": "${productName}-${version}-${arch}.${ext}",
       "extraFiles": [
         {
-          "from": "binaries/whisper.exe",
-          "to": "whisper.exe",
-          "filter": ["**/*"]
+          "from": "binaries",
+          "to": ".",
+          "filter": ["*.exe", "*.dll"]
         }
       ]
     },

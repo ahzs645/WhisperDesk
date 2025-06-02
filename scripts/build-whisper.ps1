@@ -117,15 +117,14 @@ if (-not (Test-Path $BinariesDir)) {
 $FinalBinary = Join-Path $BinariesDir "whisper.exe"
 Copy-Item $WhisperBinary $FinalBinary -Force
 
-# Verify the copied binary
-Write-Host "Verifying copied binary..." -ForegroundColor Blue
+# Verify the copied binary and dependencies
+Write-Host "Verifying copied binary and dependencies..." -ForegroundColor Blue
 if (Test-Path $FinalBinary) {
     Write-Host "✅ Binary copied successfully to: $FinalBinary" -ForegroundColor Green
     
-    # Get file info
-    $FileInfo = Get-Item $FinalBinary
-    Write-Host "File size: $($FileInfo.Length) bytes" -ForegroundColor Cyan
-    Write-Host "Last modified: $($FileInfo.LastWriteTime)" -ForegroundColor Cyan
+    # List all files in binaries directory
+    Write-Host "📋 Files in binaries directory:" -ForegroundColor Cyan
+    Get-ChildItem $BinariesDir | Format-Table Name, Length, LastWriteTime -AutoSize
     
     # Test the final binary
     try {
@@ -134,9 +133,11 @@ if (Test-Path $FinalBinary) {
             Write-Host "✅ Final binary test passed" -ForegroundColor Green
         } else {
             Write-Host "⚠️ Final binary test failed, but file exists" -ForegroundColor Yellow
+            Write-Host "Exit code: $LASTEXITCODE" -ForegroundColor Yellow
         }
     } catch {
         Write-Host "⚠️ Final binary test failed, but file exists" -ForegroundColor Yellow
+        Write-Host "Error: $($_.Exception.Message)" -ForegroundColor Yellow
     }
 } else {
     Write-Host "❌ Failed to copy binary" -ForegroundColor Red

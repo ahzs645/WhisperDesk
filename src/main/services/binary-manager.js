@@ -70,43 +70,115 @@ class BinaryManager {
   }
 
   async ensureWhisperBinary() {
-    const binaryPath = this.getWhisperBinaryPath();
+    const binaryPath = this.getWhisperBinaryPath()
     
-    console.log(`Checking for whisper binary at: ${binaryPath}`);
+    console.log(`Checking for whisper binary at: ${binaryPath}`)
     
     try {
-      await fs.access(binaryPath);
+      await fs.access(binaryPath)
       
       // Check if it's executable
       if (this.platform !== 'win32') {
-        const stats = await fs.stat(binaryPath);
+        const stats = await fs.stat(binaryPath)
         if (!(stats.mode & 0o111)) {
-          console.log('Making binary executable...');
-          await fs.chmod(binaryPath, 0o755);
+          console.log('Making binary executable...')
+          await fs.chmod(binaryPath, 0o755)
         }
       }
       
+      // On Windows, check for required DLL dependencies
+      if (this.platform === 'win32') {
+        await this.checkWindowsDependencies(binaryPath)
+      }
+      
       // Test the binary
-      await this.testBinary();
-      console.log('✅ Whisper binary found and working');
+      await this.testBinary()
+      console.log('✅ Whisper binary found and working')
       
     } catch (error) {
       if (this.isPackaged) {
         // In packaged app, binary should be included - this is an error
-        console.error('❌ Whisper binary not found in packaged app:', binaryPath);
-        throw new Error(`Whisper binary not found in packaged app. Expected at: ${binaryPath}`);
+        console.error('❌ Whisper binary not found in packaged app:', binaryPath)
+        throw new Error(`Whisper binary not found in packaged app. Expected at: ${binaryPath}`)
       } else {
         // In development, give helpful instructions
-        console.log('⚠️ Whisper binary not available in development mode');
-        console.log('💡 To build the whisper binary:');
-        console.log('   npm run build:whisper');
-        console.log('   OR');
-        console.log('   chmod +x scripts/build-whisper.sh && ./scripts/build-whisper.sh');
-        console.log('');
-        console.log('📋 Note: The app will work in web mode without the binary');
+        console.log('⚠️ Whisper binary not available in development mode')
+        console.log('💡 To build the whisper binary:')
+        console.log('   npm run build:whisper')
+        console.log('   OR')
+        console.log('   chmod +x scripts/build-whisper.sh && ./scripts/build-whisper.sh')
+        console.log('')
+        console.log('📋 Note: The app will work in web mode without the binary')
         
         // Don't throw error in development - allow graceful degradation
       }
+    }
+  }
+
+  async checkWindowsDependencies(binaryPath) {
+    const binaryDir = path.dirname(binaryPath)
+    const requiredDlls = [
+      'ggml-base.dll',
+      'ggml-cpu.dll', 
+      'ggml.dll',
+      'whisper.dll'
+    ]
+    
+    console.log('Checking for required DLL dependencies...')
+    
+    const missingDlls = []
+    const foundDlls = []
+    
+    for (const dll of requiredDlls) {
+      const dllPath = path.join(binaryDir, dll)
+      try {
+        await fs.access(dllPath)
+        const stats = await fs.stat(dllPath)
+        foundDlls.push({ name: dll, size: stats.size })
+        console.log(`✅ Found: ${dll} (${stats.size} bytes)`)
+      } catch (error) {
+        console.log(`❌ Missing: ${dll}`)
+        missingDlls.push(dll)
+      }
+    }
+    
+    // Check for any additional DLL files
+    try {
+      const files = await fs.readdir(binaryDir)
+      const additionalDlls = files.filter(file => 
+        file.endsWith('.dll') && !requiredDlls.includes(file)
+      )
+      
+      if (additionalDlls.length > 0) {
+        console.log(`📋 Additional DLLs found: ${additionalDlls.join(', ')}`)
+      }
+    } catch (error) {
+      console.warn('Could not list directory contents:', error.message)
+    }
+    
+    if (missingDlls.length > 0) {
+      console.warn(`⚠️ Missing DLL dependencies: ${missingDlls.join(', ')}`)
+      
+      if (this.isPackaged) {
+        // In packaged app, missing DLLs are a serious issue
+        const errorMsg = `Missing required DLL dependencies: ${missingDlls.join(', ')}. ` +
+          `Please ensure all whisper.cpp DLLs are packaged with the application. ` +
+          `Found DLLs: ${foundDlls.map(d => d.name).join(', ')}`
+        
+        throw new Error(errorMsg)
+      } else {
+        // In development, warn but don't fail
+        console.warn('This may cause the whisper binary to fail at runtime')
+        console.warn('💡 You may need to rebuild whisper.cpp or copy DLL files manually')
+      }
+    } else {
+      console.log(`✅ All required DLLs found (${foundDlls.length} files)`)
+    }
+    
+    return {
+      allFound: missingDlls.length === 0,
+      missing: missingDlls,
+      found: foundDlls
     }
   }
 
