@@ -94,8 +94,10 @@ if $CONVERT_CMD \
     resources/icons/64x64.png \
     resources/icons/128x128.png \
     resources/icons/256x256.png \
-    resources/windows/icon.ico 2>/dev/null; then
+    resources/icons/icon.ico 2>/dev/null; then
     echo "  ✅ Created icon.ico"
+    # Also copy to windows folder
+    cp resources/icons/icon.ico resources/windows/icon.ico
 else
     echo "  ⚠️  Could not create ICO file automatically"
     echo "     You can create it manually with GIMP or online converters"
@@ -121,8 +123,10 @@ if [[ "$OSTYPE" == "darwin"* ]]; then
     cp resources/icons/1024x1024.png resources/macos/AppIcon.iconset/icon_512x512@2x.png
     
     # Create ICNS file
-    if iconutil -c icns resources/macos/AppIcon.iconset -o resources/macos/icon.icns 2>/dev/null; then
+    if iconutil -c icns resources/macos/AppIcon.iconset -o resources/icons/icon.icns 2>/dev/null; then
         echo "  ✅ Created icon.icns"
+        # Also copy to macos folder
+        cp resources/icons/icon.icns resources/macos/icon.icns
         rm -rf resources/macos/AppIcon.iconset  # Clean up
     else
         echo "  ⚠️  Could not create ICNS file"
@@ -138,10 +142,15 @@ echo -e "${GREEN}✨ Icon generation complete!${NC}"
 echo "================================================"
 echo ""
 echo "📁 Generated files:"
-echo "  resources/icons/        - All PNG sizes"
+echo "  resources/icons/        - All PNG sizes + main ICO/ICNS files"
 echo "  resources/macos/        - macOS specific files"
 echo "  resources/windows/      - Windows specific files"  
 echo "  resources/linux/        - Linux specific files"
+echo ""
+echo "🎯 Key files for electron-builder:"
+echo "  resources/icons/icon.icns    - macOS app icon"
+echo "  resources/icons/icon.ico     - Windows app icon"
+echo "  resources/icons/512x512.png - Linux app icon"
 echo ""
 echo "🎯 Next steps:"
 echo "  1. Copy the appropriate files to your app project"
