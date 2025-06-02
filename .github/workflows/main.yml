@@ -59,8 +59,8 @@ jobs:
       run: |
         # Install Xcode command line tools if not present
         xcode-select --install || true
-        # Install cmake via homebrew
-        brew install cmake
+        # Install cmake via homebrew (explicitly specify formula to avoid warning)
+        brew install --formula cmake
 
     - name: Install Windows dependencies
       if: runner.os == 'Windows'
