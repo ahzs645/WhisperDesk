@@ -118,37 +118,6 @@ jobs:
           echo "APP_VERSION=$CURRENT_VERSION" >> $GITHUB_ENV
         fi
 
-    # Extract version from tag and update package.json
-    - name: Set version from tag
-      shell: bash
-      run: |
-        if [ "${{ github.ref_type }}" = "tag" ]; then
-          # Extract version from tag (remove 'v' prefix)
-          VERSION="${{ github.ref_name }}"
-          VERSION="${VERSION#v}"  # Remove 'v' prefix if present
-          
-          echo "🏷️ Setting version to: $VERSION"
-          
-          # Update main package.json
-          if command -v jq &> /dev/null; then
-            # Use jq if available
-            jq --arg version "$VERSION" '.version = $version' package.json > package.json.tmp && mv package.json.tmp package.json
-          else
-            # Fallback to sed
-            sed -i.bak "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" package.json
-          fi
-          
-          echo "✅ Updated main package.json version to: $VERSION"
-          grep '"version"' package.json
-          
-          # Also set as environment variable for electron-builder
-          echo "APP_VERSION=$VERSION" >> $GITHUB_ENV
-        else
-          echo "🔧 Not a tag build, keeping existing version"
-          CURRENT_VERSION=$(node -p "require('./package.json').version")
-          echo "APP_VERSION=$CURRENT_VERSION" >> $GITHUB_ENV
-        fi
-
     # Install main dependencies
     - name: Install main dependencies
       run: npm install
@@ -403,24 +372,6 @@ jobs:
 
     # Verify version before building
     - name: Verify version configuration
-      run: |
-        echo "🔍 Verifying version configuration..."
-        echo "📋 Git ref: ${{ github.ref }}"
-        echo "📋 Git ref type: ${{ github.ref_type }}"
-        echo "📋 Git ref name: ${{ github.ref_name }}"
-        echo "📋 App version (env): $APP_VERSION"
-        echo "📋 Package.json version: $(node -p "require('./package.json').version")"
-        
-        # Verify versions match
-        PACKAGE_VERSION=$(node -p "require('./package.json').version")
-        if [ "$APP_VERSION" != "$PACKAGE_VERSION" ]; then
-          echo "⚠️ Warning: Environment version ($APP_VERSION) differs from package.json ($PACKAGE_VERSION)"
-        else
-          echo "✅ Version consistency verified: $APP_VERSION"
-        fi
-
-    # Verify version before building
-    - name: Verify version configuration
       shell: bash
       run: |
         echo "🔍 Verifying version configuration..."
@@ -620,6 +571,15 @@ jobs:
       with:
         path: artifacts
 
+    - name: Set clean version for release notes
+      id: version
+      run: |
+        # Extract clean version (without 'v' prefix) for release notes
+        CLEAN_VERSION="${{ github.ref_name }}"
+        CLEAN_VERSION="${CLEAN_VERSION#v}"
+        echo "clean=$CLEAN_VERSION" >> $GITHUB_OUTPUT
+        echo "🏷️ Clean version for release notes: $CLEAN_VERSION"
+
     - name: Organize release files
       run: |
         echo "🔧 Organizing release files by platform with deduplication..."
@@ -709,17 +669,17 @@ jobs:
           ### 📦 Download Options:
           
           **🖥️ Windows (64-bit only)**:
-          - `WhisperDesk-Enhanced-${{ github.ref_name == github.ref_name && startsWith(github.ref_name, 'v') && substring(github.ref_name, 1) || github.ref_name }}-x64.exe` - Installer
-          - `WhisperDesk-Enhanced-${{ github.ref_name == github.ref_name && startsWith(github.ref_name, 'v') && substring(github.ref_name, 1) || github.ref_name }}-x64.zip` - Portable version
+          - `WhisperDesk-Enhanced-${{ steps.version.outputs.clean }}-x64.exe` - Installer
+          - `WhisperDesk-Enhanced-${{ steps.version.outputs.clean }}-x64.zip` - Portable version
           
           **🍎 macOS**:
-          - `WhisperDesk-Enhanced-${{ github.ref_name == github.ref_name && startsWith(github.ref_name, 'v') && substring(github.ref_name, 1) || github.ref_name }}-x64.dmg` - Intel Macs
-          - `WhisperDesk-Enhanced-${{ github.ref_name == github.ref_name && startsWith(github.ref_name, 'v') && substring(github.ref_name, 1) || github.ref_name }}-arm64.dmg` - Apple Silicon Macs
+          - `WhisperDesk-Enhanced-${{ steps.version.outputs.clean }}-x64.dmg` - Intel Macs
+          - `WhisperDesk-Enhanced-${{ steps.version.outputs.clean }}-arm64.dmg` - Apple Silicon Macs
           
           **🐧 Linux**:
-          - `WhisperDesk-Enhanced-${{ github.ref_name == github.ref_name && startsWith(github.ref_name, 'v') && substring(github.ref_name, 1) || github.ref_name }}-x64.AppImage` - Portable (recommended)
-          - `WhisperDesk-Enhanced-${{ github.ref_name == github.ref_name && startsWith(github.ref_name, 'v') && substring(github.ref_name, 1) || github.ref_name }}-x64.deb` - Debian/Ubuntu package
-          - `WhisperDesk-Enhanced-${{ github.ref_name == github.ref_name && startsWith(github.ref_name, 'v') && substring(github.ref_name, 1) || github.ref_name }}-x64.rpm` - Red Hat/Fedora package
+          - `WhisperDesk-Enhanced-${{ steps.version.outputs.clean }}-x64.AppImage` - Portable (recommended)
+          - `WhisperDesk-Enhanced-${{ steps.version.outputs.clean }}-x64.deb` - Debian/Ubuntu package
+          - `WhisperDesk-Enhanced-${{ steps.version.outputs.clean }}-x64.rpm` - Red Hat/Fedora package
           
           ### ✨ Features:
           - 🎵 Native whisper.cpp integration for fast, offline transcription
