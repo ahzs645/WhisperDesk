@@ -1,0 +1,200 @@
+# .github/workflows/build.yml
+name: Build WhisperDesk for All Platforms
+
+on:
+  push:
+    branches: [ main, release ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: macos-latest
+            platform: darwin
+            arch: x64
+            artifact: WhisperDesk-mac-x64
+          - os: macos-latest
+            platform: darwin
+            arch: arm64
+            artifact: WhisperDesk-mac-arm64
+          - os: ubuntu-latest
+            platform: linux
+            arch: x64
+            artifact: WhisperDesk-linux-x64
+          - os: windows-latest
+            platform: win32
+            arch: x64
+            artifact: WhisperDesk-windows-x64
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+
+    - name: Setup pnpm
+      uses: pnpm/action-setup@v4
+      with:
+        version: latest
+
+    # Platform-specific dependencies
+    - name: Install Linux dependencies
+      if: runner.os == 'Linux'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential cmake libasound2-dev
+        # For AppImage creation
+        sudo apt-get install -y fuse libfuse2
+
+    - name: Install macOS dependencies
+      if: runner.os == 'macOS'
+      run: |
+        # Install Xcode command line tools if not present
+        xcode-select --install || true
+        # Install cmake via homebrew
+        brew install cmake
+
+    - name: Install Windows dependencies
+      if: runner.os == 'Windows'
+      run: |
+        # Install Visual Studio Build Tools
+        choco install visualstudio2022buildtools --package-parameters "--add Microsoft.VisualStudio.Workload.VCTools"
+        # Install cmake
+        choco install cmake
+
+    # Install main dependencies
+    - name: Install main dependencies
+      run: npm install
+
+    # Install renderer dependencies
+    - name: Install renderer dependencies
+      run: |
+        cd src/renderer/whisperdesk-ui
+        pnpm install --frozen-lockfile
+
+    # Build whisper.cpp from source
+    - name: Build whisper.cpp (Linux/macOS)
+      if: runner.os != 'Windows'
+      run: |
+        git clone https://github.com/ggerganov/whisper.cpp.git /tmp/whisper.cpp
+        cd /tmp/whisper.cpp
+        make -j$(nproc 2>/dev/null || sysctl -n hw.ncpu || echo 4)
+        mkdir -p binaries
+        cp build/bin/whisper-cli ./binaries/whisper 2>/dev/null || cp whisper-cli ./binaries/whisper
+        chmod +x ./binaries/whisper
+        # Copy to project
+        cp ./binaries/whisper $GITHUB_WORKSPACE/binaries/whisper
+
+    - name: Build whisper.cpp (Windows)
+      if: runner.os == 'Windows'
+      run: |
+        git clone https://github.com/ggerganov/whisper.cpp.git C:\temp\whisper.cpp
+        cd C:\temp\whisper.cpp
+        mkdir build
+        cd build
+        cmake .. -DCMAKE_BUILD_TYPE=Release
+        cmake --build . --config Release
+        # Copy to project
+        mkdir -p $env:GITHUB_WORKSPACE\binaries
+        copy bin\Release\whisper-cli.exe $env:GITHUB_WORKSPACE\binaries\whisper.exe
+
+    # Download tiny model for inclusion
+    - name: Download tiny model
+      run: |
+        mkdir -p models
+        curl -L -o models/ggml-tiny.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin
+
+    # Build renderer
+    - name: Build renderer
+      run: |
+        cd src/renderer/whisperdesk-ui
+        pnpm run build
+
+    # Build Electron app for specific platform
+    - name: Build Electron app (macOS x64)
+      if: matrix.platform == 'darwin' && matrix.arch == 'x64'
+      env:
+        CSC_IDENTITY_AUTO_DISCOVERY: false
+      run: npm run dist:mac -- --x64
+
+    - name: Build Electron app (macOS arm64)
+      if: matrix.platform == 'darwin' && matrix.arch == 'arm64'
+      env:
+        CSC_IDENTITY_AUTO_DISCOVERY: false
+      run: npm run dist:mac -- --arm64
+
+    - name: Build Electron app (Linux)
+      if: matrix.platform == 'linux'
+      run: npm run dist:linux
+
+    - name: Build Electron app (Windows)
+      if: matrix.platform == 'win32'
+      env:
+        CSC_LINK: ""
+      run: npm run dist:win
+
+    # Upload artifacts
+    - name: Upload macOS artifacts
+      if: matrix.platform == 'darwin'
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.artifact }}
+        path: |
+          dist/*.dmg
+          dist/*.zip
+        retention-days: 30
+
+    - name: Upload Linux artifacts
+      if: matrix.platform == 'linux'
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.artifact }}
+        path: |
+          dist/*.AppImage
+          dist/*.deb
+          dist/*.rpm
+          dist/*.tar.gz
+        retention-days: 30
+
+    - name: Upload Windows artifacts
+      if: matrix.platform == 'win32'
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.artifact }}
+        path: |
+          dist/*.exe
+          dist/*.zip
+        retention-days: 30
+
+  # Create release if this is a tag
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: artifacts
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: artifacts/**/*
+        draft: false
+        prerelease: false
+        generate_release_notes: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
