@@ -2,21 +2,49 @@
 
 A powerful desktop transcription application powered by native whisper.cpp with persistent state management and real-time progress feedback.
 
-## 🚀 Quick Start
+## 📦 Download & Install (Recommended)
 
-### Automated Setup (Recommended)
+### Pre-built Releases
+Download the latest version for your platform:
 
+**[📥 Download Latest Release](https://github.com/your-username/whisperdesk-enhanced/releases/latest)**
+
+| Platform | Download | Notes |
+|----------|----------|-------|
+| 🪟 **Windows** | `WhisperDesk-Enhanced-windows-x64.exe` | Installer for 64-bit Windows |
+| 🍎 **macOS Intel** | `WhisperDesk-Enhanced-mac-x64.dmg` | For Intel-based Macs |
+| 🍎 **macOS Apple Silicon** | `WhisperDesk-Enhanced-mac-arm64.dmg` | For M1/M2/M3 Macs |
+| 🐧 **Linux** | `WhisperDesk-Enhanced-linux-x64.AppImage` | Portable, no installation needed |
+| 🐧 **Linux (Debian/Ubuntu)** | `WhisperDesk-Enhanced-linux-x64.deb` | For Debian-based systems |
+| 🐧 **Linux (RPM)** | `WhisperDesk-Enhanced-linux-x64.rpm` | For Red Hat-based systems |
+
+### Quick Installation
+
+1. **Download** the appropriate file for your operating system
+2. **Install** using your platform's standard method:
+   - **Windows**: Run the `.exe` installer
+   - **macOS**: Open the `.dmg` and drag to Applications
+   - **Linux**: Make `.AppImage` executable or install `.deb`/`.rpm`
+3. **Launch** WhisperDesk Enhanced
+4. **Download a model** from the Models tab (start with "Whisper Tiny" - 39MB)
+5. **Start transcribing** your audio files!
+
+## 🛠️ Build from Source (Developers)
+
+If you prefer to build from source or want to contribute to development:
+
+### Automated Setup
 **Linux/macOS:**
 ```bash
-git clone <your-repo-url>
-cd WhisperDesk
+git clone https://github.com/your-username/whisperdesk-enhanced.git
+cd whisperdesk-enhanced
 ./setup.sh
 ```
 
 **Windows (PowerShell):**
 ```powershell
-git clone <your-repo-url>
-cd WhisperDesk
+git clone https://github.com/your-username/whisperdesk-enhanced.git
+cd whisperdesk-enhanced
 .\setup.ps1
 ```
 
@@ -52,6 +80,16 @@ wget https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin \
 
 ## 🎯 Running the Application
 
+### Pre-built Releases (Recommended)
+Simply download and install the appropriate release for your platform. Everything is included:
+- ✅ Native whisper.cpp binary (pre-compiled)
+- ✅ Optimized Electron application
+- ✅ All dependencies bundled
+- ✅ Ready to use immediately
+
+### Development Mode (Source Build)
+If you've built from source, you can run in development mode:
+
 ### Electron App (Recommended)
 ```bash
 npm run dev
@@ -84,29 +122,32 @@ npm run test:transcription
 ./quick_test_script.sh
 ```
 
-## ✨ New Features & Fixes (v2.1.0)
+## ✨ Key Features
 
-### 🎉 Enhanced User Experience
-- ✅ **Persistent State Management**: File selections and transcription results survive tab switches
-- ✅ **Real-time Progress Feedback**: Live progress bars for transcription and model downloads
-- ✅ **Smart Toast Notifications**: Single loading toast with updates, no spam
-- ✅ **Enhanced Model Marketplace**: Real-time download progress with speed indicators
+### 🎉 User Experience
+- **Easy Installation**: Pre-built releases for all platforms - no compilation required
+- **Persistent State Management**: File selections and transcription results survive tab switches
+- **Real-time Progress Feedback**: Live progress bars for transcription and model downloads
+- **Smart Toast Notifications**: Clean, non-intrusive progress updates
+- **Enhanced Model Marketplace**: Easy model download and management with progress tracking
 
-### 🔧 Technical Improvements
-- ✅ **Fixed Event Forwarding**: Proper IPC communication between main and renderer processes
-- ✅ **Improved VTT Parsing**: Better whisper.cpp output handling with completion events
-- ✅ **Memory Management**: Proper event handler cleanup to prevent memory leaks
-- ✅ **Cross-tab State**: Global app state that persists across tab navigation
+### 🔧 Technical Capabilities
+- **Native Performance**: Uses whisper.cpp for fast, local transcription
+- **Cross-Platform Support**: Windows, macOS (Intel & Apple Silicon), and Linux
+- **Multiple Interfaces**: Available as both Electron app and web interface
+- **Pre-compiled Binaries**: Releases include optimized whisper.cpp for each platform
+- **Robust Event Handling**: Proper IPC communication and memory management
+- **Advanced Audio Processing**: Support for various audio and video formats
 
-### 🎵 Better Transcription Experience
-- ✅ **One-Click Transcription**: Select file → Start → View results seamlessly
-- ✅ **Session Persistence**: Switch tabs without losing your work
-- ✅ **Progress Tracking**: Real-time updates without need to switch tabs
-- ✅ **Completion Feedback**: Clear success notifications and result display
+### 🎵 Transcription Experience
+- **One-Click Workflow**: Simple file selection and processing
+- **Session Persistence**: Work continues seamlessly across interface navigation
+- **Real-time Updates**: Live progress tracking without blocking the UI
+- **Multiple Output Formats**: Export to text, JSON, SRT, and other formats
 
 ## 📋 Available Scripts
 
-- `npm run dev` - Start Electron app in development
+- `npm run dev` - Start Electron app in development mode
 - `npm run web` - Start web interface with API server
 - `npm run server` - Start transcription API server only
 - `npm run test:native` - Test native services
@@ -114,96 +155,147 @@ npm run test:transcription
 - `npm run build` - Build for production
 - `./setup.sh` / `.\setup.ps1` - Automated setup scripts
 
-## 🔧 Features
+## 🔧 Core Features
 
-✅ **Native Performance** - No Python dependencies  
-✅ **Cross-Platform** - Windows, macOS, Linux support  
-✅ **Model Marketplace** - Download models with real-time progress tracking  
-✅ **Live Transcription** - Real-time audio processing with progress feedback  
-✅ **Persistent State** - Work continues seamlessly across tab switches  
-✅ **Web Interface** - Use as web app or Electron app  
-✅ **Multiple Formats** - Support for various audio/video files  
-✅ **Smart Notifications** - Clean, non-spammy progress updates  
+✅ **Ready-to-Use Releases** - Pre-built packages for Windows, macOS, and Linux  
+✅ **Native Performance** - No Python dependencies, runs entirely with native code  
+✅ **Cross-Platform** - Optimized builds for each operating system and architecture  
+✅ **Model Marketplace** - Download and manage Whisper models with progress tracking  
+✅ **Live Transcription** - Real-time audio processing with visual feedback  
+✅ **Persistent State** - Seamless experience across application restarts and tab switches  
+✅ **Dual Interface** - Choose between Electron desktop app or web interface  
+✅ **Multiple Formats** - Support for various audio and video file types  
+✅ **Export Options** - Multiple output formats for different use cases  
+✅ **Auto-Updates** - Automatic notification of new releases (Electron app)  
+
+## 🤖 Automated Release System
+
+WhisperDesk Enhanced uses GitHub Actions to automatically build and release optimized versions:
+
+- **Multi-Platform Builds**: Simultaneous builds for Windows, macOS (Intel & ARM), and Linux
+- **Optimized Binaries**: Each release includes platform-specific whisper.cpp compiled with optimal flags
+- **Comprehensive Testing**: Automated testing ensures reliability across all platforms
+- **Code Signing**: macOS and Windows releases are prepared for proper security verification
+- **Release Notes**: Automatic generation of detailed release notes for each version
+
+### Release Schedule
+- **Stable Releases**: Tagged versions (v1.0.0, v1.1.0, etc.) with full testing
+- **Beta Releases**: Pre-release versions for testing new features
+- **Automatic Builds**: Every push to main triggers artifact builds for testing  
 
 ## 🎮 User Guide
 
-### Getting Started
+### Getting Started with Pre-built Release
+1. **Download**: Get the latest release for your platform from the [releases page](https://github.com/your-username/whisperdesk-enhanced/releases)
+2. **Install**: Follow your platform's standard installation process
+3. **Launch**: Open WhisperDesk Enhanced from your applications
+4. **Download a model**: Navigate to Models tab → Download "Whisper Tiny" (39MB) - perfect for getting started
+5. **Select audio file**: Go to Transcribe tab → Drop file or click "Select Audio File"
+6. **Start transcription**: Click "Start Transcription"
+7. **View results**: Text appears in real-time and persists across tab switches
+
+### Getting Started with Source Build
+If you've built from source:
 1. **Launch the app**: `npm run dev`
-2. **Download a model**: Go to Models tab → Download "Whisper Tiny" (39MB)
-3. **Select audio file**: Transcribe tab → Drop file or click "Select Audio File"
+2. **Download a model**: Navigate to Models tab → Download "Whisper Tiny" (39MB)
+3. **Select audio file**: Go to Transcribe tab → Drop file or click "Select Audio File"
 4. **Start transcription**: Click "Start Transcription"
-5. **View results**: Text appears in real-time, persists across tab switches
+5. **View results**: Text appears in real-time and persists across tab switches
 
 ### Best Practices
-- **Start with Tiny model**: Fast downloads and good for testing
-- **Use drag & drop**: Easiest way to select files
-- **Monitor progress**: Stay in tab or switch freely - progress persists
-- **Check History tab**: View current session and manage files
+- **Use Pre-built Releases**: Fastest and most reliable way to get started
+- **Start with Tiny model**: Fastest download and good for initial testing
+- **Use drag & drop**: Easiest way to select and upload files
+- **Monitor progress**: Stay in tab or navigate freely - progress persists
+- **Check for Updates**: The app will notify you of new releases automatically
+- **Check History tab**: View current session and manage transcribed files
+
+## 💻 System Requirements
+
+### Minimum Requirements
+- **Windows**: Windows 10 (64-bit) or later
+- **macOS**: macOS 10.15 (Catalina) or later
+- **Linux**: Modern 64-bit distribution (Ubuntu 18.04+, CentOS 7+, etc.)
+- **RAM**: 4GB minimum, 8GB recommended
+- **Storage**: 1GB for application + additional space for models (39MB - 3GB per model)
+- **Internet**: Required for initial model downloads, optional afterward
+
+### What's Included in Releases
+- ✅ **Whisper.cpp Binary**: Pre-compiled and optimized for each platform
+- ✅ **Electron Application**: Complete desktop application with all dependencies
+- ✅ **Native Libraries**: All required system libraries bundled
+- ✅ **Auto-updater**: Automatic notification system for new versions
+- ✅ **Platform Integration**: Proper file associations and system integration
 
 ## 📖 Platform-Specific Setup
 
 For detailed platform-specific instructions:
 
 - 🐧 **Linux**: Use the commands above or run `./setup.sh`
-- 🍎 **macOS**: [SETUP_MACOS.md](SETUP_MACOS.md)
-- 🪟 **Windows**: [SETUP_WINDOWS.md](SETUP_WINDOWS.md)
-- 🌍 **All Platforms**: [PLATFORM_GUIDE.md](PLATFORM_GUIDE.md)
+- 🍎 **macOS**: See SETUP_MACOS.md for detailed instructions
+- 🪟 **Windows**: See SETUP_WINDOWS.md for detailed instructions
+- 🌍 **All Platforms**: See PLATFORM_GUIDE.md for comprehensive setup guide
 
 ## 🐛 Troubleshooting
 
-### Common Issues & Solutions
+### Release Version Issues
 
-**🔄 "No progress shown during transcription"**
-- ✅ **Fixed in v2.1.0**: Real-time progress now works correctly
-- Solution: Update to latest version with fixed event handlers
+**App won't start on Windows:**
+- Right-click the installer and "Run as Administrator"
+- Check Windows Defender/antivirus isn't blocking the app
+- Ensure you downloaded the correct architecture (x64)
 
-**📱 "State lost when switching tabs"**
-- ✅ **Fixed in v2.1.0**: Persistent state management implemented
-- Solution: Update App.jsx and components with persistent state context
+**App won't start on macOS:**
+- Right-click the app and select "Open" to bypass Gatekeeper
+- Check System Preferences → Security & Privacy for blocked apps
+- For M1/M2 Macs, ensure you downloaded the ARM64 version
 
-**🔔 "Too many notification popups"**
-- ✅ **Fixed in v2.1.0**: Smart toast notifications with single loading toast
-- Solution: Update TranscriptionTab-Electron.jsx with fixed toast handling
+**App won't start on Linux:**
+- Make AppImage executable: `chmod +x WhisperDesk-Enhanced-*.AppImage`
+- Install required dependencies: `sudo apt install fuse libfuse2` (Ubuntu/Debian)
+- For older systems, try the .deb or .rpm packages instead
 
-**📥 "Model download progress not visible"**
-- ✅ **Fixed in v2.1.0**: Real-time download progress in Models tab
-- Solution: Update ModelMarketplace component with event handlers
+**Model download fails:**
+- Check internet connection
+- Verify you have sufficient disk space
+- Try downloading a smaller model first (Tiny model)
+- Check firewall isn't blocking the download
 
-### Legacy Issues
+### Source Build Issues
 
-**Binary download fails (404 errors):**
+**Binary setup issues:**
 - Use the included binary: `chmod +x binaries/whisper`
-- Or build from source (see setup instructions above)
+- Or build from source using the instructions above
 
 **Electron app won't start:**
 - Build the renderer: `cd src/renderer/whisperdesk-ui && npm run build`
-- Check that dist folder exists
+- Verify that the dist folder exists
 
 **Web interface connection issues:**
-- Make sure API server is running on port 3001
+- Ensure API server is running on port 3001
 - Verify whisper binary is executable
-- Check that models are downloaded
+- Check that required models are downloaded
 
-## 🔧 Fix Scripts
+## 🔧 Automated Fix Scripts
 
-If you encounter issues, use these automated fix scripts:
+If you encounter issues, use these automated diagnostic and fix scripts:
 
 ```bash
-# Complete setup and verification
-chmod +x quick_test_script.sh
-./quick_test_script.sh
+# Complete setup verification
+chmod +x Test\ Scripts/quick_test_script.sh
+./Test\ Scripts/quick_test_script.sh
 
-# Fix toast spam and persistent state
-chmod +x quick_fix_script.sh
-./quick_fix_script.sh
+# Build whisper.cpp from source
+chmod +x Test\ Scripts/build_whisper.sh
+./Test\ Scripts/build_whisper.sh
 
-# Fix model download progress
-chmod +x model_interface_fix_script.sh
-./model_interface_fix_script.sh
+# Download essential models
+chmod +x Test\ Scripts/download_model.sh
+./Test\ Scripts/download_model.sh
 
-# Verify app state implementation
-chmod +x verify_app_state_script.sh
-./verify_app_state_script.sh
+# Verify application state
+chmod +x Test\ Scripts/verify_app_state_script.sh
+./Test\ Scripts/verify_app_state_script.sh
 ```
 
 ## 📁 Project Structure
@@ -216,48 +308,51 @@ WhisperDesk/
 │   │   │   ├── binary-manager.js      # Manages whisper.cpp binaries
 │   │   │   ├── transcription-service-native.js  # Native transcription service
 │   │   │   └── providers/
-│   │   │       └── native-whisper-provider.js   # Native whisper provider (FIXED)
-│   │   └── main.js                    # Updated with proper event forwarding (FIXED)
+│   │   │       └── native-whisper-provider.js   # Native whisper provider
+│   │   └── main.js                    # Main process entry point
 │   └── renderer/                      # React frontend
 │       └── whisperdesk-ui/
-│           ├── src/App.jsx            # Persistent state management (UPDATED)
+│           ├── src/App.jsx            # Main application component
 │           └── components/
-│               ├── TranscriptionTab-Electron.jsx  # Fixed toast handling
-│               └── ModelMarketplace-Fixed.jsx     # Real-time progress
+│               ├── TranscriptionTab-Electron.jsx  # Electron transcription interface
+│               └── ModelMarketplace-WebCompatible.jsx     # Model management
 ├── binaries/
 │   └── whisper                        # whisper.cpp binary
 ├── scripts/
-│   └── download-binaries.js           # Binary download script
+│   └── build-whisper.sh              # Binary build script
 ├── transcription-server.js            # API server for web interface
-├── test-native-services.js            # Test native services
-├── test-transcription.js              # Test transcription with audio
+├── test-native-services.js            # Native services testing
+├── test-transcription.js              # Transcription testing
 ├── setup.sh                           # Linux/macOS setup script
 └── setup.ps1                          # Windows setup script
 ```
 
-## 🎉 What's New in v2.1.0
+## 🚀 Development & Contributing
 
-### Major Improvements
-- **🔄 Persistent State**: App state survives tab switches
-- **⚡ Real-time Updates**: Live progress for transcription and downloads  
-- **🔔 Smart Notifications**: Clean, single-toast progress feedback
-- **🎵 Better UX**: Seamless transcription workflow with visual feedback
+### For Contributors & Developers
 
-### Fixed Issues
-- ❌ ~~Toast notification spam during progress~~
-- ❌ ~~State lost when switching tabs~~
-- ❌ ~~Download progress not visible~~
-- ❌ ~~Completion events not reaching UI~~
-- ❌ ~~Memory leaks from event handlers~~
+WhisperDesk Enhanced welcomes contributions! Here's how to get involved:
 
-### Performance
-- **Faster**: Improved event handling and state management
-- **Smoother**: Real-time progress updates without blocking UI
-- **Cleaner**: Proper resource cleanup and memory management
+### Development Setup
+```bash
+# Clone the repository
+git clone https://github.com/your-username/whisperdesk-enhanced.git
+cd whisperdesk-enhanced
 
-## 🚀 Development
+# Install dependencies
+npm install
+cd src/renderer/whisperdesk-ui
+npm install --legacy-peer-deps
+cd ../../..
 
-### Building for Production
+# Build whisper.cpp binary
+./scripts/build-whisper.sh
+
+# Start in development mode
+npm run dev
+```
+
+### Building Releases
 ```bash
 npm run build               # Build all components
 npm run dist               # Create distribution packages
@@ -271,23 +366,53 @@ npm run web                # Test web interface
 npm run test:native        # Verify native services
 ```
 
-## 🎵 Example: Transcribing "Bohemian Rhapsody"
+### Available Build Targets
+- **Windows**: Creates .exe installers and portable versions
+- **macOS**: Generates .dmg files for both Intel and Apple Silicon
+- **Linux**: Produces AppImage, .deb, and .rpm packages
 
-With the latest fixes, transcribing the classic Queen song works flawlessly:
+### Contributing Guidelines
+1. **Fork the repository** and create a feature branch
+2. **Test your changes** on multiple platforms if possible
+3. **Update documentation** for any new features
+4. **Submit a pull request** with a clear description of changes
+5. **Ensure CI passes** - all platforms must build successfully
 
-1. **Select**: Drop test.mp3 into the app
-2. **Configure**: Choose whisper-tiny model  
-3. **Transcribe**: Click start and watch real-time progress
-4. **Results**: Get 42 segments with full lyrics properly parsed
-5. **Persist**: Switch tabs freely - your work is saved
+## 🌟 Use Cases
 
-Expected output: *"is this the real life is this just fantasy caught in a landslide no escape from reality..."*
+WhisperDesk Enhanced is perfect for:
 
-## 📞 Support
+- **Content Creation**: Transcribe podcasts, videos, and audio content
+- **Academic Research**: Process interviews and research materials  
+- **Business**: Convert meetings and presentations to text
+- **Accessibility**: Create captions and transcripts for media
+- **Personal**: Transcribe voice memos and personal recordings
 
-- **GitHub Issues**: Report bugs and request features
-- **Documentation**: Complete setup guides for all platforms
-- **Fix Scripts**: Automated solutions for common issues
-- **Test Suite**: Verify your installation works correctly
+## 📞 Support & Getting Help
 
-This implementation maintains full backward compatibility while adding persistent state management, real-time progress feedback, and a dramatically improved user experience.
+### For End Users (Release Version)
+- **Download Issues**: Check the [latest release page](https://github.com/your-username/whisperdesk-enhanced/releases) for updated versions
+- **Installation Problems**: See platform-specific troubleshooting above
+- **Usage Questions**: Check the user guide and best practices sections
+- **Bug Reports**: [Open an issue](https://github.com/your-username/whisperdesk-enhanced/issues) with your OS and app version
+
+### For Developers
+- **Build Issues**: Check the development setup instructions
+- **Contributing**: Read the contributing guidelines above
+- **Feature Requests**: [Open an issue](https://github.com/your-username/whisperdesk-enhanced/issues) with the "enhancement" label
+- **Documentation**: Help improve setup guides for all platforms
+
+### Community Resources
+- **GitHub Discussions**: Share experiences and get help from other users
+- **Issue Tracker**: Report bugs and track feature development  
+- **Release Notes**: Stay updated with new features and improvements
+- **Wiki**: Comprehensive documentation and advanced usage guides
+
+## 🔒 Privacy & Security
+
+- **Local Processing**: All transcription happens on your machine
+- **No Cloud Dependencies**: No audio data sent to external services
+- **Open Source**: Full transparency in code and functionality
+- **Offline Capable**: Works without internet connection once set up
+
+This implementation provides a robust, cross-platform transcription solution with modern UX principles and reliable performance across different operating systems and use cases.

@@ -87,14 +87,95 @@ jobs:
         # Install cmake
         choco install cmake -y
 
+    # Extract version from tag and update package.json
+    - name: Set version from tag
+      shell: bash
+      run: |
+        if [ "${{ github.ref_type }}" = "tag" ]; then
+          # Extract version from tag (remove 'v' prefix)
+          VERSION="${{ github.ref_name }}"
+          VERSION="${VERSION#v}"  # Remove 'v' prefix if present
+          
+          echo "🏷️ Setting version to: $VERSION"
+          
+          # Update main package.json
+          if command -v jq &> /dev/null; then
+            # Use jq if available
+            jq --arg version "$VERSION" '.version = $version' package.json > package.json.tmp && mv package.json.tmp package.json
+          else
+            # Fallback to sed
+            sed -i.bak "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" package.json
+          fi
+          
+          echo "✅ Updated main package.json version to: $VERSION"
+          grep '"version"' package.json
+          
+          # Also set as environment variable for electron-builder
+          echo "APP_VERSION=$VERSION" >> $GITHUB_ENV
+        else
+          echo "🔧 Not a tag build, keeping existing version"
+          CURRENT_VERSION=$(node -p "require('./package.json').version")
+          echo "APP_VERSION=$CURRENT_VERSION" >> $GITHUB_ENV
+        fi
+
+    # Extract version from tag and update package.json
+    - name: Set version from tag
+      shell: bash
+      run: |
+        if [ "${{ github.ref_type }}" = "tag" ]; then
+          # Extract version from tag (remove 'v' prefix)
+          VERSION="${{ github.ref_name }}"
+          VERSION="${VERSION#v}"  # Remove 'v' prefix if present
+          
+          echo "🏷️ Setting version to: $VERSION"
+          
+          # Update main package.json
+          if command -v jq &> /dev/null; then
+            # Use jq if available
+            jq --arg version "$VERSION" '.version = $version' package.json > package.json.tmp && mv package.json.tmp package.json
+          else
+            # Fallback to sed
+            sed -i.bak "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" package.json
+          fi
+          
+          echo "✅ Updated main package.json version to: $VERSION"
+          grep '"version"' package.json
+          
+          # Also set as environment variable for electron-builder
+          echo "APP_VERSION=$VERSION" >> $GITHUB_ENV
+        else
+          echo "🔧 Not a tag build, keeping existing version"
+          CURRENT_VERSION=$(node -p "require('./package.json').version")
+          echo "APP_VERSION=$CURRENT_VERSION" >> $GITHUB_ENV
+        fi
+
     # Install main dependencies
     - name: Install main dependencies
       run: npm install
 
     # Install renderer dependencies
     - name: Install renderer dependencies
+      shell: bash
       run: |
         cd src/renderer/whisperdesk-ui
+        
+        # Update renderer package.json version if this is a tag build
+        if [ "${{ github.ref_type }}" = "tag" ]; then
+          VERSION="${{ github.ref_name }}"
+          VERSION="${VERSION#v}"
+          
+          echo "🏷️ Updating renderer package.json version to: $VERSION"
+          
+          if command -v jq &> /dev/null; then
+            jq --arg version "$VERSION" '.version = $version' package.json > package.json.tmp && mv package.json.tmp package.json
+          else
+            sed -i.bak "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" package.json
+          fi
+          
+          echo "✅ Updated renderer package.json version"
+          grep '"version"' package.json
+        fi
+        
         pnpm install --frozen-lockfile
 
     # Build whisper.cpp from source - MODERN CMAKE APPROACH
@@ -190,7 +271,8 @@ jobs:
         pnpm run build
 
     # Configure electron-builder to prevent unwanted architectures
-    - name: Configure electron-builder
+    - name: Configure electron-builder (Unix)
+      if: runner.os != 'Windows'
       run: |
         echo "🔧 Configuring electron-builder to build only intended architectures..."
         
@@ -202,6 +284,7 @@ jobs:
           "directories": {
             "output": "dist"
           },
+          "artifactName": "${productName}-${version}-${arch}.${ext}",
           "win": {
             "target": [
               {
@@ -249,7 +332,111 @@ jobs:
         }
         EOF
         
-        echo "✅ Electron-builder configuration created"
+        echo "✅ Electron-builder configuration created with version: $APP_VERSION"
+
+    - name: Configure electron-builder (Windows)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        Write-Host "🔧 Configuring electron-builder to build only intended architectures..."
+        
+        # Create electron-builder config using PowerShell
+        $config = @"
+        {
+          "appId": "com.yourcompany.whisperdesk",
+          "productName": "WhisperDesk Enhanced",
+          "directories": {
+            "output": "dist"
+          },
+          "artifactName": "`${productName}-`${version}-`${arch}.`${ext}",
+          "win": {
+            "target": [
+              {
+                "target": "nsis",
+                "arch": ["x64"]
+              },
+              {
+                "target": "zip",
+                "arch": ["x64"]
+              }
+            ]
+          },
+          "mac": {
+            "target": [
+              {
+                "target": "dmg",
+                "arch": ["x64", "arm64"]
+              },
+              {
+                "target": "zip",
+                "arch": ["x64", "arm64"]
+              }
+            ]
+          },
+          "linux": {
+            "target": [
+              {
+                "target": "AppImage",
+                "arch": ["x64"]
+              },
+              {
+                "target": "deb",
+                "arch": ["x64"]
+              },
+              {
+                "target": "rpm",
+                "arch": ["x64"]
+              },
+              {
+                "target": "tar.gz",
+                "arch": ["x64"]
+              }
+            ]
+          }
+        }
+        "@
+        
+        # Write to file
+        $config | Out-File -FilePath "electron-builder-override.json" -Encoding UTF8
+        
+        Write-Host "✅ Electron-builder configuration created with version: $env:APP_VERSION"
+
+    # Verify version before building
+    - name: Verify version configuration
+      run: |
+        echo "🔍 Verifying version configuration..."
+        echo "📋 Git ref: ${{ github.ref }}"
+        echo "📋 Git ref type: ${{ github.ref_type }}"
+        echo "📋 Git ref name: ${{ github.ref_name }}"
+        echo "📋 App version (env): $APP_VERSION"
+        echo "📋 Package.json version: $(node -p "require('./package.json').version")"
+        
+        # Verify versions match
+        PACKAGE_VERSION=$(node -p "require('./package.json').version")
+        if [ "$APP_VERSION" != "$PACKAGE_VERSION" ]; then
+          echo "⚠️ Warning: Environment version ($APP_VERSION) differs from package.json ($PACKAGE_VERSION)"
+        else
+          echo "✅ Version consistency verified: $APP_VERSION"
+        fi
+
+    # Verify version before building
+    - name: Verify version configuration
+      shell: bash
+      run: |
+        echo "🔍 Verifying version configuration..."
+        echo "📋 Git ref: ${{ github.ref }}"
+        echo "📋 Git ref type: ${{ github.ref_type }}"
+        echo "📋 Git ref name: ${{ github.ref_name }}"
+        echo "📋 App version (env): $APP_VERSION"
+        echo "📋 Package.json version: $(node -p "require('./package.json').version")"
+        
+        # Verify versions match
+        PACKAGE_VERSION=$(node -p "require('./package.json').version")
+        if [ "$APP_VERSION" != "$PACKAGE_VERSION" ]; then
+          echo "⚠️ Warning: Environment version ($APP_VERSION) differs from package.json ($PACKAGE_VERSION)"
+        else
+          echo "✅ Version consistency verified: $APP_VERSION"
+        fi
 
     # Verify binary before building Electron app
     - name: Verify whisper binary
@@ -522,17 +709,17 @@ jobs:
           ### 📦 Download Options:
           
           **🖥️ Windows (64-bit only)**:
-          - `WhisperDesk-Enhanced-*-x64.exe` - Installer
-          - `WhisperDesk-Enhanced-*-x64.zip` - Portable version
+          - `WhisperDesk-Enhanced-${{ github.ref_name == github.ref_name && startsWith(github.ref_name, 'v') && substring(github.ref_name, 1) || github.ref_name }}-x64.exe` - Installer
+          - `WhisperDesk-Enhanced-${{ github.ref_name == github.ref_name && startsWith(github.ref_name, 'v') && substring(github.ref_name, 1) || github.ref_name }}-x64.zip` - Portable version
           
           **🍎 macOS**:
-          - `WhisperDesk-Enhanced-*-mac-x64.dmg` - Intel Macs
-          - `WhisperDesk-Enhanced-*-mac-arm64.dmg` - Apple Silicon Macs
+          - `WhisperDesk-Enhanced-${{ github.ref_name == github.ref_name && startsWith(github.ref_name, 'v') && substring(github.ref_name, 1) || github.ref_name }}-x64.dmg` - Intel Macs
+          - `WhisperDesk-Enhanced-${{ github.ref_name == github.ref_name && startsWith(github.ref_name, 'v') && substring(github.ref_name, 1) || github.ref_name }}-arm64.dmg` - Apple Silicon Macs
           
           **🐧 Linux**:
-          - `WhisperDesk-Enhanced-*-linux-x64.AppImage` - Portable (recommended)
-          - `WhisperDesk-Enhanced-*-linux-x64.deb` - Debian/Ubuntu package
-          - `WhisperDesk-Enhanced-*-linux-x64.rpm` - Red Hat/Fedora package
+          - `WhisperDesk-Enhanced-${{ github.ref_name == github.ref_name && startsWith(github.ref_name, 'v') && substring(github.ref_name, 1) || github.ref_name }}-x64.AppImage` - Portable (recommended)
+          - `WhisperDesk-Enhanced-${{ github.ref_name == github.ref_name && startsWith(github.ref_name, 'v') && substring(github.ref_name, 1) || github.ref_name }}-x64.deb` - Debian/Ubuntu package
+          - `WhisperDesk-Enhanced-${{ github.ref_name == github.ref_name && startsWith(github.ref_name, 'v') && substring(github.ref_name, 1) || github.ref_name }}-x64.rpm` - Red Hat/Fedora package
           
           ### ✨ Features:
           - 🎵 Native whisper.cpp integration for fast, offline transcription
