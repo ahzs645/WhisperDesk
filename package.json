@@ -16,9 +16,9 @@
     "dev:main": "nodemon --watch src/main --exec electron .",
     "dev:renderer": "cd src/renderer/whisperdesk-ui && pnpm run dev",
     
-    "prebuild": "npm run build:whisper",
+    "prebuild": "echo 'Skipping whisper build; handled by CI'",
     "build": "npm run build:renderer && npm run build:main",
-    "build:skip-whisper": "npm run build:renderer && npm run build:main",
+    "build:skip-whisper": "npm run build",
     "build:renderer": "cd src/renderer/whisperdesk-ui && pnpm run build",
     "build:main": "echo 'Main process build complete'",
     "build:whisper": "node scripts/build-whisper-cross-platform.js",
@@ -127,7 +127,7 @@
           "arch": ["x64", "arm64"]
         }
       ],
-      "artifactName": "${productName}-${version}-${arch}.${ext}",
+      "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
       "extraFiles": [
         {
           "from": "binaries/whisper",
@@ -141,20 +141,16 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64", "ia32"]
-        },
-        {
-          "target": "portable",
-          "arch": ["x64", "ia32"]
+          "arch": ["x64"]
         },
         {
           "target": "zip",
-          "arch": ["x64", "ia32"]
+          "arch": ["x64"]
         }
       ],
       "publisherName": "WhisperDesk Team",
       "verifyUpdateCodeSignature": false,
-      "artifactName": "${productName}-${version}-${arch}.${ext}",
+      "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
       "extraFiles": [
         {
           "from": "binaries",
@@ -184,7 +180,7 @@
           "arch": ["x64"]
         }
       ],
-      "artifactName": "${productName}-${version}-${arch}.${ext}",
+      "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
       "extraFiles": [
         {
           "from": "binaries/whisper",

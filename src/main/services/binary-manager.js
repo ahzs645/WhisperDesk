@@ -194,7 +194,8 @@ class BinaryManager {
     const runtimeDlls = [
       'msvcp140.dll',
       'vcruntime140.dll',
-      'vcruntime140_1.dll'
+      'vcruntime140_1.dll',
+      'vcomp140.dll' // OpenMP runtime
     ]
     
     console.log('Checking for Visual C++ runtime dependencies...')
@@ -341,14 +342,26 @@ class BinaryManager {
 
   async testBinaryWithResult() {
     const binaryPath = this.getWhisperBinaryPath();
+    const binaryDir = path.dirname(binaryPath);
     
     return new Promise((resolve) => {
       console.log(`Testing binary: ${binaryPath}`);
       
-      const process = spawn(binaryPath, ['--help'], {
+      // Set environment to help Windows find DLLs
+      const env = { ...process.env };
+      if (this.platform === 'win32') {
+        // Add binaries directory to PATH for DLL loading
+        env.PATH = `${binaryDir};${env.PATH}`;
+      }
+      
+      const options = {
         stdio: ['pipe', 'pipe', 'pipe'],
-        windowsHide: true
-      });
+        windowsHide: true,
+        cwd: binaryDir, // Set working directory to binaries folder
+        env: env
+      };
+      
+      const process = spawn(binaryPath, ['--help'], options);
       
       let stdout = '';
       let stderr = '';
@@ -364,18 +377,18 @@ class BinaryManager {
       process.on('close', (code) => {
         const output = stdout + stderr;
         
-        console.log(`❌ Binary test failed`)
-        console.log(`Exit code: ${code}`)
-        console.log(`Output: ${output.substring(0, 200)}${output.length > 200 ? '...' : ''}`)
-        
         // Check if we got whisper-related output (success indicators)
         const isSuccess = output.toLowerCase().includes('whisper') || 
                          output.toLowerCase().includes('usage') || 
                          output.toLowerCase().includes('transcribe') ||
-                         code === 0
+                         code === 0;
         
         if (isSuccess) {
-          console.log('✅ Binary test passed')
+          console.log('✅ Binary test passed');
+        } else {
+          console.log(`❌ Binary test failed`);
+          console.log(`Exit code: ${code}`);
+          console.log(`Output: ${output.substring(0, 200)}${output.length > 200 ? '...' : ''}`);
         }
         
         resolve({
@@ -402,7 +415,7 @@ class BinaryManager {
           exitCode: -2,
           output: 'Binary test timeout'
         });
-      }, 15000); // Increased timeout to 15 seconds
+      }, 15000);
     });
   }
 

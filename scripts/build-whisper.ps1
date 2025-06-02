@@ -73,7 +73,8 @@ Write-Host "Locating whisper binary with enhanced detection..." -ForegroundColor
 
 $WhisperBinary = ""
 $PossiblePaths = @(
-    "build\bin\Release\whisper-whisper.exe",  # NEW: Most likely location for new builds
+    "build\bin\Release\whisper-cpp.exe",      # Latest CLI name
+    "build\bin\Release\whisper-whisper.exe",  # Previous default name
     "build\bin\Release\whisper-cli.exe",      # Alternative new name
     "build\bin\Release\main.exe",             # Legacy name
     "build\bin\Release\whisper.exe",          # Old name (might be deprecated stub)

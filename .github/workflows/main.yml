@@ -1,4 +1,4 @@
-# .github/workflows/main.yml - UPDATED with whisper.cpp new binary naming fixes
+# .github/workflows/main.yml - COMPLETE UPDATE with all fixes
 name: Build WhisperDesk for All Platforms
 
 on:
@@ -157,11 +157,11 @@ jobs:
         cmake -B build -DCMAKE_BUILD_TYPE=Release
         cmake --build build --config Release --parallel $(nproc 2>/dev/null || sysctl -n hw.ncpu || echo 4)
         
-        # Find the whisper binary with NEW naming priority
+        # Find the whisper binary with UPDATED naming priority
         WHISPER_BINARY=""
         
-        # Priority order: new names first, then legacy
-        BINARY_NAMES=("whisper-whisper" "whisper-cli" "main" "whisper")
+        # Priority order: newest names first, then legacy (UPDATED for April 2025 naming)
+        BINARY_NAMES=("whisper-cpp" "whisper-whisper" "whisper-cli" "main" "whisper")
         BUILD_DIRS=("build/bin" "bin" "build")
         
         echo "🔍 Searching for whisper binary..."
@@ -227,11 +227,11 @@ jobs:
         echo "📍 Final binary: $GITHUB_WORKSPACE/binaries/whisper"
 
     # Build whisper.cpp from source - Windows - UPDATED
-    - name: Build whisper.cpp (Windows) - UPDATED for new naming
+    - name: Build whisper.cpp (Windows) - UPDATED with OpenMP fix
       if: runner.os == 'Windows'
       shell: pwsh
       run: |
-        Write-Host "🔨 Building whisper.cpp for Windows with new binary naming support..." -ForegroundColor Green
+        Write-Host "🔨 Building whisper.cpp for Windows with enhanced fixes..." -ForegroundColor Green
         
         # Clone whisper.cpp from OFFICIAL repository
         git clone https://github.com/ggml-org/whisper.cpp.git C:\temp\whisper.cpp
@@ -250,9 +250,9 @@ jobs:
         
         Write-Host "✅ Built with MSBuild"
         
-        # Find the whisper executable with NEW naming priority
+        # Find the whisper executable with UPDATED naming priority (April 2025)
         $buildDirs = @("bin\Release", "Release", "bin")
-        $binaryNames = @("whisper-whisper.exe", "whisper-cli.exe", "main.exe", "whisper.exe")
+        $binaryNames = @("whisper-cpp.exe", "whisper-whisper.exe", "whisper-cli.exe", "main.exe", "whisper.exe")
         
         $foundBinary = $null
         $foundPath = ""
@@ -362,12 +362,12 @@ jobs:
         Write-Host "✅ whisper.cpp built and installed successfully" -ForegroundColor Green
         Write-Host "📍 Final binary: $targetDir\whisper.exe" -ForegroundColor Cyan
 
-    # Package Visual C++ Runtime Dependencies (Windows)
-    - name: Package VC++ Runtime (Windows)
+    # Package Visual C++ Runtime Dependencies (Windows) - UPDATED with OpenMP
+    - name: Package VC++ Runtime (Windows) - UPDATED with OpenMP support
       if: runner.os == 'Windows'
       shell: pwsh
       run: |
-        Write-Host "📦 Packaging Visual C++ Runtime Dependencies..."
+        Write-Host "📦 Packaging Visual C++ Runtime Dependencies with OpenMP..." -ForegroundColor Green
         
         $targetDir = "$env:GITHUB_WORKSPACE\binaries"
         
@@ -383,11 +383,12 @@ jobs:
             Write-Host "⚠️ Failed to download VC++ Redistributable: $($_.Exception.Message)"
         }
         
-        # Try to copy runtime DLLs from system (if available)
+        # Try to copy runtime DLLs from system (UPDATED with OpenMP)
         $runtimeDlls = @(
             @{ Name = "msvcp140.dll"; Path = "C:\Windows\System32\msvcp140.dll" },
             @{ Name = "vcruntime140.dll"; Path = "C:\Windows\System32\vcruntime140.dll" },
-            @{ Name = "vcruntime140_1.dll"; Path = "C:\Windows\System32\vcruntime140_1.dll" }
+            @{ Name = "vcruntime140_1.dll"; Path = "C:\Windows\System32\vcruntime140_1.dll" },
+            @{ Name = "vcomp140.dll"; Path = "C:\Windows\System32\vcomp140.dll" }  # OpenMP runtime
         )
         
         foreach ($dll in $runtimeDlls) {
@@ -428,10 +429,11 @@ jobs:
           
           echo "📊 Binary size: $SIZE bytes"
           
-          # Check if binary is suspiciously small (likely a stub)
-          if [ "$SIZE" -lt 50000 ]; then
-            echo "❌ ERROR: Binary is very small ($SIZE bytes) - this is a deprecated stub!"
-            echo "🔍 This will cause runtime failures"
+          # Updated size check - modern whisper binaries are larger
+          # Check if binary size is below the threshold for modern builds (200KB+ expected for non-stub binaries)
+          if [ "$SIZE" -lt 200000 ]; then
+            echo "❌ ERROR: Binary is small ($SIZE bytes) - likely a deprecated stub!"
+            echo "🔍 Modern whisper.cpp binaries should be 200KB+ with OpenMP/MSVC"
             
             # List all executables in binaries directory for debugging
             echo "📋 All executables in binaries directory:"
@@ -441,7 +443,7 @@ jobs:
               find binaries -type f -executable -exec ls -la {} \;
             fi
             
-            echo "❌ BUILD FAILED: Deprecated stub binary detected"
+            echo "❌ BUILD FAILED: Binary too small - likely a stub"
             exit 1
           else
             echo "✅ Binary size looks good ($SIZE bytes)"
