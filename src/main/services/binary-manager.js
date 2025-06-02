@@ -1,3 +1,5 @@
+// Updated binary-manager.js to fix the whisper binary issues
+
 const { app } = require('electron');
 const fs = require('fs').promises;
 const path = require('path');
@@ -46,18 +48,22 @@ class BinaryManager {
     
     try {
       await fs.access(binaryPath);
-      // Binary exists, check if it's executable
+      
+      // Check if it's executable
       if (this.platform !== 'win32') {
         const stats = await fs.stat(binaryPath);
         if (!(stats.mode & 0o111)) {
           await fs.chmod(binaryPath, 0o755);
         }
       }
+      
+      // Test the binary
+      await this.testBinary();
       console.log('Whisper binary found and ready');
     } catch (error) {
-      console.log('Whisper binary not found. Native whisper.cpp functionality will be unavailable.');
-      console.log('Note: whisper.cpp does not provide pre-built binaries. Consider building from source.');
-      console.log('Falling back to Python whisper provider if available.');
+      console.log('Whisper binary not available. Native whisper.cpp functionality will be unavailable.');
+      console.log('Note: Run the build script to compile whisper.cpp for your platform.');
+      console.log('Falling back to other providers if available.');
       // Don't throw error, just log the issue
     }
   }
@@ -77,168 +83,94 @@ class BinaryManager {
     return path.join(this.binariesDir, binaryName);
   }
 
-  async downloadWhisperBinary() {
-    const downloadInfo = this.getDownloadInfo();
-    if (!downloadInfo) {
-      throw new Error(`No whisper.cpp binary available for platform: ${this.platformKey}`);
-    }
-
-    console.log(`Downloading whisper.cpp for ${this.platformKey}...`);
-    
-    try {
-      const tempFile = path.join(this.binariesDir, 'whisper-temp.zip');
-      await this.downloadFile(downloadInfo.url, tempFile);
-      
-      if (downloadInfo.isArchive) {
-        await this.extractArchive(tempFile, this.binariesDir);
-        await fs.unlink(tempFile);
-      } else {
-        const binaryPath = this.getWhisperBinaryPath();
-        await fs.rename(tempFile, binaryPath);
-      }
-
-      // Make executable on Unix systems
-      if (this.platform !== 'win32') {
-        const binaryPath = this.getWhisperBinaryPath();
-        await fs.chmod(binaryPath, 0o755);
-      }
-
-      console.log('Whisper binary downloaded and installed successfully');
-    } catch (error) {
-      console.error('Error downloading whisper binary:', error);
-      throw error;
-    }
-  }
-
-  getDownloadInfo() {
-    // Use GitHub releases for whisper.cpp binaries
-    const baseUrl = 'https://github.com/ggerganov/whisper.cpp/releases/download/v1.5.4';
-    
-    const downloads = {
-      'win32-x64': {
-        url: `${baseUrl}/whisper-bin-win32.zip`,
-        isArchive: true
-      },
-      'darwin-x64': {
-        url: `${baseUrl}/whisper-bin-x64.zip`,
-        isArchive: true
-      },
-      'darwin-arm64': {
-        url: `${baseUrl}/whisper-bin-arm64.zip`,
-        isArchive: true
-      },
-      'linux-x64': {
-        url: `${baseUrl}/whisper-bin-Linux.zip`,
-        isArchive: true
-      }
-    };
-
-    return downloads[this.platformKey];
-  }
-
-  async downloadFile(url, outputPath) {
-    return new Promise((resolve, reject) => {
-      const file = require('fs').createWriteStream(outputPath);
-      
-      https.get(url, (response) => {
-        if (response.statusCode === 302 || response.statusCode === 301) {
-          // Handle redirects
-          file.close();
-          this.downloadFile(response.headers.location, outputPath)
-            .then(resolve)
-            .catch(reject);
-          return;
-        }
-        
-        if (response.statusCode !== 200) {
-          file.close();
-          reject(new Error(`Download failed: ${response.statusCode} ${response.statusMessage}`));
-          return;
-        }
-
-        response.pipe(file);
-
-        file.on('finish', () => {
-          file.close();
-          resolve();
-        });
-
-        file.on('error', (error) => {
-          file.close();
-          fs.unlink(outputPath).catch(() => {});
-          reject(error);
-        });
-      }).on('error', (error) => {
-        file.close();
-        fs.unlink(outputPath).catch(() => {});
-        reject(error);
-      });
-    });
-  }
-
-  async extractArchive(archivePath, extractDir) {
-    // Simple extraction for zip files
-    // In a real implementation, you'd use a proper zip library
-    return new Promise((resolve, reject) => {
-      const process = spawn('unzip', ['-o', archivePath, '-d', extractDir]);
-      
-      process.on('close', (code) => {
-        if (code === 0) {
-          resolve();
-        } else {
-          reject(new Error(`Extraction failed with code ${code}`));
-        }
-      });
-
-      process.on('error', (error) => {
-        // Fallback: try to handle manually or use different extraction method
-        reject(error);
-      });
-    });
-  }
-
   async testBinary() {
     const binaryPath = this.getWhisperBinaryPath();
     
     return new Promise((resolve, reject) => {
-      const process = spawn(binaryPath, ['--help']);
+      // Use --help instead of --version as it's more reliable
+      const process = spawn(binaryPath, ['--help'], {
+        stdio: ['pipe', 'pipe', 'pipe']
+      });
+      
+      let stdout = '';
+      let stderr = '';
+      
+      process.stdout.on('data', (data) => {
+        stdout += data.toString();
+      });
+      
+      process.stderr.on('data', (data) => {
+        stderr += data.toString();
+      });
       
       process.on('close', (code) => {
-        if (code === 0) {
+        // Both exit code 0 and 1 can be OK for --help
+        // Check if we got any whisper-related output
+        const output = stdout + stderr;
+        if (output.toLowerCase().includes('whisper') || 
+            output.toLowerCase().includes('usage') || 
+            code === 0) {
           resolve(true);
         } else {
-          reject(new Error('Binary test failed'));
+          reject(new Error(`Binary test failed: ${stderr || 'No output'}`));
         }
       });
 
       process.on('error', (error) => {
-        reject(error);
+        reject(new Error(`Failed to execute binary: ${error.message}`));
       });
+      
+      // Set timeout
+      setTimeout(() => {
+        process.kill('SIGTERM');
+        reject(new Error('Binary test timeout'));
+      }, 10000);
     });
   }
 
   getBinaryVersion() {
     return new Promise((resolve, reject) => {
       const binaryPath = this.getWhisperBinaryPath();
-      const process = spawn(binaryPath, ['--version']);
+      const process = spawn(binaryPath, ['--help'], {
+        stdio: ['pipe', 'pipe', 'pipe']
+      });
       
       let output = '';
       process.stdout.on('data', (data) => {
         output += data.toString();
       });
 
+      process.stderr.on('data', (data) => {
+        output += data.toString();
+      });
+
       process.on('close', (code) => {
-        if (code === 0) {
-          resolve(output.trim());
+        // Extract version info from help output
+        const lines = output.split('\n');
+        const versionLine = lines.find(line => 
+          line.toLowerCase().includes('whisper') || 
+          line.toLowerCase().includes('version')
+        );
+        
+        if (versionLine) {
+          resolve(versionLine.trim());
         } else {
-          reject(new Error('Failed to get version'));
+          resolve('whisper.cpp (version unknown)');
         }
       });
 
       process.on('error', reject);
     });
   }
+
+  // Additional helper methods...
+  async downloadWhisperBinary() {
+    throw new Error('Pre-built binaries not available. Please build from source using the build script.');
+  }
+
+  getDownloadInfo() {
+    return null; // No pre-built binaries available
+  }
 }
 
 module.exports = BinaryManager;
-
