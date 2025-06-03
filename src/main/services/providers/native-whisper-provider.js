@@ -1,4 +1,4 @@
-// src/main/services/providers/native-whisper-provider.js - FIXED availability logic
+// src/main/services/providers/native-whisper-provider.js - COMPLETE FIX
 const { EventEmitter } = require('events');
 const { spawn } = require('child_process');
 const fs = require('fs').promises;
@@ -25,15 +25,15 @@ class NativeWhisperProvider extends EventEmitter {
       // Create temp directory
       await fs.mkdir(this.tempDir, { recursive: true });
       
-      // FIXED: More lenient availability check
+      // Check availability - more lenient approach
       this.available = await this.checkAvailability();
       
       if (this.available) {
         console.log('✅ Native Whisper provider available');
       } else {
         console.log('⚠️ Native Whisper provider not fully available, but will attempt runtime usage');
-        // FIXED: Don't disable completely - allow runtime attempts
-        this.available = true; // Allow provider to be used, handle errors at runtime
+        // Allow provider to be used, handle errors at runtime
+        this.available = true;
       }
       
       this.isInitialized = true;
@@ -47,7 +47,7 @@ class NativeWhisperProvider extends EventEmitter {
 
   async checkAvailability() {
     try {
-      // FIXED: Just check if binary file exists, don't require test to pass
+      // Just check if binary file exists, don't require test to pass
       const binaryPath = this.binaryManager.getWhisperBinaryPath();
       await fs.access(binaryPath);
       
@@ -89,7 +89,6 @@ class NativeWhisperProvider extends EventEmitter {
     console.log(`Native Whisper Provider: Processing file ${filePath}`);
     console.log(`Options:`, options);
     
-    // FIXED: Check availability at runtime and provide better error messages
     if (!this.isAvailable()) {
       const error = new Error('Native Whisper provider is not available. Binary may be missing or corrupted.');
       console.error('❌ Native Whisper provider not available:', error.message);
@@ -100,7 +99,7 @@ class NativeWhisperProvider extends EventEmitter {
       // Validate input file
       await fs.access(filePath);
       
-      // Get model path
+      // Get model path - COMPLETELY FIXED MODEL RESOLUTION
       const modelName = this.normalizeModelName(options.model || 'base');
       const modelPath = await this.getModelPath(modelName);
       
@@ -129,7 +128,7 @@ class NativeWhisperProvider extends EventEmitter {
     } catch (error) {
       console.error(`❌ Native Whisper error:`, error);
       
-      // FIXED: Provide more helpful error messages
+      // Provide more helpful error messages
       if (error.message.includes('ENOENT')) {
         throw new Error('Whisper binary not found. Please check if whisper.cpp is properly installed.');
       } else if (error.message.includes('model')) {
@@ -148,7 +147,7 @@ class NativeWhisperProvider extends EventEmitter {
       modelName = modelName.replace('whisper-', '');
     }
     
-    // Map common model names
+    // Map model names to expected GGML filenames that whisper.cpp expects
     const modelMap = {
       'tiny': 'ggml-tiny.bin',
       'base': 'ggml-base.bin', 
@@ -163,30 +162,155 @@ class NativeWhisperProvider extends EventEmitter {
   }
 
   async getModelPath(modelName) {
-    // Try installed models first
-    const installedModels = await this.modelManager.getInstalledModels();
-    const installedModel = installedModels.find(m => 
-      m.filename === modelName || 
-      m.id.includes(modelName.replace('.bin', '')) ||
-      m.name.includes(modelName.replace('ggml-', '').replace('.bin', ''))
-    );
+    console.log(`🔍 Looking for model: ${modelName}`);
     
-    if (installedModel) {
-      console.log(`✅ Using installed model: ${installedModel.path}`);
-      return installedModel.path;
+    // COMPLETELY FIXED: Try multiple approaches to find the model file
+    
+    // 1. Try installed models from ModelManager first
+    try {
+      const installedModels = await this.modelManager.getInstalledModels();
+      console.log(`📋 Installed models: ${installedModels.map(m => m.id).join(', ')}`);
+      
+      // Look for exact filename match first
+      let installedModel = installedModels.find(m => {
+        const filename = path.basename(m.path);
+        return filename === modelName;
+      });
+      
+      // Look for ID-based match (whisper-tiny -> ggml-tiny.bin)
+      if (!installedModel) {
+        const baseModelName = modelName.replace('ggml-', '').replace('.bin', '');
+        installedModel = installedModels.find(m => {
+          return m.id.includes(baseModelName) || 
+                 m.name?.toLowerCase().includes(baseModelName) ||
+                 m.id === `whisper-${baseModelName}`;
+        });
+      }
+      
+      if (installedModel) {
+        console.log(`✅ Found installed model: ${installedModel.path}`);
+        
+        // CRITICAL FIX: Check if the file actually exists
+        try {
+          await fs.access(installedModel.path);
+          
+          // CRITICAL FIX: Check if this file has the correct naming for whisper.cpp
+          const filename = path.basename(installedModel.path);
+          if (filename === modelName) {
+            // Perfect match - file exists with correct name
+            return installedModel.path;
+          } else {
+            // File exists but wrong name - create symlink/copy with correct name
+            const modelsDir = path.dirname(installedModel.path);
+            const correctPath = path.join(modelsDir, modelName);
+            
+            try {
+              // Check if correctly named file already exists
+              await fs.access(correctPath);
+              console.log(`✅ Found correctly named file: ${correctPath}`);
+              return correctPath;
+            } catch (error) {
+              // Create copy with correct name
+              console.log(`🔄 Creating correctly named copy: ${filename} -> ${modelName}`);
+              await fs.copyFile(installedModel.path, correctPath);
+              console.log(`✅ Created correctly named model file: ${correctPath}`);
+              return correctPath;
+            }
+          }
+        } catch (error) {
+          console.warn(`⚠️ Model file not accessible: ${installedModel.path}`);
+        }
+      }
+    } catch (error) {
+      console.warn('⚠️ Error getting installed models:', error.message);
     }
     
-    // Fallback to local models directory
-    const modelsDir = path.join(__dirname, '../../../../models');
-    const localModelPath = path.join(modelsDir, modelName);
+    // 2. Try looking in the models directory with expected GGML naming
+    const modelsDir = this.modelManager.modelsDir;
+    const possiblePaths = [
+      path.join(modelsDir, modelName), // Direct filename (ggml-tiny.bin)
+      path.join(modelsDir, `whisper-${modelName.replace('ggml-', '').replace('.bin', '')}.bin`), // WhisperDesk naming
+      path.join(modelsDir, modelName.replace('ggml-', '').replace('.bin', '') + '.bin'), // Simple naming
+    ];
+    
+    console.log(`🔍 Checking paths in models directory: ${modelsDir}`);
+    for (const modelPath of possiblePaths) {
+      try {
+        await fs.access(modelPath);
+        console.log(`✅ Found model at: ${modelPath}`);
+        
+        // If this isn't the correctly named file, create a copy with the correct name
+        const filename = path.basename(modelPath);
+        if (filename !== modelName) {
+          const correctPath = path.join(modelsDir, modelName);
+          try {
+            await fs.access(correctPath);
+            console.log(`✅ Correctly named file already exists: ${correctPath}`);
+            return correctPath;
+          } catch (error) {
+            console.log(`🔄 Creating correctly named copy: ${filename} -> ${modelName}`);
+            await fs.copyFile(modelPath, correctPath);
+            console.log(`✅ Created correctly named model file: ${correctPath}`);
+            return correctPath;
+          }
+        }
+        
+        return modelPath;
+      } catch (error) {
+        console.log(`❌ Not found: ${modelPath}`);
+      }
+    }
+    
+    // 3. Try fallback to local models directory (for development)
+    const localModelsDir = path.join(__dirname, '../../../../models');
+    const localPath = path.join(localModelsDir, modelName);
     
     try {
-      await fs.access(localModelPath);
-      console.log(`✅ Using local model: ${localModelPath}`);
-      return localModelPath;
+      await fs.access(localPath);
+      console.log(`✅ Found local model: ${localPath}`);
+      return localPath;
     } catch (error) {
-      throw new Error(`Model not found: ${modelName}. Please download the model first.`);
+      console.log(`❌ Local model not found: ${localPath}`);
     }
+    
+    // 4. Final attempt: list what's actually in the models directory and try to match
+    try {
+      const files = await fs.readdir(modelsDir);
+      console.log(`📁 Files in models directory: ${files.join(', ')}`);
+      
+      // Look for any .bin file that might match
+      const matchingFile = files.find(file => {
+        const lowerFile = file.toLowerCase();
+        const lowerModel = modelName.toLowerCase();
+        const baseModel = lowerModel.replace('ggml-', '').replace('.bin', '');
+        
+        return lowerFile.includes(baseModel) && lowerFile.endsWith('.bin');
+      });
+      
+      if (matchingFile) {
+        const matchedPath = path.join(modelsDir, matchingFile);
+        console.log(`✅ Found matching file: ${matchedPath}`);
+        
+        // Create correctly named copy
+        const correctPath = path.join(modelsDir, modelName);
+        try {
+          await fs.access(correctPath);
+          console.log(`✅ Correctly named file already exists: ${correctPath}`);
+          return correctPath;
+        } catch (error) {
+          console.log(`🔄 Creating correctly named copy: ${matchingFile} -> ${modelName}`);
+          await fs.copyFile(matchedPath, correctPath);
+          console.log(`✅ Created correctly named model file: ${correctPath}`);
+          return correctPath;
+        }
+      }
+    } catch (error) {
+      console.warn('⚠️ Could not list models directory:', error.message);
+    }
+    
+    // If we get here, no model was found
+    const baseModelName = modelName.replace('ggml-', '').replace('.bin', '');
+    throw new Error(`Model not found: ${modelName}. Please download the '${baseModelName}' model first from the Models tab.`);
   }
 
   async buildWhisperArgs(filePath, modelPath, options) {
@@ -195,8 +319,8 @@ class NativeWhisperProvider extends EventEmitter {
       '-f', filePath
     ];
     
-    // Output format
-    args.push('--output-json');
+    // Output format - use text output for better compatibility
+    args.push('--output-txt');
     
     // Language
     if (options.language && options.language !== 'auto') {
@@ -219,7 +343,7 @@ class NativeWhisperProvider extends EventEmitter {
     return new Promise((resolve, reject) => {
       const startTime = Date.now();
       
-      // FIXED: Enhanced environment setup for Windows
+      // Enhanced environment setup for Windows
       const env = { ...process.env };
       const binaryDir = path.dirname(binaryPath);
       
@@ -305,7 +429,7 @@ class NativeWhisperProvider extends EventEmitter {
             reject(new Error(`Failed to parse transcription result: ${parseError.message}`));
           }
         } else {
-          // FIXED: Better error messages based on exit codes
+          // Better error messages based on exit codes
           let errorMessage = `Whisper process failed with code ${code}`;
           
           if (code === 1) {
@@ -333,7 +457,7 @@ class NativeWhisperProvider extends EventEmitter {
         this.activeProcesses.delete(transcriptionId);
         console.error('Whisper process error:', error);
         
-        // FIXED: More specific error messages
+        // More specific error messages
         if (error.code === 'ENOENT') {
           reject(new Error('Whisper binary not found. Please check installation.'));
         } else if (error.code === 'EACCES') {

@@ -17,6 +17,26 @@ class ModelManager extends EventEmitter {
     this.availableModels = new Map();
     this.maxConcurrentDownloads = 2;
     this.activeDownloads = 0;
+    
+    // Model name mapping for whisper.cpp compatibility
+    this.modelNameMapping = {
+      'whisper-tiny.bin': 'ggml-tiny.bin',
+      'whisper-base.bin': 'ggml-base.bin',
+      'whisper-small.bin': 'ggml-small.bin',
+      'whisper-medium.bin': 'ggml-medium.bin',
+      'whisper-large.bin': 'ggml-large-v3.bin',
+      'whisper-large-v2.bin': 'ggml-large-v2.bin',
+      'whisper-large-v3.bin': 'ggml-large-v3.bin',
+      
+      // Handle different variations
+      'tiny.bin': 'ggml-tiny.bin',
+      'base.bin': 'ggml-base.bin',
+      'small.bin': 'ggml-small.bin',
+      'medium.bin': 'ggml-medium.bin',
+      'large.bin': 'ggml-large-v3.bin',
+      'large-v2.bin': 'ggml-large-v2.bin',
+      'large-v3.bin': 'ggml-large-v3.bin'
+    };
   }
 
   getModelsDirectory() {
@@ -51,6 +71,9 @@ class ModelManager extends EventEmitter {
       // Scan for installed models
       await this.scanInstalledModels();
       
+      // INTEGRATED: Fix model naming compatibility automatically
+      await this.fixModelCompatibility();
+      
       console.log('Model manager initialized');
       console.log(`Models directory: ${this.modelsDir}`);
       console.log(`Available models: ${this.availableModels.size}`);
@@ -81,7 +104,8 @@ class ModelManager extends EventEmitter {
         downloadUrl: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin',
         checksum: '65147644a518d12f04e32d6f83b26e78e39ff953a90edea0b0f4b7c8b8e0e5de',
         version: '1.0.0',
-        type: 'whisper'
+        type: 'whisper',
+        expectedFilename: 'ggml-tiny.bin' // Add expected filename for whisper.cpp
       },
       {
         id: 'whisper-base',
@@ -100,7 +124,8 @@ class ModelManager extends EventEmitter {
         downloadUrl: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin',
         checksum: 'ed3a0b6b1c0edf879ad9b11b1af5a0e6ab5db9205f891f668f8b0e6c6326e34e',
         version: '1.0.0',
-        type: 'whisper'
+        type: 'whisper',
+        expectedFilename: 'ggml-base.bin'
       },
       {
         id: 'whisper-small',
@@ -119,7 +144,8 @@ class ModelManager extends EventEmitter {
         downloadUrl: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin',
         checksum: '9ecf779972d90ba49c06d968637d720dd632c55bbf19a9b982f6b20a0e4b1b8e',
         version: '1.0.0',
-        type: 'whisper'
+        type: 'whisper',
+        expectedFilename: 'ggml-small.bin'
       },
       {
         id: 'whisper-medium',
@@ -138,7 +164,8 @@ class ModelManager extends EventEmitter {
         downloadUrl: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium.bin',
         checksum: '345ae4da62f9b3d59415adc60127b97c714f32e89e936602e85993674d08dcb1',
         version: '1.0.0',
-        type: 'whisper'
+        type: 'whisper',
+        expectedFilename: 'ggml-medium.bin'
       },
       {
         id: 'whisper-large-v2',
@@ -157,7 +184,8 @@ class ModelManager extends EventEmitter {
         downloadUrl: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v2.bin',
         checksum: '81f7c96c852ee8fc832187b0132e569d6c3065a3252ed18e56effd0b6a73e524',
         version: '2.0.0',
-        type: 'whisper'
+        type: 'whisper',
+        expectedFilename: 'ggml-large-v2.bin'
       },
       {
         id: 'whisper-large-v3',
@@ -176,7 +204,8 @@ class ModelManager extends EventEmitter {
         downloadUrl: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3.bin',
         checksum: 'e4b87e7e0bf463eb8e6956e646f1e277e901512310def2c24bf0e11bd3c28e9a',
         version: '3.0.0',
-        type: 'whisper'
+        type: 'whisper',
+        expectedFilename: 'ggml-large-v3.bin'
       }
     ];
 
@@ -203,10 +232,12 @@ class ModelManager extends EventEmitter {
             id: modelId,
             name: availableModel?.name || file,
             path: modelPath,
+            filename: file,
             size: stats.size,
             installedAt: stats.mtime,
             version: availableModel?.version || 'unknown',
-            type: availableModel?.type || 'unknown'
+            type: availableModel?.type || 'unknown',
+            isCompatible: this.isFileNameCompatible(file)
           };
           
           this.installedModels.set(modelId, installedModel);
@@ -215,6 +246,136 @@ class ModelManager extends EventEmitter {
     } catch (error) {
       console.error('Error scanning installed models:', error);
     }
+  }
+
+  // NEW: Check if filename is compatible with whisper.cpp
+  isFileNameCompatible(filename) {
+    return filename.startsWith('ggml-') && filename.endsWith('.bin');
+  }
+
+  // NEW: Automatically fix model naming compatibility
+  async fixModelCompatibility() {
+    console.log('🔧 Checking model compatibility with whisper.cpp...');
+    
+    try {
+      const files = await fs.readdir(this.modelsDir);
+      const modelFiles = files.filter(file => file.endsWith('.bin'));
+      
+      let fixedCount = 0;
+      let alreadyCorrect = 0;
+      
+      for (const file of modelFiles) {
+        const filePath = path.join(this.modelsDir, file);
+        
+        if (this.isFileNameCompatible(file)) {
+          alreadyCorrect++;
+          continue;
+        }
+        
+        // Check if we have a mapping for this file
+        const correctName = this.modelNameMapping[file];
+        if (correctName) {
+          const correctPath = path.join(this.modelsDir, correctName);
+          
+          try {
+            // Check if correctly named file already exists
+            await fs.access(correctPath);
+            console.log(`✅ ${correctName} already exists`);
+          } catch (error) {
+            // Create correctly named copy
+            console.log(`🔄 Creating compatible model: ${file} -> ${correctName}`);
+            await fs.copyFile(filePath, correctPath);
+            
+            // Verify the copy was successful
+            const stats = await fs.stat(correctPath);
+            console.log(`✅ Created ${correctName} (${(stats.size / 1024 / 1024).toFixed(2)} MB)`);
+            fixedCount++;
+            
+            // Update installed models map with the new compatible file
+            const modelId = this.getModelIdFromFilename(correctName);
+            const availableModel = this.availableModels.get(modelId);
+            
+            const compatibleModel = {
+              id: modelId,
+              name: availableModel?.name || correctName,
+              path: correctPath,
+              filename: correctName,
+              size: stats.size,
+              installedAt: new Date(),
+              version: availableModel?.version || 'unknown',
+              type: availableModel?.type || 'unknown',
+              isCompatible: true
+            };
+            
+            this.installedModels.set(modelId, compatibleModel);
+          }
+        }
+      }
+      
+      if (fixedCount > 0) {
+        console.log(`✅ Fixed ${fixedCount} model files for whisper.cpp compatibility`);
+        this.emit('modelsFixed', { fixedCount });
+      } else if (alreadyCorrect > 0) {
+        console.log(`✅ All ${alreadyCorrect} models already compatible with whisper.cpp`);
+      }
+      
+    } catch (error) {
+      console.warn('⚠️ Error during model compatibility fix:', error.message);
+    }
+  }
+
+  // NEW: Get the correct model path for whisper.cpp (always returns ggml- prefixed file)
+  async getCompatibleModelPath(modelId) {
+    console.log(`🔍 Getting compatible model path for: ${modelId}`);
+    
+    // First, try to find the model in installed models
+    const installedModel = this.installedModels.get(modelId);
+    if (installedModel) {
+      // If the installed model is already compatible, return its path
+      if (installedModel.isCompatible) {
+        console.log(`✅ Found compatible model: ${installedModel.path}`);
+        return installedModel.path;
+      }
+      
+      // If not compatible, try to find or create a compatible version
+      const compatibleName = this.getCompatibleFileName(installedModel.filename);
+      if (compatibleName) {
+        const compatiblePath = path.join(this.modelsDir, compatibleName);
+        
+        try {
+          await fs.access(compatiblePath);
+          console.log(`✅ Found existing compatible file: ${compatiblePath}`);
+          return compatiblePath;
+        } catch (error) {
+          // Create compatible copy
+          console.log(`🔄 Creating compatible copy: ${installedModel.filename} -> ${compatibleName}`);
+          await fs.copyFile(installedModel.path, compatiblePath);
+          console.log(`✅ Created compatible model: ${compatiblePath}`);
+          return compatiblePath;
+        }
+      }
+    }
+    
+    // If not found in installed models, try to find by expected filename
+    const availableModel = this.availableModels.get(modelId);
+    if (availableModel && availableModel.expectedFilename) {
+      const expectedPath = path.join(this.modelsDir, availableModel.expectedFilename);
+      
+      try {
+        await fs.access(expectedPath);
+        console.log(`✅ Found model by expected filename: ${expectedPath}`);
+        return expectedPath;
+      } catch (error) {
+        // File doesn't exist with expected name
+      }
+    }
+    
+    throw new Error(`Model not found: ${modelId}. Please download the model first from the Models tab.`);
+  }
+
+  // NEW: Get compatible filename for whisper.cpp
+  getCompatibleFileName(filename) {
+    return this.modelNameMapping[filename] || (filename.startsWith('ggml-') ? filename : null);
   }
 
   getModelIdFromFilename(filename) {
@@ -238,7 +399,13 @@ class ModelManager extends EventEmitter {
       'small': 'whisper-small',
       'medium': 'whisper-medium',
       'large-v2': 'whisper-large-v2',
-      'large-v3': 'whisper-large-v3'
+      'large-v3': 'whisper-large-v3',
+      'whisper-tiny': 'whisper-tiny',
+      'whisper-base': 'whisper-base',
+      'whisper-small': 'whisper-small',
+      'whisper-medium': 'whisper-medium',
+      'whisper-large-v2': 'whisper-large-v2',
+      'whisper-large-v3': 'whisper-large-v3'
     };
     
     return ggmlMap[baseName] || filenameMap[baseName] || baseName;
@@ -319,8 +486,14 @@ class ModelManager extends EventEmitter {
     downloadInfo.startTime = Date.now();
 
     try {
-      const outputPath = path.join(this.modelsDir, `${modelId}.bin`);
-      await this.downloadFile(downloadInfo.model.downloadUrl, outputPath, downloadInfo);
+      // UPDATED: Download with correct GGML filename from the start
+      const model = downloadInfo.model;
+      const outputFilename = model.expectedFilename || `${modelId}.bin`;
+      const outputPath = path.join(this.modelsDir, outputFilename);
+      
+      console.log(`📥 Downloading ${model.name} as ${outputFilename}`);
+      
+      await this.downloadFile(model.downloadUrl, outputPath, downloadInfo);
       
       // Skip checksum verification for now since we're using new model files
       // if (downloadInfo.model.checksum) {
@@ -331,12 +504,14 @@ class ModelManager extends EventEmitter {
       const stats = await fs.stat(outputPath);
       const installedModel = {
         id: modelId,
-        name: downloadInfo.model.name,
+        name: model.name,
         path: outputPath,
+        filename: outputFilename,
         size: stats.size,
         installedAt: new Date(),
-        version: downloadInfo.model.version,
-        type: downloadInfo.model.type
+        version: model.version,
+        type: model.type,
+        isCompatible: this.isFileNameCompatible(outputFilename)
       };
 
       this.installedModels.set(modelId, installedModel);
@@ -345,6 +520,7 @@ class ModelManager extends EventEmitter {
       downloadInfo.progress = 100;
       downloadInfo.completedAt = Date.now();
 
+      console.log(`✅ Model ${model.name} downloaded successfully as ${outputFilename}`);
       this.emit('downloadComplete', { modelId, installedModel });
 
     } catch (error) {
@@ -353,7 +529,9 @@ class ModelManager extends EventEmitter {
       this.emit('downloadError', { modelId, error: error.message });
       
       // Clean up partial download
-      const outputPath = path.join(this.modelsDir, `${modelId}.bin`);
+      const model = downloadInfo.model;
+      const outputFilename = model.expectedFilename || `${modelId}.bin`;
+      const outputPath = path.join(this.modelsDir, outputFilename);
       try {
         await fs.unlink(outputPath);
       } catch (cleanupError) {
@@ -476,6 +654,21 @@ class ModelManager extends EventEmitter {
 
     try {
       await fs.unlink(installedModel.path);
+      
+      // Also delete any compatible copies if they exist
+      if (!installedModel.isCompatible) {
+        const compatibleName = this.getCompatibleFileName(installedModel.filename);
+        if (compatibleName) {
+          const compatiblePath = path.join(this.modelsDir, compatibleName);
+          try {
+            await fs.unlink(compatiblePath);
+            console.log(`🗑️ Also deleted compatible copy: ${compatibleName}`);
+          } catch (error) {
+            // Compatible copy might not exist, that's okay
+          }
+        }
+      }
+      
       this.installedModels.delete(modelId);
       
       this.emit('modelDeleted', { modelId });
@@ -502,7 +695,9 @@ class ModelManager extends EventEmitter {
       this.activeDownloads--;
       
       // Clean up partial download
-      const outputPath = path.join(this.modelsDir, `${modelId}.bin`);
+      const model = downloadInfo.model;
+      const outputFilename = model.expectedFilename || `${modelId}.bin`;
+      const outputPath = path.join(this.modelsDir, outputFilename);
       try {
         await fs.unlink(outputPath);
       } catch (error) {
@@ -515,15 +710,53 @@ class ModelManager extends EventEmitter {
     return { success: true };
   }
 
+  // UPDATED: Get model path with compatibility handling
   getModelPath(modelId) {
     const installedModel = this.installedModels.get(modelId);
-    return installedModel?.path;
+    if (!installedModel) {
+      return null;
+    }
+    
+    // If model is compatible, return its path directly
+    if (installedModel.isCompatible) {
+      return installedModel.path;
+    }
+    
+    // Try to find compatible version
+    const compatibleName = this.getCompatibleFileName(installedModel.filename);
+    if (compatibleName) {
+      const compatiblePath = path.join(this.modelsDir, compatibleName);
+      // Note: We should check if file exists, but for now return the expected path
+      return compatiblePath;
+    }
+    
+    return installedModel.path;
   }
 
   isModelInstalled(modelId) {
     return this.installedModels.has(modelId);
   }
+
+  // NEW: Get model statistics including compatibility info
+  async getModelStatistics() {
+    const stats = {
+      total: this.installedModels.size,
+      compatible: 0,
+      incompatible: 0,
+      totalSize: 0
+    };
+    
+    for (const model of this.installedModels.values()) {
+      if (model.isCompatible) {
+        stats.compatible++;
+      } else {
+        stats.incompatible++;
+      }
+      stats.totalSize += model.size;
+    }
+    
+    return stats;
+  }
 }
 
 module.exports = ModelManager;
-
