@@ -1,4 +1,4 @@
-// src/main/services/binary-manager.js - FIXED for Windows binary detection
+// src/main/services/binary-manager.js - CROSS-PLATFORM FIX
 const { app } = require('electron');
 const fs = require('fs').promises;
 const path = require('path');
@@ -12,7 +12,6 @@ class BinaryManager {
     this.platformKey = `${this.platform}-${this.arch}`;
     this.isPackaged = app.isPackaged;
     
-    // Determine binaries directory based on whether app is packaged
     this.binariesDir = this.getBinariesDirectory();
     
     console.log('Binary Manager Configuration:');
@@ -24,19 +23,14 @@ class BinaryManager {
 
   getBinariesDirectory() {
     if (this.isPackaged) {
-      // In packaged app, resources are in different locations based on platform
       if (this.platform === 'darwin') {
-        // macOS: /Applications/WhisperDesk.app/Contents/Resources/binaries
         return path.join(process.resourcesPath, 'binaries');
       } else if (this.platform === 'win32') {
-        // Windows: C:\Users\...\AppData\Local\WhisperDesk\resources\binaries
         return path.join(process.resourcesPath, 'binaries');
       } else {
-        // Linux: /opt/WhisperDesk/resources/binaries or similar
         return path.join(process.resourcesPath, 'binaries');
       }
     } else {
-      // In development, use project directory
       const projectRoot = path.join(__dirname, '../../../');
       return path.join(projectRoot, 'binaries');
     }
@@ -47,7 +41,6 @@ class BinaryManager {
       console.log('Initializing Binary Manager...');
       console.log(`Looking for binaries in: ${this.binariesDir}`);
       
-      // Check if binaries directory exists
       try {
         await fs.access(this.binariesDir);
         console.log('✅ Binaries directory exists');
@@ -55,7 +48,6 @@ class BinaryManager {
         console.warn('⚠️ Binaries directory not found:', this.binariesDir);
         
         if (!this.isPackaged) {
-          // In development, try to create the directory
           await fs.mkdir(this.binariesDir, { recursive: true });
           console.log('📁 Created binaries directory');
         } else {
@@ -72,31 +64,27 @@ class BinaryManager {
   }
 
   async ensureWhisperBinary() {
-    const binaryPath = this.getWhisperBinaryPath()
+    const binaryPath = this.getWhisperBinaryPath();
     
-    console.log(`Checking for whisper binary at: ${binaryPath}`)
+    console.log(`Checking for whisper binary at: ${binaryPath}`);
     
     try {
-      // FIRST: Check if the file actually exists
       await fs.access(binaryPath);
       const stats = await fs.stat(binaryPath);
       console.log(`✅ Binary file exists: ${binaryPath} (${stats.size} bytes)`);
       
-      // Check if it's executable (Unix only)
       if (this.platform !== 'win32') {
         if (!(stats.mode & 0o111)) {
-          console.log('Making binary executable...')
-          await fs.chmod(binaryPath, 0o755)
+          console.log('Making binary executable...');
+          await fs.chmod(binaryPath, 0o755);
         }
       }
       
-      // On Windows, check for dependencies
       if (this.platform === 'win32') {
-        await this.checkWindowsDependencies(binaryPath)
-        await this.checkWindowsRuntimeDependencies(binaryPath)
+        await this.checkWindowsDependencies(binaryPath);
+        await this.checkWindowsRuntimeDependencies(binaryPath);
       }
       
-      // FIXED: Test the binary, but handle failures gracefully
       console.log('🧪 Testing binary functionality...');
       const testResult = await this.testBinaryWithResult();
       
@@ -105,36 +93,29 @@ class BinaryManager {
         console.warn(`   Exit code: ${testResult.exitCode}`);
         console.warn(`   Output: ${testResult.output.substring(0, 300)}${testResult.output.length > 300 ? '...' : ''}`);
         
-        // FIXED: Don't throw error immediately - try to handle specific Windows issues
         if (this.platform === 'win32') {
           this.handleWindowsBinaryIssues(testResult, binaryPath);
         } else {
-          // For non-Windows, we can be more lenient
           console.warn('⚠️ Binary test failed but continuing anyway');
           console.warn('💡 The binary may still work for transcription tasks');
         }
         
-        // CRITICAL FIX: Don't throw error here - just warn and continue
         console.warn('⚠️ Continuing despite binary test failure - will handle errors at runtime');
-        
       } else {
         console.log('✅ Whisper binary found and working correctly');
       }
       
     } catch (error) {
       if (this.isPackaged) {
-        // CRITICAL FIX: Even in packaged app, don't fail if binary exists but test fails
         const binaryPath = this.getWhisperBinaryPath();
         try {
           await fs.access(binaryPath);
           console.warn('⚠️ Binary exists but failed initialization test');
           console.warn('💡 Continuing anyway - will handle runtime errors gracefully');
-          return; // Don't throw error
+          return;
         } catch (accessError) {
-          // Binary truly doesn't exist
           console.error('❌ Whisper binary not found in packaged app:', binaryPath);
           
-          // List what files ARE in the directory for debugging
           try {
             const files = await fs.readdir(this.binariesDir);
             console.log('📋 Files in binaries directory:', files.join(', '));
@@ -145,27 +126,21 @@ class BinaryManager {
           throw new Error(`Whisper binary not found in packaged app. Expected at: ${binaryPath}`);
         }
       } else {
-        // In development, give helpful instructions
-        console.log('⚠️ Whisper binary not available in development mode')
-        console.log('💡 To build the whisper binary:')
-        console.log('   npm run build:whisper')
-        console.log('   OR')
-        console.log('   chmod +x scripts/build-whisper.sh && ./scripts/build-whisper.sh')
-        console.log('')
-        console.log('📋 Note: The app will work in web mode without the binary')
-        
-        // Don't throw error in development - allow graceful degradation
+        console.log('⚠️ Whisper binary not available in development mode');
+        console.log('💡 To build the whisper binary:');
+        console.log('   npm run build:whisper');
+        console.log('   OR');
+        console.log('   chmod +x scripts/build-whisper.sh && ./scripts/build-whisper.sh');
+        console.log('');
+        console.log('📋 Note: The app will work in web mode without the binary');
       }
     }
   }
 
-  // FIXED: Better Windows-specific error handling (now void function)
   handleWindowsBinaryIssues(testResult, binaryPath) {
     const { exitCode, output } = testResult;
     
-    // Check for specific Windows error patterns
     if (exitCode === 3221225781 || exitCode === -1073741515) {
-      // 0xC0000135 - Application failed to initialize (missing DLLs)
       console.error('❌ Binary failed due to missing Visual C++ runtime libraries');
       
       const vcRedistPath = path.join(this.binariesDir, 'vc_redist.x64.exe');
@@ -177,131 +152,155 @@ class BinaryManager {
       }
       
     } else if (exitCode === 3221225794 || exitCode === -1073741502) {
-      // 0xC0000142 - Application failed to initialize (wrong architecture)
       console.error('❌ Binary failed due to architecture mismatch or corruption');
       
     } else if (output && output.toLowerCase().includes('deprecated')) {
-      // Handle deprecated binary warnings
       console.warn('⚠️ Binary shows deprecation warning but may still work');
       console.warn('🔧 Consider updating to newer whisper.cpp version');
       
     } else {
-      // Unknown error - log but don't fail
       console.warn('⚠️ Unknown binary test failure');
       console.warn(`   Exit code: ${exitCode}`);
       console.warn(`   Output preview: ${output.substring(0, 200)}`);
     }
     
-    // FIXED: Don't throw error here - let the app start and handle runtime errors gracefully
     console.log('⚠️ Continuing despite binary test failure - will handle errors at runtime');
   }
 
+  // FIXED: Support both old and new binary names
+  getWhisperBinaryPath() {
+    const binaryNames = {
+      'win32-x64': ['whisper-cli.exe', 'whisper.exe'],
+      'win32-ia32': ['whisper-cli.exe', 'whisper.exe'],
+      'win32-arm64': ['whisper-cli.exe', 'whisper.exe'],
+      'darwin-x64': ['whisper-cli', 'whisper'],
+      'darwin-arm64': ['whisper-cli', 'whisper'],
+      'linux-x64': ['whisper-cli', 'whisper'],
+      'linux-arm64': ['whisper-cli', 'whisper'],
+      'linux-arm': ['whisper-cli', 'whisper']
+    };
+
+    const candidateNames = binaryNames[this.platformKey] || ['whisper-cli', 'whisper'];
+    
+    // Try to find existing binary
+    for (const binaryName of candidateNames) {
+      const binaryPath = path.join(this.binariesDir, binaryName);
+      try {
+        // Synchronous check for file existence
+        require('fs').accessSync(binaryPath);
+        console.log(`✅ Found binary: ${binaryPath}`);
+        return binaryPath;
+      } catch (error) {
+        // Continue to next candidate
+      }
+    }
+    
+    // Default to the new standard name
+    const defaultName = candidateNames[0];
+    console.log(`🔍 No existing binary found, defaulting to: ${defaultName}`);
+    return path.join(this.binariesDir, defaultName);
+  }
+
   async checkWindowsDependencies(binaryPath) {
-    const binaryDir = path.dirname(binaryPath)
+    const binaryDir = path.dirname(binaryPath);
     const requiredDlls = [
       'ggml-base.dll',
       'ggml-cpu.dll', 
       'ggml.dll',
       'whisper.dll'
-    ]
+    ];
     
-    console.log('Checking for required DLL dependencies...')
+    console.log('Checking for required DLL dependencies...');
     
-    const missingDlls = []
-    const foundDlls = []
+    const missingDlls = [];
+    const foundDlls = [];
     
     for (const dll of requiredDlls) {
-      const dllPath = path.join(binaryDir, dll)
+      const dllPath = path.join(binaryDir, dll);
       try {
-        await fs.access(dllPath)
-        const stats = await fs.stat(dllPath)
-        foundDlls.push({ name: dll, size: stats.size })
-        console.log(`✅ Found: ${dll} (${stats.size} bytes)`)
+        await fs.access(dllPath);
+        const stats = await fs.stat(dllPath);
+        foundDlls.push({ name: dll, size: stats.size });
+        console.log(`✅ Found: ${dll} (${stats.size} bytes)`);
       } catch (error) {
-        console.log(`❌ Missing: ${dll}`)
-        missingDlls.push(dll)
+        console.log(`❌ Missing: ${dll}`);
+        missingDlls.push(dll);
       }
     }
     
-    // Check for any additional DLL files
     try {
-      const files = await fs.readdir(binaryDir)
+      const files = await fs.readdir(binaryDir);
       const additionalDlls = files.filter(file => 
         file.endsWith('.dll') && !requiredDlls.includes(file)
-      )
+      );
       
       if (additionalDlls.length > 0) {
-        console.log(`📋 Additional DLLs found: ${additionalDlls.join(', ')}`)
+        console.log(`📋 Additional DLLs found: ${additionalDlls.join(', ')}`);
       }
     } catch (error) {
-      console.warn('Could not list directory contents:', error.message)
+      console.warn('Could not list directory contents:', error.message);
     }
     
     if (missingDlls.length > 0) {
-      console.warn(`⚠️ Missing DLL dependencies: ${missingDlls.join(', ')}`)
+      console.warn(`⚠️ Missing DLL dependencies: ${missingDlls.join(', ')}`);
       
       if (this.isPackaged) {
-        // FIXED: Don't throw error immediately - warn but continue
-        console.warn('This may cause the whisper binary to fail at runtime')
-        console.warn(`💡 Missing: ${missingDlls.join(', ')}`)
-        console.warn(`💡 Found: ${foundDlls.map(d => d.name).join(', ')}`)
+        console.warn('This may cause the whisper binary to fail at runtime');
+        console.warn(`💡 Missing: ${missingDlls.join(', ')}`);
+        console.warn(`💡 Found: ${foundDlls.map(d => d.name).join(', ')}`);
       } else {
-        // In development, warn but don't fail
-        console.warn('This may cause the whisper binary to fail at runtime')
-        console.warn('💡 You may need to rebuild whisper.cpp or copy DLL files manually')
+        console.warn('This may cause the whisper binary to fail at runtime');
+        console.warn('💡 You may need to rebuild whisper.cpp or copy DLL files manually');
       }
     } else {
-      console.log(`✅ All required DLLs found (${foundDlls.length} files)`)
+      console.log(`✅ All required DLLs found (${foundDlls.length} files)`);
     }
     
     return {
       allFound: missingDlls.length === 0,
       missing: missingDlls,
       found: foundDlls
-    }
+    };
   }
 
   async checkWindowsRuntimeDependencies(binaryPath) {
-    const binaryDir = path.dirname(binaryPath)
+    const binaryDir = path.dirname(binaryPath);
     
-    // Check for Visual C++ runtime DLLs
     const runtimeDlls = [
       'msvcp140.dll',
       'vcruntime140.dll',
       'vcruntime140_1.dll',
-      'vcomp140.dll' // OpenMP runtime
-    ]
+      'vcomp140.dll'
+    ];
     
-    console.log('Checking for Visual C++ runtime dependencies...')
+    console.log('Checking for Visual C++ runtime dependencies...');
     
-    const missingRuntimeDlls = []
-    const foundRuntimeDlls = []
+    const missingRuntimeDlls = [];
+    const foundRuntimeDlls = [];
     
     for (const dll of runtimeDlls) {
-      const localDllPath = path.join(binaryDir, dll)
-      let found = false
+      const localDllPath = path.join(binaryDir, dll);
+      let found = false;
       
-      // Check if DLL is in our binaries directory
       try {
-        await fs.access(localDllPath)
-        const stats = await fs.stat(localDllPath)
-        foundRuntimeDlls.push({ name: dll, location: 'local', size: stats.size })
-        console.log(`✅ Found runtime DLL: ${dll} (local, ${stats.size} bytes)`)
-        found = true
+        await fs.access(localDllPath);
+        const stats = await fs.stat(localDllPath);
+        foundRuntimeDlls.push({ name: dll, location: 'local', size: stats.size });
+        console.log(`✅ Found runtime DLL: ${dll} (local, ${stats.size} bytes)`);
+        found = true;
       } catch (error) {
-        // Check system directories
         const systemPaths = [
           path.join(process.env.WINDIR || 'C:\\Windows', 'System32', dll),
           path.join(process.env.WINDIR || 'C:\\Windows', 'SysWOW64', dll)
-        ]
+        ];
         
         for (const sysPath of systemPaths) {
           try {
-            await fs.access(sysPath)
-            foundRuntimeDlls.push({ name: dll, location: 'system', path: sysPath })
-            console.log(`✅ Found runtime DLL: ${dll} (system)`)
-            found = true
-            break
+            await fs.access(sysPath);
+            foundRuntimeDlls.push({ name: dll, location: 'system', path: sysPath });
+            console.log(`✅ Found runtime DLL: ${dll} (system)`);
+            found = true;
+            break;
           } catch (sysError) {
             // Continue checking
           }
@@ -309,33 +308,32 @@ class BinaryManager {
       }
       
       if (!found) {
-        console.log(`❌ Missing runtime DLL: ${dll}`)
-        missingRuntimeDlls.push(dll)
+        console.log(`❌ Missing runtime DLL: ${dll}`);
+        missingRuntimeDlls.push(dll);
       }
     }
     
-    // Check for VC++ redistributable installer
-    const vcRedistPath = path.join(binaryDir, 'vc_redist.x64.exe')
-    let hasVcRedist = false
+    const vcRedistPath = path.join(binaryDir, 'vc_redist.x64.exe');
+    let hasVcRedist = false;
     try {
-      await fs.access(vcRedistPath)
-      hasVcRedist = true
-      console.log(`✅ Found VC++ Redistributable installer: ${vcRedistPath}`)
+      await fs.access(vcRedistPath);
+      hasVcRedist = true;
+      console.log(`✅ Found VC++ Redistributable installer: ${vcRedistPath}`);
     } catch (error) {
-      console.log(`❌ VC++ Redistributable installer not found: ${vcRedistPath}`)
+      console.log(`❌ VC++ Redistributable installer not found: ${vcRedistPath}`);
     }
     
     if (missingRuntimeDlls.length > 0) {
-      console.warn(`⚠️ Missing Visual C++ runtime DLLs: ${missingRuntimeDlls.join(', ')}`)
+      console.warn(`⚠️ Missing Visual C++ runtime DLLs: ${missingRuntimeDlls.join(', ')}`);
       
       if (hasVcRedist) {
-        console.log(`💡 To fix this issue, run: ${vcRedistPath}`)
+        console.log(`💡 To fix this issue, run: ${vcRedistPath}`);
       } else {
-        console.log(`💡 To fix this issue, install Visual C++ Redistributable from:`)
-        console.log(`   https://aka.ms/vs/17/release/vc_redist.x64.exe`)
+        console.log(`💡 To fix this issue, install Visual C++ Redistributable from:`);
+        console.log(`   https://aka.ms/vs/17/release/vc_redist.x64.exe`);
       }
     } else {
-      console.log(`✅ All Visual C++ runtime dependencies satisfied`)
+      console.log(`✅ All Visual C++ runtime dependencies satisfied`);
     }
     
     return {
@@ -343,31 +341,15 @@ class BinaryManager {
       missing: missingRuntimeDlls,
       found: foundRuntimeDlls,
       hasVcRedist
-    }
-  }
-
-  getWhisperBinaryPath() {
-    const binaryNames = {
-      'win32-x64': 'whisper.exe',
-      'win32-ia32': 'whisper.exe',
-      'win32-arm64': 'whisper.exe',
-      'darwin-x64': 'whisper',
-      'darwin-arm64': 'whisper',
-      'linux-x64': 'whisper',
-      'linux-arm64': 'whisper',
-      'linux-arm': 'whisper'
     };
-
-    const binaryName = binaryNames[this.platformKey] || 'whisper';
-    return path.join(this.binariesDir, binaryName);
   }
 
   async testBinary() {
-    const result = await this.testBinaryWithResult()
+    const result = await this.testBinaryWithResult();
     if (!result.success) {
-      throw new Error(`Binary test failed. Exit code: ${result.exitCode}`)
+      throw new Error(`Binary test failed. Exit code: ${result.exitCode}`);
     }
-    return true
+    return true;
   }
 
   async testBinaryWithResult() {
@@ -377,37 +359,36 @@ class BinaryManager {
     return new Promise((resolve) => {
       console.log(`Testing binary: ${binaryPath}`);
       
-      // Set environment to help Windows find DLLs
       const env = { ...process.env };
       if (this.platform === 'win32') {
-        // Add binaries directory to PATH for DLL loading
         env.PATH = `${binaryDir};${env.PATH}`;
       }
       
       const options = {
         stdio: ['pipe', 'pipe', 'pipe'],
         windowsHide: true,
-        cwd: binaryDir, // Set working directory to binaries folder
+        cwd: binaryDir,
         env: env
       };
       
-      const process = spawn(binaryPath, ['--help'], options);
+      // FIXED: Use --help instead of help for newer whisper-cli
+      const testProcess = spawn(binaryPath, ['--help'], options);
       
       let stdout = '';
       let stderr = '';
       
-      process.stdout.on('data', (data) => {
+      testProcess.stdout.on('data', (data) => {
         stdout += data.toString();
       });
       
-      process.stderr.on('data', (data) => {
+      testProcess.stderr.on('data', (data) => {
         stderr += data.toString();
       });
       
-      process.on('close', (code) => {
+      testProcess.on('close', (code) => {
         const output = stdout + stderr;
         
-        // FIXED: More lenient success criteria
+        // More lenient success criteria - accept deprecation warnings
         const isSuccess = 
           code === 0 || 
           output.toLowerCase().includes('whisper') || 
@@ -415,8 +396,8 @@ class BinaryManager {
           output.toLowerCase().includes('transcribe') ||
           output.toLowerCase().includes('help') ||
           output.toLowerCase().includes('options') ||
-          // Accept even if there's a deprecation warning but it shows help
-          (output.toLowerCase().includes('deprecated') && output.toLowerCase().includes('usage'));
+          output.toLowerCase().includes('deprecated') ||
+          output.toLowerCase().includes('cli');
         
         if (isSuccess) {
           console.log('✅ Binary test passed');
@@ -433,7 +414,7 @@ class BinaryManager {
         });
       });
 
-      process.on('error', (error) => {
+      testProcess.on('error', (error) => {
         console.log(`❌ Failed to execute binary: ${error.message}`);
         resolve({
           success: false,
@@ -442,9 +423,8 @@ class BinaryManager {
         });
       });
       
-      // Set timeout
       setTimeout(() => {
-        process.kill('SIGTERM');
+        testProcess.kill('SIGTERM');
         resolve({
           success: false,
           exitCode: -2,
@@ -480,26 +460,26 @@ class BinaryManager {
     return new Promise((resolve, reject) => {
       const binaryPath = this.getWhisperBinaryPath();
       
-      const process = spawn(binaryPath, ['--help'], {
+      const versionProcess = spawn(binaryPath, ['--help'], {
         stdio: ['pipe', 'pipe', 'pipe']
       });
       
       let output = '';
       
-      process.stdout.on('data', (data) => {
+      versionProcess.stdout.on('data', (data) => {
         output += data.toString();
       });
 
-      process.stderr.on('data', (data) => {
+      versionProcess.stderr.on('data', (data) => {
         output += data.toString();
       });
 
-      process.on('close', (code) => {
-        // Extract version info from help output
+      versionProcess.on('close', (code) => {
         const lines = output.split('\n');
         const versionLine = lines.find(line => 
           line.toLowerCase().includes('whisper') || 
-          line.toLowerCase().includes('version')
+          line.toLowerCase().includes('version') ||
+          line.toLowerCase().includes('cli')
         );
         
         if (versionLine) {
@@ -509,33 +489,27 @@ class BinaryManager {
         }
       });
 
-      process.on('error', (error) => {
+      versionProcess.on('error', (error) => {
         reject(error);
       });
       
-      // Timeout after 10 seconds
       setTimeout(() => {
-        process.kill('SIGTERM');
+        versionProcess.kill('SIGTERM');
         reject(new Error('Version check timeout'));
       }, 10000);
     });
   }
 
-  // FIXED: Check if binary is available and working (more lenient)
   async isAvailable() {
     try {
       const binaryPath = this.getWhisperBinaryPath();
       await fs.access(binaryPath);
-      
-      // Return true if binary exists - don't require test to pass
-      // Runtime errors will be handled when actually using the binary
       return true;
     } catch (error) {
       return false;
     }
   }
 
-  // Get system information
   getSystemInfo() {
     return {
       platform: this.platform,
@@ -549,14 +523,22 @@ class BinaryManager {
     };
   }
 
-  // Development helper: check multiple possible binary locations
   async findBinaryInDevelopment() {
     const possiblePaths = [
+      // New whisper-cli names
+      path.join(__dirname, '../../../binaries/whisper-cli'),
+      path.join(__dirname, '../../../binaries/whisper-cli.exe'),
+      path.join(process.cwd(), 'binaries/whisper-cli'),
+      path.join(process.cwd(), 'binaries/whisper-cli.exe'),
+      // Legacy whisper names
       path.join(__dirname, '../../../binaries/whisper'),
       path.join(__dirname, '../../../binaries/whisper.exe'),
       path.join(process.cwd(), 'binaries/whisper'),
       path.join(process.cwd(), 'binaries/whisper.exe'),
+      // System installations
+      '/usr/local/bin/whisper-cli',
       '/usr/local/bin/whisper',
+      '/opt/homebrew/bin/whisper-cli',
       '/opt/homebrew/bin/whisper'
     ];
 
@@ -576,7 +558,6 @@ class BinaryManager {
     return null;
   }
 
-  // Get comprehensive status for debugging
   async getStatus() {
     const binaryInfo = await this.getBinaryInfo();
     const systemInfo = this.getSystemInfo();
@@ -589,7 +570,6 @@ class BinaryManager {
       version = `Error: ${error.message}`;
     }
 
-    // Get Windows-specific dependency info
     let windowsDependencies = null;
     if (this.platform === 'win32') {
       try {

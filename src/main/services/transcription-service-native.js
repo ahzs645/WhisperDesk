@@ -1,3 +1,4 @@
+// src/main/services/transcription-service-native.js - FIXED PROVIDER NAMING
 const { EventEmitter } = require('events');
 const fs = require('fs').promises;
 const path = require('path');
@@ -104,13 +105,26 @@ class NativeTranscriptionService extends EventEmitter {
     }
   }
 
+  // FIXED: Return properly formatted provider info for UI
   getProviders() {
     return Array.from(this.providers.values()).map(provider => ({
-      name: provider.getName(),
+      id: provider.getName(), // Use the provider's internal name as ID
+      name: this.getProviderDisplayName(provider.getName()), // Convert to display name
       description: provider.getDescription(),
       isAvailable: provider.isAvailable(),
       capabilities: provider.getCapabilities()
     }));
+  }
+
+  // FIXED: Convert internal provider names to user-friendly display names
+  getProviderDisplayName(providerName) {
+    const displayNames = {
+      'whisper-native': 'Native Whisper',
+      'deepgram': 'Deepgram Nova',
+      'whisper': 'Whisper'
+    };
+    
+    return displayNames[providerName] || providerName;
   }
 
   getProvider(name) {
@@ -162,15 +176,6 @@ class NativeTranscriptionService extends EventEmitter {
         ...options,
         transcriptionId
       });
-
-      // Store result (skip for now since saveTranscription doesn't exist)
-      // await transcriptionStore.saveTranscription(transcriptionId, {
-      //   ...result,
-      //   filePath,
-      //   provider,
-      //   options,
-      //   createdAt: new Date().toISOString()
-      // });
 
       // Update active transcriptions
       this.activeTranscriptions.set(transcriptionId, {
