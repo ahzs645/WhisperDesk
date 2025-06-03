@@ -107,30 +107,43 @@ class BinaryManager {
         
         // FIXED: Don't throw error immediately - try to handle specific Windows issues
         if (this.platform === 'win32') {
-          await this.handleWindowsBinaryIssues(testResult, binaryPath);
+          this.handleWindowsBinaryIssues(testResult, binaryPath);
         } else {
           // For non-Windows, we can be more lenient
           console.warn('⚠️ Binary test failed but continuing anyway');
           console.warn('💡 The binary may still work for transcription tasks');
         }
+        
+        // CRITICAL FIX: Don't throw error here - just warn and continue
+        console.warn('⚠️ Continuing despite binary test failure - will handle errors at runtime');
+        
       } else {
         console.log('✅ Whisper binary found and working correctly');
       }
       
     } catch (error) {
       if (this.isPackaged) {
-        // In packaged app, binary should be included - this is an error
-        console.error('❌ Whisper binary not found in packaged app:', binaryPath);
-        
-        // List what files ARE in the directory for debugging
+        // CRITICAL FIX: Even in packaged app, don't fail if binary exists but test fails
+        const binaryPath = this.getWhisperBinaryPath();
         try {
-          const files = await fs.readdir(this.binariesDir);
-          console.log('📋 Files in binaries directory:', files.join(', '));
-        } catch (listError) {
-          console.log('❌ Could not list binaries directory');
+          await fs.access(binaryPath);
+          console.warn('⚠️ Binary exists but failed initialization test');
+          console.warn('💡 Continuing anyway - will handle runtime errors gracefully');
+          return; // Don't throw error
+        } catch (accessError) {
+          // Binary truly doesn't exist
+          console.error('❌ Whisper binary not found in packaged app:', binaryPath);
+          
+          // List what files ARE in the directory for debugging
+          try {
+            const files = await fs.readdir(this.binariesDir);
+            console.log('📋 Files in binaries directory:', files.join(', '));
+          } catch (listError) {
+            console.log('❌ Could not list binaries directory');
+          }
+          
+          throw new Error(`Whisper binary not found in packaged app. Expected at: ${binaryPath}`);
         }
-        
-        throw new Error(`Whisper binary not found in packaged app. Expected at: ${binaryPath}`);
       } else {
         // In development, give helpful instructions
         console.log('⚠️ Whisper binary not available in development mode')
@@ -146,8 +159,8 @@ class BinaryManager {
     }
   }
 
-  // FIXED: Better Windows-specific error handling
-  async handleWindowsBinaryIssues(testResult, binaryPath) {
+  // FIXED: Better Windows-specific error handling (now void function)
+  handleWindowsBinaryIssues(testResult, binaryPath) {
     const { exitCode, output } = testResult;
     
     // Check for specific Windows error patterns
@@ -157,9 +170,8 @@ class BinaryManager {
       
       const vcRedistPath = path.join(this.binariesDir, 'vc_redist.x64.exe');
       try {
-        await fs.access(vcRedistPath);
+        fs.access(vcRedistPath);
         console.log('💡 Found VC++ redistributable installer - user needs to run it');
-        // Don't throw error - let the app continue and show user-friendly message
       } catch (error) {
         console.log('💡 User needs to install Visual C++ redistributable');
       }
@@ -172,7 +184,6 @@ class BinaryManager {
       // Handle deprecated binary warnings
       console.warn('⚠️ Binary shows deprecation warning but may still work');
       console.warn('🔧 Consider updating to newer whisper.cpp version');
-      // Don't throw error - deprecated binaries often still work
       
     } else {
       // Unknown error - log but don't fail
@@ -334,8 +345,6 @@ class BinaryManager {
       hasVcRedist
     }
   }
-
-  // REMOVED: handleBinaryTestFailure method - now handled inline
 
   getWhisperBinaryPath() {
     const binaryNames = {
@@ -518,10 +527,7 @@ class BinaryManager {
       const binaryPath = this.getWhisperBinaryPath();
       await fs.access(binaryPath);
       
-      // Try testing, but don't fail if test fails
-      const testResult = await this.testBinaryWithResult();
-      
-      // Return true if binary exists, even if test fails
+      // Return true if binary exists - don't require test to pass
       // Runtime errors will be handled when actually using the binary
       return true;
     } catch (error) {
