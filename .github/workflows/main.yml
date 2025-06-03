@@ -1,12 +1,25 @@
-# .github/workflows/main.yml - COMPLETELY FIXED with simplified binary detection
 name: Build WhisperDesk for All Platforms
 
 on:
   push:
-    branches: [ main, release ]
+    branches: [ main, master, release ]
     tags: [ 'v*' ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, master ]
+  workflow_dispatch:
+    inputs:
+      create_release:
+        description: 'Create new release'
+        required: true
+        type: boolean
+      release_tag:
+        description: 'Release tag name (e.g., v2.1.0)'
+        required: false
+        type: string
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref && github.ref || github.run_id }}
+  cancel-in-progress: true
 
 permissions:
   contents: write
@@ -14,800 +27,628 @@ permissions:
   checks: write
   pull-requests: write
 
-jobs:
-  build:
-    strategy:
-      matrix:
-        include:
-          - os: macos-latest
-            platform: darwin
-            arch: x64
-            artifact: WhisperDesk-mac-x64
-            electron_arch: x64
-            electron_target: --mac --x64
-          - os: macos-latest
-            platform: darwin
-            arch: arm64
-            artifact: WhisperDesk-mac-arm64
-            electron_arch: arm64
-            electron_target: --mac --arm64
-          - os: ubuntu-latest
-            platform: linux
-            arch: x64
-            artifact: WhisperDesk-linux-x64
-            electron_arch: x64
-            electron_target: --linux --x64
-          - os: windows-latest
-            platform: win32
-            arch: x64
-            artifact: WhisperDesk-windows-x64
-            electron_arch: x64
-            electron_target: --win --x64
+env:
+  BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
 
-    runs-on: ${{ matrix.os }}
+jobs:
+  determine-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag_name: ${{ steps.version.outputs.tag_name }}
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '18'
-        cache: 'npm'
-
-    - name: Setup pnpm
-      uses: pnpm/action-setup@v4
-      with:
-        version: latest
-
-    # Platform-specific dependencies
-    - name: Install Linux dependencies
-      if: runner.os == 'Linux'
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y build-essential cmake libasound2-dev
-        sudo apt-get install -y fuse libfuse2
-
-    - name: Install macOS dependencies
-      if: runner.os == 'macOS'
-      run: |
-        # Install Xcode command line tools if not present
-        xcode-select --install || true
-        # Install cmake via homebrew
-        brew install cmake
-
-    - name: Add MSBuild to PATH (Windows)
-      if: runner.os == 'Windows'
-      uses: microsoft/setup-msbuild@v2
-
-    # Extract version from tag and update package.json
-    - name: Set version from tag
-      shell: bash
-      run: |
-        if [ "${{ github.ref_type }}" = "tag" ]; then
-          # Extract version from tag (remove 'v' prefix)
-          VERSION="${{ github.ref_name }}"
-          VERSION="${VERSION#v}"  # Remove 'v' prefix if present
+      - name: Determine version
+        id: version
+        shell: bash
+        run: |
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            # Extract version from git tag
+            VERSION="${{ github.ref_name }}"
+            VERSION="${VERSION#v}"  # Remove 'v' prefix if present
+            TAG_NAME="${{ github.ref_name }}"
+          elif [ -n "${{ github.event.inputs.release_tag }}" ]; then
+            # Use manual input
+            TAG_NAME="${{ github.event.inputs.release_tag }}"
+            VERSION="${TAG_NAME#v}"
+          else
+            # Use package.json version with build number
+            BUILD_NUMBER=$(git rev-list --count HEAD)
+            SHORT_HASH=$(git rev-parse --short=7 HEAD)
+            PACKAGE_VERSION=$(node -p "require('./package.json').version")
+            VERSION="${PACKAGE_VERSION}-build.${BUILD_NUMBER}"
+            TAG_NAME="v${VERSION}"
+          fi
           
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
+          echo "🏷️ Version: $VERSION"
+          echo "🏷️ Tag: $TAG_NAME"
+
+  # Windows build with proper whisper.cpp compilation
+  build-windows:
+    runs-on: windows-latest
+    needs: determine-version
+
+    strategy:
+      matrix:
+        arch: [x64]
+        build_type: [Release]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: latest
+
+      - name: Add MSBuild to PATH
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Update package.json version
+        shell: pwsh
+        run: |
+          $version = "${{ needs.determine-version.outputs.version }}"
+          Write-Host "🏷️ Setting version to: $version"
+          
+          # Update main package.json
+          $packageJson = Get-Content package.json -Raw | ConvertFrom-Json
+          $packageJson.version = $version
+          $packageJson | ConvertTo-Json -Depth 100 | Set-Content package.json
+          
+          Write-Host "✅ Updated package.json version to: $version"
+
+      # Install dependencies
+      - name: Install main dependencies
+        run: npm install
+
+      - name: Install renderer dependencies
+        shell: pwsh
+        run: |
+          cd src/renderer/whisperdesk-ui
+          
+          # Update renderer package.json version
+          $version = "${{ needs.determine-version.outputs.version }}"
+          $packageJson = Get-Content package.json -Raw | ConvertFrom-Json
+          $packageJson.version = $version
+          $packageJson | ConvertTo-Json -Depth 100 | Set-Content package.json
+          
+          pnpm install --frozen-lockfile
+
+      # Build whisper.cpp from source with better approach
+      - name: Build whisper.cpp for Windows
+        shell: pwsh
+        run: |
+          Write-Host "🔨 Building whisper.cpp for Windows..." -ForegroundColor Green
+          
+          # Clone official whisper.cpp repository
+          git clone https://github.com/ggerganov/whisper.cpp.git C:\temp\whisper-build
+          Set-Location C:\temp\whisper-build
+          
+          Write-Host "✅ Cloned whisper.cpp repository"
+          
+          # Configure with MSVC (Release mode, shared libs for better compatibility)
+          cmake -S . -B build -A ${{ matrix.arch }} `
+            -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} `
+            -DBUILD_SHARED_LIBS=ON `
+            -DWHISPER_BUILD_TESTS=OFF `
+            -DWHISPER_BUILD_EXAMPLES=ON
+          
+          Write-Host "✅ Configured CMake for ${{ matrix.arch }}"
+          
+          # Build using MSBuild
+          cmake --build build --config ${{ matrix.build_type }} --parallel 4
+          
+          Write-Host "✅ Built whisper.cpp"
+          
+          # Find and verify the binaries
+          $buildDir = "build\bin\${{ matrix.build_type }}"
+          Write-Host "🔍 Looking for binaries in: $buildDir"
+          
+          if (Test-Path "$buildDir\whisper-cli.exe") {
+            $whisperBinary = "$buildDir\whisper-cli.exe"
+            $binaryName = "whisper-cli.exe"
+          } elseif (Test-Path "$buildDir\main.exe") {
+            $whisperBinary = "$buildDir\main.exe"
+            $binaryName = "main.exe"
+          } else {
+            Write-Host "❌ No suitable binary found"
+            Get-ChildItem $buildDir -Filter "*.exe" | Format-Table Name, Length
+            exit 1
+          }
+          
+          # Verify binary size and functionality
+          $fileInfo = Get-Item $whisperBinary
+          $sizeKB = [math]::Round($fileInfo.Length / 1024, 1)
+          Write-Host "📊 Found binary: $binaryName ($sizeKB KB)"
+          
+          if ($fileInfo.Length -lt 50KB) {
+            Write-Host "❌ Binary too small, likely corrupted"
+            exit 1
+          }
+          
+          # Create target directory and copy files
+          $targetDir = "$env:GITHUB_WORKSPACE\binaries"
+          New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
+          
+          # Copy main binary as whisper-cli.exe (consistent naming)
+          Copy-Item $whisperBinary "$targetDir\whisper-cli.exe" -Force
+          Write-Host "✅ Copied binary: $binaryName -> whisper-cli.exe"
+          
+          # Copy all required DLLs
+          $dlls = Get-ChildItem $buildDir -Filter "*.dll"
+          foreach ($dll in $dlls) {
+            Copy-Item $dll.FullName $targetDir -Force
+            $dllSize = [math]::Round($dll.Length / 1024, 1)
+            Write-Host "✅ Copied DLL: $($dll.Name) ($dllSize KB)"
+          }
+          
+          Write-Host "📋 Total files copied: $($dlls.Count + 1)"
+
+      # Package Visual C++ Runtime
+      - name: Package VC++ Runtime
+        shell: pwsh
+        run: |
+          Write-Host "📦 Packaging Visual C++ Runtime..." -ForegroundColor Green
+          
+          $targetDir = "$env:GITHUB_WORKSPACE\binaries"
+          
+          # Download VC++ Redistributable
+          $vcredistUrl = "https://aka.ms/vs/17/release/vc_redist.x64.exe"
+          $vcredistPath = "$targetDir\vc_redist.x64.exe"
+          
+          try {
+            Invoke-WebRequest -Uri $vcredistUrl -OutFile $vcredistPath -UseBasicParsing
+            Write-Host "✅ Downloaded VC++ Redistributable"
+          } catch {
+            Write-Host "⚠️ Failed to download VC++ Redistributable: $($_.Exception.Message)"
+          }
+          
+          # Copy system runtime DLLs if available
+          $systemDlls = @(
+            "C:\Windows\System32\msvcp140.dll",
+            "C:\Windows\System32\vcruntime140.dll",
+            "C:\Windows\System32\vcruntime140_1.dll"
+          )
+          
+          foreach ($dll in $systemDlls) {
+            if (Test-Path $dll) {
+              $dllName = Split-Path $dll -Leaf
+              try {
+                Copy-Item $dll "$targetDir\$dllName" -Force
+                Write-Host "✅ Copied runtime: $dllName"
+              } catch {
+                Write-Host "⚠️ Could not copy $dllName"
+              }
+            }
+          }
+
+      # Test the binary
+      - name: Test whisper binary
+        shell: pwsh
+        run: |
+          Write-Host "🔍 Testing whisper binary..." -ForegroundColor Green
+          
+          $binaryPath = "binaries\whisper-cli.exe"
+          
+          if (-not (Test-Path $binaryPath)) {
+            Write-Host "❌ Binary not found: $binaryPath"
+            exit 1
+          }
+          
+          $fileInfo = Get-Item $binaryPath
+          $sizeKB = [math]::Round($fileInfo.Length / 1024, 1)
+          Write-Host "📊 Binary size: $sizeKB KB"
+          
+          # Simple existence and size check (avoid execution issues in CI)
+          if ($fileInfo.Length -gt 100KB) {
+            Write-Host "✅ Binary appears valid ($sizeKB KB)"
+          } else {
+            Write-Host "❌ Binary too small ($sizeKB KB)"
+            exit 1
+          }
+
+      # Download tiny model
+      - name: Download tiny model
+        run: |
+          mkdir -p models
+          curl -L -o models/ggml-tiny.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin
+
+      # Build renderer
+      - name: Build renderer
+        run: |
+          cd src/renderer/whisperdesk-ui
+          pnpm run build
+
+      # Build Electron app
+      - name: Build Electron app
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+        run: |
+          npx electron-builder --win --x64 --publish=never
+
+      # Upload artifacts
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: WhisperDesk-windows-${{ matrix.arch }}
+          path: |
+            dist/*.exe
+            dist/*.zip
+          retention-days: 30
+
+  # macOS build
+  build-macos:
+    runs-on: macos-latest
+    needs: determine-version
+
+    strategy:
+      matrix:
+        arch: [x64, arm64]
+        build_type: [Release]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: latest
+
+      - name: Install dependencies
+        run: |
+          brew update
+          brew install cmake
+
+      - name: Update package.json version
+        run: |
+          VERSION="${{ needs.determine-version.outputs.version }}"
           echo "🏷️ Setting version to: $VERSION"
           
           # Update main package.json
-          if command -v jq &> /dev/null; then
-            # Use jq if available
-            jq --arg version "$VERSION" '.version = $version' package.json > package.json.tmp && mv package.json.tmp package.json
+          cat package.json | jq --arg version "$VERSION" '.version = $version' > package.json.tmp
+          mv package.json.tmp package.json
+          
+          echo "✅ Updated package.json version"
+
+      - name: Install main dependencies
+        run: npm install
+
+      - name: Install renderer dependencies
+        run: |
+          cd src/renderer/whisperdesk-ui
+          
+          # Update renderer package.json version
+          VERSION="${{ needs.determine-version.outputs.version }}"
+          cat package.json | jq --arg version "$VERSION" '.version = $version' > package.json.tmp
+          mv package.json.tmp package.json
+          
+          pnpm install --frozen-lockfile
+
+      # Build whisper.cpp for macOS
+      - name: Build whisper.cpp for macOS
+        run: |
+          echo "🔨 Building whisper.cpp for macOS (${{ matrix.arch }})..."
+          
+          # Clone whisper.cpp
+          git clone https://github.com/ggerganov/whisper.cpp.git /tmp/whisper-build
+          cd /tmp/whisper-build
+          
+          # Configure for specific architecture
+          if [ "${{ matrix.arch }}" = "arm64" ]; then
+            CMAKE_ARCH_FLAGS="-DCMAKE_OSX_ARCHITECTURES=arm64"
           else
-            # Fallback to sed
-            sed -i.bak "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" package.json
+            CMAKE_ARCH_FLAGS="-DCMAKE_OSX_ARCHITECTURES=x86_64"
           fi
           
-          echo "✅ Updated main package.json version to: $VERSION"
-          grep '"version"' package.json
+          cmake -B build \
+            -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
+            -DWHISPER_BUILD_TESTS=OFF \
+            -DWHISPER_BUILD_EXAMPLES=ON \
+            $CMAKE_ARCH_FLAGS
           
-          # Also set as environment variable for electron-builder
-          echo "APP_VERSION=$VERSION" >> $GITHUB_ENV
-        else
-          echo "🔧 Not a tag build, keeping existing version"
-          CURRENT_VERSION=$(node -p "require('./package.json').version")
-          echo "APP_VERSION=$CURRENT_VERSION" >> $GITHUB_ENV
-        fi
-
-    # Install main dependencies
-    - name: Install main dependencies
-      run: npm install
-
-    # Install renderer dependencies
-    - name: Install renderer dependencies
-      shell: bash
-      run: |
-        cd src/renderer/whisperdesk-ui
-        
-        # Update renderer package.json version if this is a tag build
-        if [ "${{ github.ref_type }}" = "tag" ]; then
-          VERSION="${{ github.ref_name }}"
-          VERSION="${VERSION#v}"
+          cmake --build build --config ${{ matrix.build_type }} --parallel $(sysctl -n hw.logicalcpu)
           
-          echo "🏷️ Updating renderer package.json version to: $VERSION"
+          echo "✅ Built whisper.cpp"
           
-          if command -v jq &> /dev/null; then
-            jq --arg version "$VERSION" '.version = $version' package.json > package.json.tmp && mv package.json.tmp package.json
-          else
-            sed -i.bak "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" package.json
-          fi
-          
-          echo "✅ Updated renderer package.json version"
-          grep '"version"' package.json
-        fi
-        
-        pnpm install --frozen-lockfile
-
-    # Build whisper.cpp from source - UNIX platforms - COMPLETELY SIMPLIFIED
-    - name: Build whisper.cpp (Linux/macOS) - SIMPLIFIED
-      if: runner.os != 'Windows'
-      run: |
-        echo "🔨 Building whisper.cpp with cmake for Unix platforms..."
-        
-        # Clone whisper.cpp from OFFICIAL repository
-        git clone https://github.com/ggml-org/whisper.cpp.git /tmp/whisper.cpp
-        cd /tmp/whisper.cpp
-        
-        # Use modern cmake build approach
-        cmake -B build -DCMAKE_BUILD_TYPE=Release
-        cmake --build build --config Release --parallel $(nproc 2>/dev/null || sysctl -n hw.ncpu || echo 4)
-        
-        # SIMPLIFIED: Just find the binary by size - no testing
-        echo "🔍 Finding whisper binary..."
-        
-        WHISPER_BINARY=""
-        
-        # Priority order: whisper-cli first, then main as fallback
-        if [ -f "build/bin/whisper-cli" ]; then
-          SIZE=$(stat -c%s "build/bin/whisper-cli" 2>/dev/null || stat -f%z "build/bin/whisper-cli")
-          echo "📊 Found whisper-cli: $SIZE bytes"
-          if [ "$SIZE" -gt 300000 ]; then
+          # Find binary
+          if [ -f "build/bin/whisper-cli" ]; then
             WHISPER_BINARY="build/bin/whisper-cli"
-            echo "✅ Using whisper-cli binary"
-          fi
-        fi
-        
-        # Fallback to main if whisper-cli not suitable
-        if [ -z "$WHISPER_BINARY" ] && [ -f "build/bin/main" ]; then
-          SIZE=$(stat -c%s "build/bin/main" 2>/dev/null || stat -f%z "build/bin/main")
-          echo "📊 Found main: $SIZE bytes"
-          if [ "$SIZE" -gt 100000 ]; then
+          elif [ -f "build/bin/main" ]; then
             WHISPER_BINARY="build/bin/main"
-            echo "✅ Using main binary as fallback"
-          fi
-        fi
-        
-        if [ -z "$WHISPER_BINARY" ]; then
-          echo "❌ Could not find any suitable whisper binary"
-          echo "📋 Available files in build/bin:"
-          ls -la build/bin/ 2>/dev/null || echo "  (directory not found)"
-          exit 1
-        fi
-        
-        # Copy to project binaries directory with standard name
-        mkdir -p "$GITHUB_WORKSPACE/binaries"
-        cp "$WHISPER_BINARY" "$GITHUB_WORKSPACE/binaries/whisper"
-        chmod +x "$GITHUB_WORKSPACE/binaries/whisper"
-        
-        echo "✅ whisper.cpp built and installed successfully"
-        echo "📍 Source binary: $WHISPER_BINARY"
-        echo "📍 Final binary: $GITHUB_WORKSPACE/binaries/whisper"
-
-    # Build whisper.cpp from source - Windows - COMPLETELY SIMPLIFIED
-    - name: Build whisper.cpp (Windows) - SIMPLIFIED
-      if: runner.os == 'Windows'
-      shell: pwsh
-      run: |
-        Write-Host "🔨 Building whisper.cpp for Windows..." -ForegroundColor Green
-        
-        # Clone whisper.cpp from OFFICIAL repository
-        git clone https://github.com/ggml-org/whisper.cpp.git C:\temp\whisper.cpp
-        Set-Location C:\temp\whisper.cpp
-        
-        Write-Host "✅ Cloned whisper.cpp from official repository"
-        
-        # Configure with MSVC
-        cmake -S . -B ./build -A x64 -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON
-        
-        Write-Host "✅ Configured with MSVC"
-        
-        # Build using MSBuild
-        Set-Location build
-        msbuild ALL_BUILD.vcxproj -t:build -p:configuration=Release -p:platform=x64
-        
-        Write-Host "✅ Built with MSBuild"
-        
-        # SIMPLIFIED: Just find the binary by size - no testing
-        Write-Host "🔍 Finding whisper binary..."
-        
-        $foundBinary = $null
-        $foundPath = ""
-        
-        # Check for whisper-cli.exe first
-        $whisperCliPath = "bin\Release\whisper-cli.exe"
-        if (Test-Path $whisperCliPath) {
-            $fileInfo = Get-Item $whisperCliPath
-            $size = $fileInfo.Length
-            Write-Host "📊 Found whisper-cli.exe: $size bytes"
-            if ($size -gt 300000) {
-                $foundPath = $whisperCliPath
-                $foundBinary = "whisper-cli.exe"
-                Write-Host "✅ Using whisper-cli.exe binary"
-            }
-        }
-        
-        # Fallback to main.exe if needed
-        if (-not $foundBinary) {
-            $mainPath = "bin\Release\main.exe"
-            if (Test-Path $mainPath) {
-                $fileInfo = Get-Item $mainPath
-                $size = $fileInfo.Length
-                Write-Host "📊 Found main.exe: $size bytes"
-                if ($size -gt 100000) {
-                    $foundPath = $mainPath
-                    $foundBinary = "main.exe"
-                    Write-Host "✅ Using main.exe binary as fallback"
-                }
-            }
-        }
-        
-        if (-not $foundBinary) {
-            Write-Host "❌ Could not find any suitable whisper binary" -ForegroundColor Red
-            Write-Host "📋 Available files in build directories:" -ForegroundColor Yellow
-            
-            $buildDirs = @("bin\Release", "Release", "bin")
-            foreach ($dir in $buildDirs) {
-                if (Test-Path $dir) {
-                    Write-Host "Directory: $dir" -ForegroundColor Cyan
-                    Get-ChildItem $dir -Filter "*.exe" -ErrorAction SilentlyContinue | Select-Object Name, Length | Format-Table
-                }
-            }
-            exit 1
-        }
-        
-        # Create target directory and copy binary
-        $targetDir = "$env:GITHUB_WORKSPACE\binaries"
-        New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
-        
-        # Copy the found binary as whisper.exe (standard name for the app)
-        Copy-Item $foundPath "$targetDir\whisper.exe" -Force
-        Write-Host "✅ Copied binary: $foundPath -> whisper.exe" -ForegroundColor Green
-        
-        # Copy all DLLs from the build directory
-        $buildDir = Split-Path $foundPath -Parent
-        $dlls = Get-ChildItem -Path $buildDir -Filter "*.dll" -ErrorAction SilentlyContinue
-        
-        if ($dlls.Count -gt 0) {
-            foreach ($dll in $dlls) {
-                Copy-Item $dll.FullName $targetDir -Force
-                Write-Host "✅ Copied DLL: $($dll.Name)" -ForegroundColor Green
-            }
-            Write-Host "📋 Total DLLs copied: $($dlls.Count)" -ForegroundColor Cyan
-        } else {
-            Write-Host "⚠️ No DLLs found in build directory: $buildDir" -ForegroundColor Yellow
-        }
-        
-        Write-Host "✅ whisper.cpp built and installed successfully" -ForegroundColor Green
-        Write-Host "📍 Source binary: $foundPath" -ForegroundColor Cyan
-        Write-Host "📍 Final binary: $targetDir\whisper.exe" -ForegroundColor Cyan
-
-    # Package Visual C++ Runtime Dependencies (Windows)
-    - name: Package VC++ Runtime (Windows)
-      if: runner.os == 'Windows'
-      shell: pwsh
-      run: |
-        Write-Host "📦 Packaging Visual C++ Runtime Dependencies..." -ForegroundColor Green
-        
-        $targetDir = "$env:GITHUB_WORKSPACE\binaries"
-        
-        # Download VC++ Redistributable for users who need it
-        $vcredistUrl = "https://aka.ms/vs/17/release/vc_redist.x64.exe"
-        $vcredistPath = "$targetDir\vc_redist.x64.exe"
-        
-        try {
-            Write-Host "⬇️ Downloading VC++ Redistributable..."
-            Invoke-WebRequest -Uri $vcredistUrl -OutFile $vcredistPath -UseBasicParsing
-            Write-Host "✅ Downloaded VC++ Redistributable installer"
-        } catch {
-            Write-Host "⚠️ Failed to download VC++ Redistributable: $($_.Exception.Message)"
-        }
-        
-        # Try to copy runtime DLLs from system
-        $runtimeDlls = @(
-            @{ Name = "msvcp140.dll"; Path = "C:\Windows\System32\msvcp140.dll" },
-            @{ Name = "vcruntime140.dll"; Path = "C:\Windows\System32\vcruntime140.dll" },
-            @{ Name = "vcruntime140_1.dll"; Path = "C:\Windows\System32\vcruntime140_1.dll" },
-            @{ Name = "vcomp140.dll"; Path = "C:\Windows\System32\vcomp140.dll" }
-        )
-        
-        foreach ($dll in $runtimeDlls) {
-            if (Test-Path $dll.Path) {
-                try {
-                    Copy-Item $dll.Path $targetDir -Force
-                    Write-Host "✅ Copied runtime DLL: $($dll.Name)"
-                } catch {
-                    Write-Host "⚠️ Could not copy $($dll.Name): $($_.Exception.Message)"
-                }
-            } else {
-                Write-Host "⚠️ Runtime DLL not found: $($dll.Name)"
-            }
-        }
-
-    # Simple binary verification - just check existence and size
-    - name: Simple binary verification
-      shell: bash
-      run: |
-        echo "🔍 Simple binary verification..."
-        
-        if [ "${{ runner.os }}" = "Windows" ]; then
-          BINARY_PATH="binaries/whisper.exe"
-        else
-          BINARY_PATH="binaries/whisper"
-        fi
-        
-        if [ -f "$BINARY_PATH" ]; then
-          echo "✅ Binary exists: $BINARY_PATH"
-          ls -la "$BINARY_PATH"
-          
-          # Get file size
-          if [ "${{ runner.os }}" = "Windows" ]; then
-            SIZE=$(powershell -Command "(Get-Item '$BINARY_PATH').Length")
           else
-            SIZE=$(stat -c%s "$BINARY_PATH" 2>/dev/null || stat -f%z "$BINARY_PATH")
+            echo "❌ No suitable binary found"
+            ls -la build/bin/
+            exit 1
           fi
           
-          echo "📊 Binary size: $SIZE bytes"
+          # Verify and copy
+          SIZE=$(stat -f%z "$WHISPER_BINARY")
+          echo "📊 Found binary: $WHISPER_BINARY ($SIZE bytes)"
           
-          # Very lenient size check
           if [ "$SIZE" -lt 50000 ]; then
-            echo "❌ ERROR: Binary is too small ($SIZE bytes) - likely corrupted"
+            echo "❌ Binary too small"
             exit 1
-          else
-            echo "✅ Binary size looks reasonable ($SIZE bytes)"
           fi
           
-        else
-          echo "❌ Binary not found at: $BINARY_PATH"
-          echo "📋 Contents of binaries directory:"
-          ls -la binaries/ || echo "No binaries directory"
-          exit 1
-        fi
+          mkdir -p "$GITHUB_WORKSPACE/binaries"
+          cp "$WHISPER_BINARY" "$GITHUB_WORKSPACE/binaries/whisper-cli"
+          chmod +x "$GITHUB_WORKSPACE/binaries/whisper-cli"
+          
+          echo "✅ Copied binary to whisper-cli"
 
-    # Download tiny model for inclusion
-    - name: Download tiny model
-      run: |
-        mkdir -p models
-        curl -L -o models/ggml-tiny.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin
+      # Download tiny model
+      - name: Download tiny model
+        run: |
+          mkdir -p models
+          curl -L -o models/ggml-tiny.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin
 
-    # Build renderer
-    - name: Build renderer
-      run: |
-        cd src/renderer/whisperdesk-ui
-        pnpm run build
+      # Build renderer
+      - name: Build renderer
+        run: |
+          cd src/renderer/whisperdesk-ui
+          pnpm run build
 
-    # Configure electron-builder
-    - name: Configure electron-builder (Unix)
-      if: runner.os != 'Windows'
-      run: |
-        echo "🔧 Configuring electron-builder..."
-        
-        cat > electron-builder-fixed.json << 'EOF'
-        {
-          "appId": "com.yourcompany.whisperdesk",
-          "productName": "WhisperDesk Enhanced",
-          "directories": {
-            "output": "dist"
-          },
-          "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
-          "files": [
-            "src/main/**/*",
-            "src/renderer/whisperdesk-ui/dist/**/*",
-            "src/shared/**/*",
-            "node_modules/**/*",
-            "package.json"
-          ],
-          "extraResources": [
-            {
-              "from": "binaries/",
-              "to": "binaries/",
-              "filter": ["**/*"]
-            },
-            {
-              "from": "models/",
-              "to": "models/",
-              "filter": ["**/*"]
-            }
-          ],
-          "win": {
-            "target": [
-              {
-                "target": "nsis",
-                "arch": ["x64"]
-              },
-              {
-                "target": "zip",
-                "arch": ["x64"]
-              }
-            ],
-            "publisherName": "WhisperDesk Team",
-            "verifyUpdateCodeSignature": false
-          },
-          "mac": {
-            "target": [
-              {
-                "target": "dmg",
-                "arch": ["x64", "arm64"]
-              },
-              {
-                "target": "zip",
-                "arch": ["x64", "arm64"]
-              }
-            ],
-            "category": "public.app-category.productivity",
-            "hardenedRuntime": true,
-            "gatekeeperAssess": false
-          },
-          "linux": {
-            "target": [
-              {
-                "target": "AppImage",
-                "arch": ["x64"]
-              },
-              {
-                "target": "deb",
-                "arch": ["x64"]
-              },
-              {
-                "target": "rpm",
-                "arch": ["x64"]
-              },
-              {
-                "target": "tar.gz",
-                "arch": ["x64"]
-              }
-            ],
-            "category": "AudioVideo"
-          }
-        }
-        EOF
-        
-        echo "✅ Electron-builder configuration created"
+      # Build Electron app
+      - name: Build Electron app
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+        run: |
+          if [ "${{ matrix.arch }}" = "arm64" ]; then
+            npx electron-builder --mac --arm64 --publish=never
+          else
+            npx electron-builder --mac --x64 --publish=never
+          fi
 
-    - name: Configure electron-builder (Windows)
-      if: runner.os == 'Windows'
-      shell: pwsh
-      run: |
-        Write-Host "🔧 Configuring electron-builder..."
-        
-        $config = @"
-        {
-          "appId": "com.yourcompany.whisperdesk",
-          "productName": "WhisperDesk Enhanced",
-          "directories": {
-            "output": "dist"
-          },
-          "artifactName": "`${productName}-`${version}-`${os}-`${arch}.`${ext}",
-          "files": [
-            "src/main/**/*",
-            "src/renderer/whisperdesk-ui/dist/**/*",
-            "src/shared/**/*",
-            "node_modules/**/*",
-            "package.json"
-          ],
-          "extraResources": [
-            {
-              "from": "binaries/",
-              "to": "binaries/",
-              "filter": ["**/*"]
-            },
-            {
-              "from": "models/",
-              "to": "models/",
-              "filter": ["**/*"]
-            }
-          ],
-          "win": {
-            "target": [
-              {
-                "target": "nsis",
-                "arch": ["x64"]
-              },
-              {
-                "target": "zip",
-                "arch": ["x64"]
-              }
-            ],
-            "publisherName": "WhisperDesk Team",
-            "verifyUpdateCodeSignature": false
-          },
-          "mac": {
-            "target": [
-              {
-                "target": "dmg",
-                "arch": ["x64", "arm64"]
-              },
-              {
-                "target": "zip",
-                "arch": ["x64", "arm64"]
-              }
-            ],
-            "category": "public.app-category.productivity",
-            "hardenedRuntime": true,
-            "gatekeeperAssess": false
-          },
-          "linux": {
-            "target": [
-              {
-                "target": "AppImage",
-                "arch": ["x64"]
-              },
-              {
-                "target": "deb",
-                "arch": ["x64"]
-              },
-              {
-                "target": "rpm",
-                "arch": ["x64"]
-              },
-              {
-                "target": "tar.gz",
-                "arch": ["x64"]
-              }
-            ],
-            "category": "AudioVideo"
-          }
-        }
-        "@
-        
-        $config | Out-File -FilePath "electron-builder-fixed.json" -Encoding UTF8
-        
-        Write-Host "✅ Electron-builder configuration created"
+      # Upload artifacts
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: WhisperDesk-macos-${{ matrix.arch }}
+          path: |
+            dist/*.dmg
+            dist/*.zip
+          retention-days: 30
 
-    # Verify version before building
-    - name: Verify version configuration
-      shell: bash
-      run: |
-        echo "🔍 Verifying version configuration..."
-        echo "📋 Git ref: ${{ github.ref }}"
-        echo "📋 Git ref type: ${{ github.ref_type }}"
-        echo "📋 Git ref name: ${{ github.ref_name }}"
-        echo "📋 App version (env): $APP_VERSION"
-        echo "📋 Package.json version: $(node -p "require('./package.json').version")"
-        
-        # Verify versions match
-        PACKAGE_VERSION=$(node -p "require('./package.json').version")
-        if [ "$APP_VERSION" != "$PACKAGE_VERSION" ]; then
-          echo "⚠️ Warning: Environment version ($APP_VERSION) differs from package.json ($PACKAGE_VERSION)"
-        else
-          echo "✅ Version consistency verified: $APP_VERSION"
-        fi
+  # Linux build
+  build-linux:
+    runs-on: ubuntu-22.04
+    needs: determine-version
 
-    # Build Electron app for specific platform
-    - name: Build Electron app (macOS)
-      if: matrix.platform == 'darwin'
-      env:
-        CSC_IDENTITY_AUTO_DISCOVERY: false
-      run: |
-        npm run build:skip-whisper
-        npx electron-builder ${{ matrix.electron_target }} --publish=never --config electron-builder-fixed.json
+    strategy:
+      matrix:
+        arch: [x64]
+        build_type: [Release]
 
-    - name: Build Electron app (Linux)
-      if: matrix.platform == 'linux'
-      run: |
-        npm run build:skip-whisper
-        npx electron-builder ${{ matrix.electron_target }} --publish=never --config electron-builder-fixed.json
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: Build Electron app (Windows)
-      if: matrix.platform == 'win32'
-      env:
-        CSC_IDENTITY_AUTO_DISCOVERY: false
-      run: |
-        npm run build:skip-whisper
-        npx electron-builder ${{ matrix.electron_target }} --publish=never --config electron-builder-fixed.json
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
 
-    # VERIFY: Check for unwanted ia32 builds
-    - name: Verify no ia32 builds created
-      shell: bash
-      run: |
-        echo "🔍 Checking for unwanted ia32/32-bit builds..."
-        
-        # Check for ia32 in filenames
-        if find dist/ -name "*ia32*" 2>/dev/null | grep -q .; then
-          echo "❌ ERROR: Found ia32 builds when only x64 was expected!"
-          find dist/ -name "*ia32*"
-          exit 1
-        else
-          echo "✅ No ia32 builds found - good!"
-        fi
-        
-        # List all built files for verification
-        echo "📋 Built files:"
-        find dist/ -type f -name "*.exe" -o -name "*.dmg" -o -name "*.zip" -o -name "*.AppImage" -o -name "*.deb" -o -name "*.rpm" -o -name "*.tar.gz" | sort
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: latest
 
-    # Upload artifacts with clear platform separation
-    - name: Upload macOS artifacts
-      if: matrix.platform == 'darwin'
-      uses: actions/upload-artifact@v4
-      with:
-        name: ${{ matrix.artifact }}
-        path: |
-          dist/*.dmg
-          dist/*.zip
-        retention-days: 30
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake libasound2-dev fuse libfuse2
 
-    - name: Upload Linux artifacts
-      if: matrix.platform == 'linux'
-      uses: actions/upload-artifact@v4
-      with:
-        name: ${{ matrix.artifact }}
-        path: |
-          dist/*.AppImage
-          dist/*.deb
-          dist/*.rpm
-          dist/*.tar.gz
-        retention-days: 30
+      - name: Update package.json version
+        run: |
+          VERSION="${{ needs.determine-version.outputs.version }}"
+          echo "🏷️ Setting version to: $VERSION"
+          
+          # Update main package.json
+          cat package.json | jq --arg version "$VERSION" '.version = $version' > package.json.tmp
+          mv package.json.tmp package.json
+          
+          echo "✅ Updated package.json version"
 
-    - name: Upload Windows artifacts
-      if: matrix.platform == 'win32'
-      uses: actions/upload-artifact@v4
-      with:
-        name: ${{ matrix.artifact }}
-        path: |
-          dist/*.exe
-          dist/*.zip
-        retention-days: 30
+      - name: Install main dependencies
+        run: npm install
 
-  # Create release with proper file organization
-  release:
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: build
+      - name: Install renderer dependencies
+        run: |
+          cd src/renderer/whisperdesk-ui
+          
+          # Update renderer package.json version
+          VERSION="${{ needs.determine-version.outputs.version }}"
+          cat package.json | jq --arg version "$VERSION" '.version = $version' > package.json.tmp
+          mv package.json.tmp package.json
+          
+          pnpm install --frozen-lockfile
+
+      # Build whisper.cpp for Linux
+      - name: Build whisper.cpp for Linux
+        run: |
+          echo "🔨 Building whisper.cpp for Linux..."
+          
+          # Clone whisper.cpp
+          git clone https://github.com/ggerganov/whisper.cpp.git /tmp/whisper-build
+          cd /tmp/whisper-build
+          
+          cmake -B build \
+            -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
+            -DWHISPER_BUILD_TESTS=OFF \
+            -DWHISPER_BUILD_EXAMPLES=ON
+          
+          cmake --build build --config ${{ matrix.build_type }} --parallel $(nproc)
+          
+          echo "✅ Built whisper.cpp"
+          
+          # Find binary
+          if [ -f "build/bin/whisper-cli" ]; then
+            WHISPER_BINARY="build/bin/whisper-cli"
+          elif [ -f "build/bin/main" ]; then
+            WHISPER_BINARY="build/bin/main"
+          else
+            echo "❌ No suitable binary found"
+            ls -la build/bin/
+            exit 1
+          fi
+          
+          # Verify and copy
+          SIZE=$(stat -c%s "$WHISPER_BINARY")
+          echo "📊 Found binary: $WHISPER_BINARY ($SIZE bytes)"
+          
+          if [ "$SIZE" -lt 50000 ]; then
+            echo "❌ Binary too small"
+            exit 1
+          fi
+          
+          mkdir -p "$GITHUB_WORKSPACE/binaries"
+          cp "$WHISPER_BINARY" "$GITHUB_WORKSPACE/binaries/whisper-cli"
+          chmod +x "$GITHUB_WORKSPACE/binaries/whisper-cli"
+          
+          echo "✅ Copied binary to whisper-cli"
+
+      # Download tiny model
+      - name: Download tiny model
+        run: |
+          mkdir -p models
+          curl -L -o models/ggml-tiny.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin
+
+      # Build renderer
+      - name: Build renderer
+        run: |
+          cd src/renderer/whisperdesk-ui
+          pnpm run build
+
+      # Build Electron app
+      - name: Build Electron app
+        run: |
+          npx electron-builder --linux --x64 --publish=never
+
+      # Upload artifacts
+      - name: Upload Linux artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: WhisperDesk-linux-${{ matrix.arch }}
+          path: |
+            dist/*.AppImage
+            dist/*.deb
+            dist/*.rpm
+            dist/*.tar.gz
+          retention-days: 30
+
+  # Create release
+  create-release:
+    if: startsWith(github.ref, 'refs/tags/v') || github.event.inputs.create_release == 'true'
+    needs: [determine-version, build-windows, build-macos, build-linux]
     runs-on: ubuntu-latest
-    
+
     permissions:
       contents: write
       actions: read
       id-token: write
-      
+
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-    - name: Download all artifacts
-      uses: actions/download-artifact@v4
-      with:
-        path: artifacts
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
 
-    - name: Set clean version for release notes
-      id: version
-      run: |
-        # Extract clean version (without 'v' prefix) for release notes
-        CLEAN_VERSION="${{ github.ref_name }}"
-        CLEAN_VERSION="${CLEAN_VERSION#v}"
-        echo "clean=$CLEAN_VERSION" >> $GITHUB_OUTPUT
-        echo "🏷️ Clean version for release notes: $CLEAN_VERSION"
+      - name: Organize release files
+        run: |
+          echo "🔧 Organizing release files..."
+          mkdir -p release-files
+          
+          # Copy all artifacts to release directory with organized naming
+          find artifacts/ -type f \( -name "*.exe" -o -name "*.dmg" -o -name "*.zip" -o -name "*.AppImage" -o -name "*.deb" -o -name "*.rpm" -o -name "*.tar.gz" \) -exec cp {} release-files/ \;
+          
+          echo "📋 Release files:"
+          ls -la release-files/
 
-    - name: Organize release files
-      run: |
-        echo "🔧 Organizing release files by platform with deduplication..."
-        mkdir -p release-files
-        
-        # Function to copy file with unique naming if duplicate exists
-        copy_unique() {
-          local src="$1"
-          local dst="$2"
-          local filename=$(basename "$src")
-          local counter=1
-          local target="$dst/$filename"
-          
-          # If file already exists, add counter
-          while [ -f "$target" ]; do
-            local base="${filename%.*}"
-            local ext="${filename##*.}"
-            if [ "$base" = "$filename" ]; then
-              # No extension
-              target="$dst/${base}-${counter}"
-            else
-              # Has extension
-              target="$dst/${base}-${counter}.${ext}"
-            fi
-            counter=$((counter + 1))
-          done
-          
-          cp "$src" "$target"
-          echo "📁 Copied: $src -> $target"
-        }
-        
-        # Process each artifact directory
-        for artifact_dir in artifacts/*/; do
-          echo "🔍 Processing: $artifact_dir"
-          
-          # Determine platform from directory name
-          if [[ "$artifact_dir" == *"windows"* ]]; then
-            platform="windows"
-          elif [[ "$artifact_dir" == *"mac"* ]]; then
-            platform="macos"
-          elif [[ "$artifact_dir" == *"linux"* ]]; then
-            platform="linux"
-          else
-            echo "⚠️ Unknown platform for $artifact_dir, skipping..."
-            continue
-          fi
-          
-          # Create platform directory
-          mkdir -p "release-files/$platform"
-          
-          # Copy files with deduplication
-          find "$artifact_dir" -type f \( -name "*.exe" -o -name "*.dmg" -o -name "*.zip" -o -name "*.AppImage" -o -name "*.deb" -o -name "*.rpm" -o -name "*.tar.gz" \) | while read -r file; do
-            copy_unique "$file" "release-files/$platform"
-          done
-        done
-        
-        echo "📋 Final release file structure:"
-        find release-files/ -type f | sort
-
-    - name: Create Release
-      uses: softprops/action-gh-release@v1
-      with:
-        files: release-files/**/*
-        draft: false
-        prerelease: false
-        generate_release_notes: true
-        name: "WhisperDesk Enhanced ${{ github.ref_name }}"
-        body: |
-          ## WhisperDesk Enhanced ${{ github.ref_name }}
-          
-          🎉 **New Release Available!**
-          
-          ### 📦 Download Options:
-          
-          **🖥️ Windows (64-bit only)**:
-          - `WhisperDesk-Enhanced-${{ steps.version.outputs.clean }}-win-x64.exe` - Installer
-          - `WhisperDesk-Enhanced-${{ steps.version.outputs.clean }}-win-x64.zip` - Portable version
-          
-          **🍎 macOS**:
-          - `WhisperDesk-Enhanced-${{ steps.version.outputs.clean }}-mac-x64.dmg` - Intel Macs
-          - `WhisperDesk-Enhanced-${{ steps.version.outputs.clean }}-mac-x64.zip` - Intel Macs (Portable)
-          - `WhisperDesk-Enhanced-${{ steps.version.outputs.clean }}-mac-arm64.dmg` - Apple Silicon Macs
-          - `WhisperDesk-Enhanced-${{ steps.version.outputs.clean }}-mac-arm64.zip` - Apple Silicon Macs (Portable)
-          
-          **🐧 Linux**:
-          - `WhisperDesk-Enhanced-${{ steps.version.outputs.clean }}-linux-x64.AppImage` - Portable (recommended)
-          - `WhisperDesk-Enhanced-${{ steps.version.outputs.clean }}-linux-x64.deb` - Debian/Ubuntu package
-          - `WhisperDesk-Enhanced-${{ steps.version.outputs.clean }}-linux-x64.rpm` - Red Hat/Fedora package
-          - `WhisperDesk-Enhanced-${{ steps.version.outputs.clean }}-linux-x64.tar.gz` - Generic Linux archive
-          
-          ### ✨ Features:
-          - 🎵 Native whisper.cpp integration for fast, offline transcription
-          - 📱 Cross-platform support (Windows, macOS, Linux)
-          - 🔄 Real-time progress tracking
-          - 💾 Persistent state management
-          - 🎯 Multiple model support (Tiny, Base, Small, Medium, Large)
-          - 📁 Drag & drop file upload
-          - 🎨 Modern, responsive UI
-          
-          ### 🚀 Quick Start:
-          1. **Download**: Choose the appropriate file for your platform above
-          2. **Install**: 
-             - Windows: Run the installer or extract the zip
-             - macOS: Open the .dmg and drag to Applications, or extract the zip
-             - Linux: Make AppImage executable, install package, or extract archive
-          3. **Setup**: Launch WhisperDesk and go to Models tab
-          4. **Download Model**: Download a transcription model (start with Tiny)
-          5. **Transcribe**: Upload audio/video files and start transcribing!
-          
-          ### 🔧 Troubleshooting:
-          - **Windows**: If you get a "missing DLL" error, run the included `vc_redist.x64.exe` redistributable
-          - **macOS**: Right-click → Open if blocked by Gatekeeper
-          - **Linux**: `chmod +x *.AppImage` to make executable
-          
-          ---
-          Auto-generated release notes below ⬇️
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: release-files/*
+          draft: false
+          prerelease: ${{ contains(needs.determine-version.outputs.version, 'build') }}
+          generate_release_notes: true
+          name: "WhisperDesk Enhanced ${{ needs.determine-version.outputs.tag_name }}"
+          tag_name: ${{ needs.determine-version.outputs.tag_name }}
+          body: |
+            ## WhisperDesk Enhanced ${{ needs.determine-version.outputs.tag_name }}
+            
+            🎉 **New Release Available!**
+            
+            ### 📦 Download Options:
+            
+            **🖥️ Windows (64-bit)**:
+            - `.exe` - Installer (recommended)
+            - `.zip` - Portable version
+            
+            **🍎 macOS**:
+            - `.dmg` - Disk image (recommended)
+            - `.zip` - Portable version
+            - Available for both Intel (x64) and Apple Silicon (arm64)
+            
+            **🐧 Linux**:
+            - `.AppImage` - Portable (recommended)
+            - `.deb` - Debian/Ubuntu package
+            - `.rpm` - Red Hat/Fedora package
+            - `.tar.gz` - Generic archive
+            
+            ### ✨ Features:
+            - 🎵 Native whisper.cpp integration with whisper-cli binary
+            - 📱 Cross-platform support (Windows, macOS, Linux)
+            - 🔄 Real-time progress tracking
+            - 💾 Persistent state management
+            - 🎯 Multiple model support (Tiny, Base, Small, Medium, Large)
+            - 📁 Drag & drop file upload
+            - 🎨 Modern, responsive UI
+            
+            ### 🚀 Quick Start:
+            1. **Download** the appropriate file for your platform
+            2. **Install** and launch WhisperDesk
+            3. **Download a model** in the Models tab (start with Tiny)
+            4. **Start transcribing** your audio files!
+            
+            ### 🔧 Troubleshooting:
+            - **Windows**: If you get DLL errors, the installer includes `vc_redist.x64.exe`
+            - **macOS**: Right-click → Open if blocked by Gatekeeper
+            - **Linux**: `chmod +x *.AppImage` to make executable
+            
+            ---
+            
+            **Technical Details:**
+            - Version: ${{ needs.determine-version.outputs.version }}
+            - Binary: whisper-cli (latest whisper.cpp)
+            - Built with: CMake + electron-builder
+            
+            Auto-generated release notes below ⬇️
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,8 +1,8 @@
-# Windows Binary Fix Script for WhisperDesk
+# Updated Windows Binary Fix Script for WhisperDesk with whisper-cli
 # Fixes the 3221225501 error (Access Violation) on Windows
 
-Write-Host "🔧 WhisperDesk Windows Binary Fix Script" -ForegroundColor Green
-Write-Host "=========================================" -ForegroundColor Green
+Write-Host "🔧 WhisperDesk Windows Binary Fix Script (whisper-cli)" -ForegroundColor Green
+Write-Host "=========================================================" -ForegroundColor Green
 
 # Colors for output
 function Write-Success($message) { Write-Host "✅ $message" -ForegroundColor Green }
@@ -62,20 +62,24 @@ if (-not (Test-Path $binariesPath)) {
 
 Write-Success "Binaries directory: $binariesPath"
 
-# Find whisper binary
+# Find whisper binary - now prioritizing whisper-cli.exe
 $whisperBinary = $null
-$possibleBinaries = @("whisper.exe", "whisper-cli.exe", "whisper-cpp.exe")
+$possibleBinaries = @("whisper-cli.exe", "whisper.exe", "whisper-cpp.exe", "main.exe")
 
 foreach ($binary in $possibleBinaries) {
     $binaryPath = Join-Path $binariesPath $binary
     if (Test-Path $binaryPath) {
         $whisperBinary = $binaryPath
+        Write-Info "Found binary candidate: $binary"
         break
     }
 }
 
 if (-not $whisperBinary) {
     Write-Error "Whisper binary not found in $binariesPath"
+    Write-Info "Expected binaries: $($possibleBinaries -join ', ')"
+    Write-Info "Available files:"
+    Get-ChildItem $binariesPath -Filter "*.exe" | Format-Table Name, Length
     exit 1
 }
 
@@ -85,6 +89,7 @@ Write-Success "Found whisper binary: $whisperBinary"
 $binaryInfo = Get-Item $whisperBinary
 $binarySize = [math]::Round($binaryInfo.Length / 1024, 1)
 Write-Info "Binary size: $binarySize KB"
+Write-Info "Binary name: $($binaryInfo.Name)"
 
 # Check if binary is too small (stub)
 if ($binaryInfo.Length -lt 100KB) {
@@ -92,6 +97,18 @@ if ($binaryInfo.Length -lt 100KB) {
     Write-Info "Please download a fresh copy of WhisperDesk"
     exit 1
 }
+
+# Detect binary type
+$binaryType = "unknown"
+if ($binaryInfo.Name -eq "whisper-cli.exe") {
+    $binaryType = "whisper-cli (modern)"
+} elseif ($binaryInfo.Name -eq "whisper.exe") {
+    $binaryType = "whisper (legacy)"
+} elseif ($binaryInfo.Name -eq "main.exe") {
+    $binaryType = "main (basic)"
+}
+
+Write-Info "Binary type: $binaryType"
 
 Write-Info "Checking Visual C++ Runtime dependencies..."
 
@@ -169,6 +186,7 @@ Write-Info "Checking DLL dependencies..."
 
 # Check for required DLLs
 $requiredDlls = @("ggml.dll", "ggml-cpu.dll", "whisper.dll")
+$optionalDlls = @("ggml-base.dll", "msvcp140.dll", "vcruntime140.dll", "vcruntime140_1.dll")
 $missingDlls = @()
 $foundDlls = @()
 
@@ -182,13 +200,27 @@ foreach ($dll in $requiredDlls) {
     }
 }
 
+# Check optional DLLs
+$optionalFound = @()
+foreach ($dll in $optionalDlls) {
+    $dllPath = Join-Path $binariesPath $dll
+    if (Test-Path $dllPath) {
+        $dllSize = [math]::Round((Get-Item $dllPath).Length / 1024, 1)
+        $optionalFound += "$dll ($dllSize KB)"
+    }
+}
+
 if ($foundDlls.Count -gt 0) {
-    Write-Success "Found DLLs: $($foundDlls -join ', ')"
+    Write-Success "Found required DLLs: $($foundDlls -join ', ')"
+}
+
+if ($optionalFound.Count -gt 0) {
+    Write-Success "Found optional DLLs: $($optionalFound -join ', ')"
 }
 
 if ($missingDlls.Count -gt 0) {
-    Write-Warning "Missing DLLs: $($missingDlls -join ', ')"
-    Write-Info "The application may still work without these DLLs"
+    Write-Warning "Missing required DLLs: $($missingDlls -join ', ')"
+    Write-Info "The application may still work without these DLLs if they're statically linked"
 }
 
 Write-Info "Testing whisper binary..."
@@ -216,19 +248,27 @@ try {
     
     Write-Info "Binary test exit code: $exitCode"
     
-    if ($exitCode -eq 0 -or $output -match "whisper|usage|help|options") {
+    if ($exitCode -eq 0 -or $output -match "whisper|usage|help|options|transcribe") {
         Write-Success "Binary test passed! Whisper is working correctly."
         
-        # Check argument format
+        # Detect argument format
         if ($output -match "--file|--model|--output-dir") {
-            Write-Info "Detected NEW argument format (whisper-cli style)"
-        } elseif ($output -match "-f|-m|-t") {
-            Write-Info "Detected LEGACY argument format (old whisper style)"
+            Write-Info "Detected argument format: MODERN (whisper-cli style)"
+            Write-Success "✅ This is the preferred modern format"
+        } elseif ($output -match "-f\s|-m\s|-o\s") {
+            Write-Info "Detected argument format: LEGACY (old whisper style)"
+            Write-Warning "⚠️ Using legacy argument format"
         } else {
             Write-Info "Could not determine argument format from help output"
+            Write-Info "Output preview: $($output.Substring(0, [Math]::Min(200, $output.Length)))"
         }
         
-    } elseif ($exitCode -eq 3221225501) {
+        # Check for specific whisper-cli features
+        if ($output -match "--timestamp|--diarize|--output-txt") {
+            Write-Success "✅ Advanced whisper-cli features detected"
+        }
+        
+    } elseif ($exitCode -eq 3221225501 -or $exitCode -eq -1073741819) {
         Write-Error "Binary crashed with access violation (0xC0000005)"
         Write-Info "This usually means:"
         Write-Info "  1. Missing Visual C++ runtime (should be fixed now)"
@@ -261,7 +301,9 @@ try {
         
     } else {
         Write-Warning "Binary test failed with exit code: $exitCode"
-        Write-Info "Output preview: $($output.Substring(0, [Math]::Min(200, $output.Length)))"
+        if ($output) {
+            Write-Info "Output preview: $($output.Substring(0, [Math]::Min(200, $output.Length)))"
+        }
         
         if ($output -match "deprecated") {
             Write-Info "Binary shows deprecation warning but may still work"
@@ -280,14 +322,30 @@ Write-Info "  PowerShell Version: $($PSVersionTable.PSVersion)"
 # Check PATH for conflicting binaries
 Write-Info "Checking PATH for conflicting whisper binaries..."
 $pathWhisper = Get-Command whisper -ErrorAction SilentlyContinue
+$pathWhisperCli = Get-Command whisper-cli -ErrorAction SilentlyContinue
+
 if ($pathWhisper) {
-    Write-Warning "Found whisper in PATH: $($pathWhisper.Source)"
+    Write-Warning "Found 'whisper' in PATH: $($pathWhisper.Source)"
     Write-Info "This might interfere with WhisperDesk. Consider removing it from PATH."
-} else {
-    Write-Success "No conflicting whisper binary found in PATH"
+}
+
+if ($pathWhisperCli) {
+    Write-Warning "Found 'whisper-cli' in PATH: $($pathWhisperCli.Source)"
+    Write-Info "This might interfere with WhisperDesk. Consider removing it from PATH."
+}
+
+if (-not $pathWhisper -and -not $pathWhisperCli) {
+    Write-Success "No conflicting whisper binaries found in PATH"
 }
 
 Write-Info "Environment check complete!"
+Write-Info ""
+Write-Success "Summary:"
+Write-Info "  Binary: $($binaryInfo.Name) ($binaryType)"
+Write-Info "  Size: $binarySize KB"
+Write-Info "  Required DLLs: $($foundDlls.Count)/$($requiredDlls.Count) found"
+Write-Info "  Optional DLLs: $($optionalFound.Count) found"
+Write-Info "  VC++ Runtime: $(if ($vcRuntimeInstalled) { 'Installed' } else { 'Not detected' })"
 Write-Info ""
 Write-Success "Next steps:"
 Write-Info "  1. Restart WhisperDesk if it was running"
