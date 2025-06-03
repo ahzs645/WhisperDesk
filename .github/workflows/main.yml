@@ -250,127 +250,45 @@ jobs:
         
         Write-Host "✅ Built with MSBuild"
         
-        # FIXED: Updated binary search with correct 2025 naming and better testing
-        $buildDirs = @("bin\Release", "Release", "bin")
-        # Current whisper.cpp binary names (as of 2025)
-        $binaryNames = @("whisper-cli.exe", "main.exe")
+        # FIXED: Simplified binary detection for Windows
+        Write-Host "🔍 Finding whisper binary..."
         
         $foundBinary = $null
         $foundPath = ""
         
-        Write-Host "🔍 Searching for whisper binary with correct naming: $($binaryNames -join ', ')"
+        # Check for whisper-cli.exe first
+        $whisperCliPath = "bin\Release\whisper-cli.exe"
+        if (Test-Path $whisperCliPath) {
+            $fileInfo = Get-Item $whisperCliPath
+            $size = $fileInfo.Length
+            Write-Host "📊 Found whisper-cli.exe: $size bytes"
+            if ($size -gt 300000) {
+                $foundPath = $whisperCliPath
+                $foundBinary = "whisper-cli.exe"
+                Write-Host "✅ Using whisper-cli.exe binary"
+            }
+        }
         
-        foreach ($dir in $buildDirs) {
-            if (-not (Test-Path $dir)) { continue }
-            
-            foreach ($name in $binaryNames) {
-                $candidate = Join-Path $dir $name
-                if (Test-Path $candidate) {
-                    Write-Host "🔍 Found candidate binary: $candidate"
-                    
-                    # Check file size to ensure it's not a stub
-                    $fileInfo = Get-Item $candidate
-                    $size = $fileInfo.Length
-                    Write-Host "📊 Binary size: $size bytes"
-                    
-                    # Modern whisper-cli binaries should be at least 500KB
-                    if ($size -lt 500000) {
-                        Write-Host "⚠️ Binary too small ($size bytes) - likely a stub, skipping" -ForegroundColor Yellow
-                        continue
-                    }
-                    
-                    Write-Host "🧪 Testing binary: $candidate"
-                    
-                    # Test the binary with simple checks that don't require models
-                    $isWorkingBinary = $false
-                    $recommendedBinary = ""
-                    
-                    try {
-                        # Try --version first, then --help if that fails
-                        $versionProcess = Start-Process -FilePath $candidate -ArgumentList "--version" -Wait -NoNewWindow -PassThru -RedirectStandardOutput "test_output.txt" -RedirectStandardError "test_error.txt" -TimeoutSec 5
-                        
-                        if ($versionProcess.ExitCode -ne 0) {
-                            # Try --help if --version failed
-                            $helpProcess = Start-Process -FilePath $candidate -ArgumentList "--help" -Wait -NoNewWindow -PassThru -RedirectStandardOutput "test_output.txt" -RedirectStandardError "test_error.txt" -TimeoutSec 5
-                        }
-                        
-                        # Check if we got any output
-                        $hasOutput = $false
-                        if (Test-Path "test_output.txt") {
-                            $outputContent = Get-Content "test_output.txt" -Raw -ErrorAction SilentlyContinue
-                            if ($outputContent.Length -gt 0) { $hasOutput = $true }
-                        }
-                        if (Test-Path "test_error.txt") {
-                            $errorContent = Get-Content "test_error.txt" -Raw -ErrorAction SilentlyContinue
-                            if ($errorContent.Length -gt 0) { $hasOutput = $true }
-                            
-                            # Check for deprecation warning
-                            if ($errorContent -match "deprecated") {
-                                Write-Host "⚠️ Found deprecated binary: $candidate" -ForegroundColor Yellow
-                                
-                                # Extract recommended binary name
-                                if ($errorContent -match "Please use '([^']+)'") {
-                                    $recommendedBinary = $matches[1]
-                                    Write-Host "🔍 Looking for recommended binary: $recommendedBinary" -ForegroundColor Yellow
-                                    
-                                    # Search for the recommended binary
-                                    foreach ($searchDir in $buildDirs) {
-                                        $recommendedPath = Join-Path $searchDir $recommendedBinary
-                                        if (Test-Path $recommendedPath) {
-                                            $foundPath = $recommendedPath
-                                            $foundBinary = $recommendedBinary
-                                            $isWorkingBinary = $true
-                                            Write-Host "✅ Found recommended binary: $foundPath" -ForegroundColor Green
-                                            break
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        
-                        # If we have output and no deprecation issues, consider it working
-                        if ($hasOutput -and -not $isWorkingBinary) {
-                            $foundPath = $candidate
-                            $foundBinary = $name
-                            $isWorkingBinary = $true
-                            Write-Host "✅ Found working binary: $foundPath" -ForegroundColor Green
-                        } elseif (-not $hasOutput -and -not $isWorkingBinary) {
-                            Write-Host "⚠️ Binary produced no output: $candidate" -ForegroundColor Yellow
-                            # Keep as fallback if size is good and no better option found
-                            if (-not $foundBinary) {
-                                Write-Host "💡 Keeping as fallback option since size looks good" -ForegroundColor Cyan
-                                $foundPath = $candidate
-                                $foundBinary = $name
-                                $isWorkingBinary = $true
-                            }
-                        }
-                        
-                    } catch {
-                        Write-Host "⚠️ Binary test timeout or failed for: $candidate - $($_.Exception.Message)" -ForegroundColor Yellow
-                        # Keep as fallback if no other option and size is reasonable
-                        if (-not $foundBinary) {
-                            Write-Host "💡 Keeping as fallback option since size looks good" -ForegroundColor Cyan
-                            $foundPath = $candidate
-                            $foundBinary = $name
-                            $isWorkingBinary = $true
-                        }
-                    } finally {
-                        # Clean up test files
-                        Remove-Item "test_output.txt" -ErrorAction SilentlyContinue
-                        Remove-Item "test_error.txt" -ErrorAction SilentlyContinue
-                    }
-                    
-                    if ($isWorkingBinary) {
-                        break
-                    }
+        # Fallback to main.exe if needed
+        if (-not $foundBinary) {
+            $mainPath = "bin\Release\main.exe"
+            if (Test-Path $mainPath) {
+                $fileInfo = Get-Item $mainPath
+                $size = $fileInfo.Length
+                Write-Host "📊 Found main.exe: $size bytes"
+                if ($size -gt 100000) {
+                    $foundPath = $mainPath
+                    $foundBinary = "main.exe"
+                    Write-Host "✅ Using main.exe binary as fallback"
                 }
             }
-            if ($foundBinary) { break }
         }
         
         if (-not $foundBinary) {
-            Write-Host "❌ Could not find any working whisper binary" -ForegroundColor Red
+            Write-Host "❌ Could not find any suitable whisper binary" -ForegroundColor Red
             Write-Host "📋 Available files in build directories:" -ForegroundColor Yellow
+            
+            $buildDirs = @("bin\Release", "Release", "bin")
             foreach ($dir in $buildDirs) {
                 if (Test-Path $dir) {
                     Write-Host "Directory: $dir" -ForegroundColor Cyan
@@ -403,6 +321,7 @@ jobs:
         }
         
         Write-Host "✅ whisper.cpp built and installed successfully" -ForegroundColor Green
+        Write-Host "📍 Source binary: $foundPath" -ForegroundColor Cyan
         Write-Host "📍 Final binary: $targetDir\whisper.exe" -ForegroundColor Cyan
 
     # Package Visual C++ Runtime Dependencies (Windows)
