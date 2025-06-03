@@ -17,13 +17,39 @@
     "dist": "electron-builder",
     "dist:win": "electron-builder --win",
     "dist:mac": "electron-builder --mac",
-    "dist:linux": "electron-builder --linux"
+    "dist:linux": "electron-builder --linux",
+    
+    "build:deps": "npm install && npm run build:renderer:deps",
+    "build:renderer:deps": "if [ -d 'src/renderer/whisperdesk-ui' ]; then cd src/renderer/whisperdesk-ui && (pnpm install || npm install); fi",
+    "build:whisper": "node scripts/build-whisper.js",
+    "build:whisper:win": "node scripts/build-whisper.js --platform=win32",
+    "build:whisper:mac": "node scripts/build-whisper.js --platform=darwin",
+    "build:whisper:linux": "node scripts/build-whisper.js --platform=linux",
+    "build:renderer": "if [ -d 'src/renderer/whisperdesk-ui' ]; then cd src/renderer/whisperdesk-ui && (pnpm run build || npm run build); fi",
+    "build:models": "node scripts/download-models.js",
+    "build:models:tiny": "node scripts/download-models.js --model=tiny",
+    
+    "build:full": "npm run build:deps && npm run build:whisper && npm run build:models:tiny && npm run build:renderer && npm run dist",
+    "build:full:win": "npm run build:deps && npm run build:whisper:win && npm run build:models:tiny && npm run build:renderer && npm run dist:win",
+    "build:full:mac": "npm run build:deps && npm run build:whisper:mac && npm run build:models:tiny && npm run build:renderer && npm run dist:mac",
+    "build:full:linux": "npm run build:deps && npm run build:whisper:linux && npm run build:models:tiny && npm run build:renderer && npm run dist:linux",
+    
+    "test:binary": "node scripts/test-binary.js",
+    "clean": "rimraf dist binaries models node_modules src/renderer/whisperdesk-ui/node_modules src/renderer/whisperdesk-ui/dist",
+    "clean:build": "rimraf dist binaries models",
+    
+    "workflow:local": "npm run build:full",
+    "workflow:windows": "npm run build:full:win",
+    "workflow:macos": "npm run build:full:mac",
+    "workflow:linux": "npm run build:full:linux",
+    
+    "postinstall": "node scripts/setup-check.js"
   },
-  "dependencies": {
-    "electron": "^27.1.3"
-  },
+  "dependencies": {},
   "devDependencies": {
-    "electron-builder": "^24.13.3"
+    "electron": "^27.1.3",
+    "electron-builder": "^24.13.3",
+    "rimraf": "^5.0.5"
   },
   "build": {
     "appId": "com.whisperdesk.enhanced",
@@ -51,6 +77,11 @@
       {
         "from": "binaries/",
         "to": "binaries/",
+        "filter": ["**/*"]
+      },
+      {
+        "from": "models/",
+        "to": "models/",
         "filter": ["**/*"]
       }
     ],
