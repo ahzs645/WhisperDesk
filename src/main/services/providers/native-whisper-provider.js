@@ -47,18 +47,64 @@ class NativeWhisperProvider extends EventEmitter {
    */
   async detectBinaryFormat() {
     try {
-      const testResult = await this.binaryManager.testBinaryWithResult();
-      
-      if (testResult.success) {
-        this.argumentStyle = testResult.argumentFormat || 'whisper-cli';
-        console.log(`🔍 Detected argument format: ${this.argumentStyle}`);
+      // Try to test binary with result if method exists
+      if (typeof this.binaryManager.testBinaryWithResult === 'function') {
+        const testResult = await this.binaryManager.testBinaryWithResult();
+        
+        if (testResult.success) {
+          this.argumentStyle = testResult.argumentFormat || 'whisper-cli';
+          console.log(`🔍 Detected argument format: ${this.argumentStyle}`);
+        } else {
+          console.warn('⚠️ Could not detect binary format, using default: whisper-cli');
+          this.argumentStyle = 'whisper-cli';
+        }
       } else {
-        console.warn('⚠️ Could not detect binary format, using default: whisper-cli');
-        this.argumentStyle = 'whisper-cli';
+        // Fallback: test binary directly
+        const testResult = await this.testBinaryDirectly();
+        this.argumentStyle = testResult.argumentFormat || 'whisper-cli';
+        console.log(`🔍 Binary format detected via direct test: ${this.argumentStyle}`);
       }
     } catch (error) {
       console.warn('⚠️ Binary format detection failed:', error.message);
       this.argumentStyle = 'whisper-cli';
+    }
+  }
+
+  /**
+   * Direct binary test when testBinaryWithResult is not available
+   */
+  async testBinaryDirectly() {
+    try {
+      const binaryPath = this.binaryManager.getWhisperBinaryPath();
+      const { spawn } = require('child_process');
+      
+      return new Promise((resolve) => {
+        const testProcess = spawn(binaryPath, ['--help'], { stdio: 'pipe' });
+        let output = '';
+        
+        testProcess.stdout.on('data', (data) => output += data.toString());
+        testProcess.stderr.on('data', (data) => output += data.toString());
+        
+        testProcess.on('close', () => {
+          // Check output for argument format indicators
+          if (output.includes('--output-file') || output.includes('-of')) {
+            resolve({ success: true, argumentFormat: 'whisper-cli' });
+          } else {
+            resolve({ success: true, argumentFormat: 'legacy' });
+          }
+        });
+        
+        testProcess.on('error', () => {
+          resolve({ success: false, argumentFormat: 'whisper-cli' });
+        });
+        
+        setTimeout(() => {
+          testProcess.kill();
+          resolve({ success: false, argumentFormat: 'whisper-cli' });
+        }, 5000);
+      });
+    } catch (error) {
+      return { success: false, argumentFormat: 'whisper-cli' };
     }
   }
 
@@ -75,7 +121,7 @@ class NativeWhisperProvider extends EventEmitter {
       }
 
       // Check if we have at least one model
-      const installedModels = await this.modelManager.getInstalled();
+      const installedModels = await this.modelManager.getInstalledModels();
       if (installedModels.length === 0) {
         console.warn('⚠️ No models installed for native provider');
         return false;
@@ -91,33 +137,30 @@ class NativeWhisperProvider extends EventEmitter {
   }
 
   /**
-   * Build command line arguments based on detected format
+   * Build command line arguments based on detected format - FIXED
    */
-  buildWhisperArgs(audioPath, modelPath, options = {}) {
-    const outputDir = this.tempDir;
+  buildWhisperArgs(audioPath, modelPath, transcriptionId, options = {}) {
+    const outputFile = path.join(this.tempDir, transcriptionId);
     const args = [];
 
     if (this.argumentStyle === 'whisper-cli') {
-      // New whisper-cli argument format
+      // New whisper-cli argument format - FIXED: Use --output-file instead of --output-dir
       args.push('--file', audioPath);
       args.push('--model', modelPath);
-      args.push('--output-dir', outputDir);
+      args.push('--output-file', outputFile); // ✅ FIXED: This is the correct argument
       
       // Optional parameters
       if (options.language && options.language !== 'auto') {
         args.push('--language', options.language);
       }
       
-      if (options.enableTimestamps !== false) {
-        args.push('--timestamp');
-      }
-      
       // Output format
       args.push('--output-txt');
       args.push('--output-json');
       
-      // Additional options
-      if (options.enableSpeakerDiarization) {
+      // Additional options - be smarter about diarization
+      // Only enable diarization if explicitly requested and not disabled
+      if (options.enableSpeakerDiarization && !options.disableDiarization) {
         args.push('--diarize');
       }
       
@@ -125,26 +168,26 @@ class NativeWhisperProvider extends EventEmitter {
         args.push('--temperature', options.temperature.toString());
       }
       
-      if (options.maxTokens) {
-        args.push('--max-tokens', options.maxTokens.toString());
-      }
+      // Add useful options for better output
+      args.push('--print-progress'); // Show progress in output
+      
+      // Add no-fallback to prevent multiple attempts that might cause duplicates
+      args.push('--no-fallback');
 
     } else {
       // Legacy argument format (fallback)
       args.push('-f', audioPath);
       args.push('-m', modelPath);
-      args.push('-o', outputDir);
+      args.push('-of', outputFile); // Use -of instead of -o
       
       if (options.language && options.language !== 'auto') {
         args.push('-l', options.language);
       }
       
-      if (options.enableTimestamps !== false) {
-        args.push('-t');
-      }
-      
       args.push('-otxt');
       args.push('-ojson');
+      args.push('-pp'); // print progress
+      args.push('-nf'); // no fallback
     }
 
     console.log(`🔧 Built whisper args (${this.argumentStyle}):`, args.join(' '));
@@ -188,11 +231,26 @@ class NativeWhisperProvider extends EventEmitter {
         }
       });
 
-      // Handle stderr
+      // Handle stderr (contains progress and status info)
       whisperProcess.stderr.on('data', (data) => {
         const output = data.toString();
         stderr += output;
         console.log(`📝 Whisper stderr: ${output.trim()}`);
+        
+        // Parse progress from stderr (whisper outputs progress here)
+        // Look for patterns like "progress = 42%" or "progress=42%"
+        const progressMatch = output.match(/progress\s*=\s*(\d+)%/i);
+        if (progressMatch) {
+          const newProgress = parseInt(progressMatch[1]); // Keep as 0-100 range for UI
+          if (newProgress !== progress * 100) { // Only emit if progress changed
+            progress = newProgress / 100; // Store as 0-1 internally
+            this.emit('progress', { 
+              transcriptionId, 
+              progress: newProgress  // Send 0-100 to UI
+            });
+            console.log(`📊 Progress updated: ${newProgress}%`);
+          }
+        }
       });
 
       // Handle process completion
@@ -203,7 +261,8 @@ class NativeWhisperProvider extends EventEmitter {
           try {
             // Parse output files
             const result = await this.parseOutputFiles(transcriptionId);
-            this.emit('progress', { transcriptionId, progress: 1.0 });
+            this.emit('progress', { transcriptionId, progress: 100 }); // Send 100 for completion
+            // Don't emit complete here - it will be emitted in processFile
             resolve(result);
           } catch (parseError) {
             console.error('❌ Failed to parse output files:', parseError.message);
@@ -219,6 +278,8 @@ class NativeWhisperProvider extends EventEmitter {
             errorMessage = 'Model file not found or corrupted';
           } else if (stderr.includes('audio') && stderr.includes('format')) {
             errorMessage = 'Unsupported audio format';
+          } else if (stderr.includes('unknown argument')) {
+            errorMessage = 'Binary argument error - binary may be incompatible version';
           } else if (stderr.trim()) {
             errorMessage = `Whisper error: ${stderr.trim()}`;
           }
@@ -249,41 +310,32 @@ class NativeWhisperProvider extends EventEmitter {
   }
 
   /**
-   * Parse output files from whisper
+   * Parse output files from whisper - FIXED with better file detection
    */
   async parseOutputFiles(transcriptionId) {
     const outputFiles = {
       txt: path.join(this.tempDir, `${transcriptionId}.txt`),
-      json: path.join(this.tempDir, `${transcriptionId}.json`),
-      // Try alternative naming patterns
-      altTxt: path.join(this.tempDir, 'output.txt'),
-      altJson: path.join(this.tempDir, 'output.json')
+      json: path.join(this.tempDir, `${transcriptionId}.json`)
     };
 
     let transcriptionText = '';
     let transcriptionData = null;
 
     // Try to read text output
-    for (const txtFile of [outputFiles.txt, outputFiles.altTxt]) {
-      try {
-        transcriptionText = await fs.readFile(txtFile, 'utf8');
-        console.log(`✅ Read text output from: ${txtFile}`);
-        break;
-      } catch (error) {
-        console.log(`📄 Text file not found: ${txtFile}`);
-      }
+    try {
+      transcriptionText = await fs.readFile(outputFiles.txt, 'utf8');
+      console.log(`✅ Read text output from: ${outputFiles.txt}`);
+    } catch (error) {
+      console.log(`📄 Text file not found: ${outputFiles.txt}`);
     }
 
     // Try to read JSON output for detailed data
-    for (const jsonFile of [outputFiles.json, outputFiles.altJson]) {
-      try {
-        const jsonContent = await fs.readFile(jsonFile, 'utf8');
-        transcriptionData = JSON.parse(jsonContent);
-        console.log(`✅ Read JSON output from: ${jsonFile}`);
-        break;
-      } catch (error) {
-        console.log(`📄 JSON file not found or invalid: ${jsonFile}`);
-      }
+    try {
+      const jsonContent = await fs.readFile(outputFiles.json, 'utf8');
+      transcriptionData = JSON.parse(jsonContent);
+      console.log(`✅ Read JSON output from: ${outputFiles.json}`);
+    } catch (error) {
+      console.log(`📄 JSON file not found or invalid: ${outputFiles.json}`);
     }
 
     // If no text from files, try to extract from JSON
@@ -294,6 +346,29 @@ class NativeWhisperProvider extends EventEmitter {
         transcriptionText = transcriptionData.segments
           .map(segment => segment.text)
           .join(' ');
+      }
+    }
+
+    // If still no text, try to read any .txt files in the temp directory
+    if (!transcriptionText) {
+      try {
+        const files = await fs.readdir(this.tempDir);
+        const txtFiles = files.filter(f => f.endsWith('.txt'));
+        
+        for (const txtFile of txtFiles) {
+          try {
+            const content = await fs.readFile(path.join(this.tempDir, txtFile), 'utf8');
+            if (content.trim()) {
+              transcriptionText = content;
+              console.log(`✅ Found text output in: ${txtFile}`);
+              break;
+            }
+          } catch (e) {
+            // Continue to next file
+          }
+        }
+      } catch (error) {
+        console.warn('⚠️ Could not scan temp directory for output files');
       }
     }
 
@@ -310,24 +385,52 @@ class NativeWhisperProvider extends EventEmitter {
       throw new Error('No transcription output found');
     }
 
+    console.log(`✅ Final transcription text: ${transcriptionText}`); // Log the transcription text
+
+    // Check if the transcription is mostly music
+    const isMostlyMusic = this.detectMusicContent(transcriptionText);
+    
     return {
       text: transcriptionText.trim(),
       data: transcriptionData,
       provider: 'whisper-native',
       model: 'local',
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      metadata: {
+        isMostlyMusic,
+        suggestion: isMostlyMusic ? 'Consider disabling speaker diarization for music-only files' : null
+      }
     };
   }
 
   /**
-   * Process file for transcription
+   * Detect if content is mostly music
+   */
+  detectMusicContent(text) {
+    const musicIndicators = [
+      '[Music]', '[music]', '[MUSIC]', 
+      '(Music)', '(music)', '(MUSIC)',
+      '♪', '♫', '🎵', '🎶'
+    ];
+    
+    const lines = text.split('\n').filter(line => line.trim()); // Remove empty lines
+    const musicLines = lines.filter(line => 
+      musicIndicators.some(indicator => line.toLowerCase().includes(indicator.toLowerCase()))
+    );
+    
+    // Return true if any line contains music indicators
+    return musicLines.length > 0;
+  }
+
+  /**
+   * Process file for transcription - FIXED
    */
   async processFile(filePath, options = {}) {
     if (!this.available) {
       throw new Error('Native whisper provider is not available');
     }
 
-    const transcriptionId = `transcription_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const transcriptionId = options.transcriptionId || `transcription_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
     try {
       // Get binary path
@@ -335,21 +438,25 @@ class NativeWhisperProvider extends EventEmitter {
 
       // Get model path
       const modelPath = await this.modelManager.getCompatibleModelPath(
-        options.model || 'base'
+        options.model || 'tiny'  // Default to tiny model
       );
 
       if (!modelPath) {
-        throw new Error(`Model not found: ${options.model || 'base'}`);
+        throw new Error(`Model not found: ${options.model || 'tiny'}`);
       }
 
-      // Build arguments
-      const args = this.buildWhisperArgs(filePath, modelPath, options);
+      console.log(`🔍 Using model: ${modelPath}`);
+
+      // Build arguments - FIXED: Pass transcriptionId for output file naming
+      const args = this.buildWhisperArgs(filePath, modelPath, transcriptionId, options);
 
       // Execute whisper
-      this.emit('progress', { transcriptionId, progress: 0.0 });
+      this.emit('progress', { transcriptionId, progress: 0 }); // Send 0-100 range
       const result = await this.executeWhisper(binaryPath, args, transcriptionId);
 
+      // Only emit complete event once here - this is the final result
       this.emit('complete', { transcriptionId, result });
+      console.log(`✅ Transcription completed successfully with whisper-native`);
       return result;
 
     } catch (error) {
@@ -362,6 +469,14 @@ class NativeWhisperProvider extends EventEmitter {
   /**
    * Get provider information
    */
+  getName() {
+    return 'whisper-native';
+  }
+
+  getDescription() {
+    return 'Local whisper.cpp transcription using whisper-cli binary';
+  }
+
   getInfo() {
     return {
       name: 'Native Whisper',
@@ -376,6 +491,16 @@ class NativeWhisperProvider extends EventEmitter {
         realtime: false,
         offline: true
       }
+    };
+  }
+
+  getCapabilities() {
+    return {
+      languages: 'auto-detect + 50+ languages',
+      maxFileSize: '2GB',
+      formats: ['mp3', 'wav', 'mp4', 'avi', 'mov', 'm4a', 'flac'],
+      realtime: false,
+      offline: true
     };
   }
 

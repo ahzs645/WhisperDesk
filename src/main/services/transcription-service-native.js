@@ -54,10 +54,21 @@ class NativeTranscriptionService extends EventEmitter {
       const nativeWhisperProvider = new NativeWhisperProvider(this.modelManager, this.binaryManager);
       await nativeWhisperProvider.initialize();
       
-      // Forward events
-      nativeWhisperProvider.on('progress', (data) => this.emit('progress', data));
-      nativeWhisperProvider.on('error', (data) => this.emit('error', data));
-      nativeWhisperProvider.on('complete', (data) => this.emit('complete', data));
+      // Forward events with better logging
+      nativeWhisperProvider.on('progress', (data) => {
+        console.log('📊 Provider progress event:', data.progress);
+        this.emit('progress', data);
+      });
+      
+      nativeWhisperProvider.on('error', (data) => {
+        console.log('❌ Provider error event:', data.error);
+        this.emit('error', data);
+      });
+      
+      nativeWhisperProvider.on('complete', (data) => {
+        console.log('✅ Provider complete event');
+        this.emit('complete', data);
+      });
       
       this.providers.set('whisper-native', nativeWhisperProvider);
       console.log('✅ Native Whisper provider initialized');
@@ -114,15 +125,30 @@ class NativeTranscriptionService extends EventEmitter {
     }
   }
 
-  // FIXED: Return properly formatted provider info for UI
+// FIXED: Return properly formatted provider info for UI
   getProviders() {
-    return Array.from(this.providers.values()).map(provider => ({
-      id: provider.getName(), // Use the provider's internal name as ID
-      name: this.getProviderDisplayName(provider.getName()), // Convert to display name
-      description: provider.getDescription(),
-      isAvailable: provider.isAvailable(),
-      capabilities: provider.getCapabilities()
-    }));
+    return Array.from(this.providers.values()).map(provider => {
+      // Handle both real providers and fallback stub providers
+      if (typeof provider.getName === 'function') {
+        // Real provider
+        return {
+          id: provider.getName(),
+          name: this.getProviderDisplayName(provider.getName()),
+          description: provider.getDescription ? provider.getDescription() : 'No description',
+          isAvailable: provider.isAvailable ? provider.isAvailable() : false,
+          capabilities: provider.getCapabilities ? provider.getCapabilities() : {}
+        };
+      } else {
+        // Fallback stub provider (shouldn't happen now, but safety check)
+        return {
+          id: 'unknown',
+          name: 'Unknown Provider',
+          description: 'Provider not properly initialized',
+          isAvailable: false,
+          capabilities: {}
+        };
+      }
+    });
   }
 
   // FIXED: Convert internal provider names to user-friendly display names
@@ -163,12 +189,13 @@ class NativeTranscriptionService extends EventEmitter {
       // Validate file exists
       await fs.access(filePath);
       
-      // Add to active transcriptions
+      // Add transcription to active list with better tracking
       this.activeTranscriptions.set(transcriptionId, {
         filePath,
         provider,
         startTime: Date.now(),
-        status: 'processing'
+        status: 'processing',
+        lastProgress: 0
       });
 
       // Emit start event
@@ -179,7 +206,6 @@ class NativeTranscriptionService extends EventEmitter {
         options
       });
 
-      // FIXED: Process with selected provider, with better error handling
       console.log(`Attempting transcription with ${provider}...`);
       const result = await selectedProvider.processFile(filePath, {
         ...options,
@@ -193,7 +219,7 @@ class NativeTranscriptionService extends EventEmitter {
         endTime: Date.now()
       });
 
-      // Emit completion event
+      // Make sure to emit the complete event here too
       this.emit('complete', {
         transcriptionId,
         result,

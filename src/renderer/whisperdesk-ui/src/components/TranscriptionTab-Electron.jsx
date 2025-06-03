@@ -87,32 +87,32 @@ export function TranscriptionTabElectron() {
   const setupEventHandlers = () => {
     console.log('Setting up event handlers...')
     
-    // Progress handler - NO TOASTS, just state updates
+    // Progress handler with enhanced debugging
     if (window.electronAPI.transcription.onProgress) {
       progressCleanupRef.current = window.electronAPI.transcription.onProgress((data) => {
-        console.log('Progress received:', data.progress + '%')
+        console.log('🎯 FRONTEND Progress received:', data)
+        console.log('🎯 Progress value:', data.progress)
+        console.log('🎯 Current appState.progress before update:', appState.progress)
         
-        // Update state but NO toast notifications for progress
+        // Update state
         updateAppState({
           progress: data.progress || 0,
           progressMessage: data.message || data.stage || 'Processing...'
         })
         
-        // Only show ONE toast when starting - never update it during progress
+        console.log('🎯 Progress state updated')
+        
+        // Only show ONE toast when starting
         if (data.progress === 0 && data.stage === 'starting') {
-          // Dismiss any previous toast
           if (lastToastRef.current) {
             toast.dismiss(lastToastRef.current)
           }
           
           lastToastRef.current = toast.loading('🎵 Transcribing audio...', {
-            duration: Infinity // Keep showing until completion
+            duration: Infinity
           })
           hasShownCompletionToast.current = false
         }
-        
-        // DO NOT update the toast during progress - this was causing spam!
-        // The progress bar in the UI will show the progress instead
       })
       console.log('✅ Progress handler set up')
     } else {

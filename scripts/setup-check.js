@@ -1,18 +1,16 @@
 #!/usr/bin/env node
 
-const { execSync } = require('child_process');
+// scripts/setup-check.js - Initial setup and health check
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 
-// Colors for console output
 const colors = {
     reset: '\x1b[0m',
     red: '\x1b[31m',
     green: '\x1b[32m',
     yellow: '\x1b[33m',
-    blue: '\x1b[34m',
-    cyan: '\x1b[36m',
-    bold: '\x1b[1m'
+    blue: '\x1b[34m'
 };
 
 function log(message, color = 'reset') {
@@ -23,212 +21,286 @@ function logInfo(message) { log(`ℹ️  ${message}`, 'blue'); }
 function logSuccess(message) { log(`✅ ${message}`, 'green'); }
 function logWarning(message) { log(`⚠️  ${message}`, 'yellow'); }
 function logError(message) { log(`❌ ${message}`, 'red'); }
-function logBold(message) { log(message, 'bold'); }
 
-const isWindows = process.platform === 'win32';
-const isMacOS = process.platform === 'darwin';
-const isLinux = process.platform === 'linux';
-
-function checkCommand(command, name, required = true) {
-    try {
-        const output = execSync(`${command}`, { encoding: 'utf8', stdio: 'pipe' });
-        const version = output.split('\n')[0].trim();
-        logSuccess(`${name}: ${version}`);
-        return true;
-    } catch (error) {
-        if (required) {
-            logError(`${name}: Not found`);
-        } else {
-            logWarning(`${name}: Not found (optional)`);
-        }
-        return false;
+class SetupChecker {
+    constructor() {
+        this.platform = os.platform();
+        this.arch = os.arch();
+        this.projectRoot = process.cwd();
+        this.issues = [];
+        this.suggestions = [];
     }
-}
 
-function checkSetup() {
-    logBold('\n🔍 WhisperDesk Development Environment Check\n');
-    
-    let allRequired = true;
-    let hasOptional = true;
-    
-    // Essential tools
-    logInfo('Checking essential tools...');
-    
-    if (!checkCommand('node --version', 'Node.js')) allRequired = false;
-    if (!checkCommand('npm --version', 'npm')) allRequired = false;
-    if (!checkCommand('git --version', 'Git')) allRequired = false;
-    if (!checkCommand('cmake --version', 'CMake')) allRequired = false;
-    
-    // Optional but recommended
-    logInfo('\nChecking optional tools...');
-    
-    if (!checkCommand('pnpm --version', 'pnpm', false)) hasOptional = false;
-    
-    // Platform-specific tools
-    logInfo('\nChecking platform-specific build tools...');
-    
-    if (isWindows) {
-        // Check for Visual Studio Build Tools
-        let hasMSBuild = false;
+    checkProjectStructure() {
+        logInfo('Checking project structure...');
+        
+        const requiredFiles = [
+            'package.json',
+            'src/main/main.js',
+            'src/main/preload.js'
+        ];
+
+        const requiredDirs = [
+            'src',
+            'src/main',
+            'src/main/services'
+        ];
+
+        let allGood = true;
+
+        // Check files
+        for (const file of requiredFiles) {
+            const filePath = path.join(this.projectRoot, file);
+            if (!fs.existsSync(filePath)) {
+                this.issues.push(`Missing required file: ${file}`);
+                allGood = false;
+            }
+        }
+
+        // Check directories
+        for (const dir of requiredDirs) {
+            const dirPath = path.join(this.projectRoot, dir);
+            if (!fs.existsSync(dirPath)) {
+                this.issues.push(`Missing required directory: ${dir}`);
+                allGood = false;
+            }
+        }
+
+        if (allGood) {
+            logSuccess('Project structure OK');
+        }
+
+        return allGood;
+    }
+
+    checkPackageJson() {
+        logInfo('Checking package.json configuration...');
+        
         try {
-            execSync('where msbuild', { stdio: 'ignore' });
-            logSuccess('MSBuild: Found in PATH');
-            hasMSBuild = true;
+            const packagePath = path.join(this.projectRoot, 'package.json');
+            const packageJson = JSON.parse(fs.readFileSync(packagePath, 'utf8'));
+
+            // Check if electron is in devDependencies (common issue)
+            if (packageJson.dependencies && packageJson.dependencies.electron) {
+                this.issues.push('Electron should be in devDependencies, not dependencies');
+                this.suggestions.push('Run: npm run fix:package-dependencies');
+            }
+
+            // Check main entry point
+            if (!packageJson.main || !fs.existsSync(path.join(this.projectRoot, packageJson.main))) {
+                this.issues.push('Invalid main entry point in package.json');
+            }
+
+            // Check scripts
+            const requiredScripts = ['start', 'build:whisper'];
+            for (const script of requiredScripts) {
+                if (!packageJson.scripts || !packageJson.scripts[script]) {
+                    this.issues.push(`Missing script: ${script}`);
+                }
+            }
+
+            if (this.issues.length === 0) {
+                logSuccess('Package.json configuration OK');
+            }
+
+            return this.issues.length === 0;
+
         } catch (error) {
-            // Try common installation paths
-            const msbuildPaths = [
-                'C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\MSBuild\\Current\\Bin\\MSBuild.exe',
-                'C:\\Program Files\\Microsoft Visual Studio\\2022\\Professional\\MSBuild\\Current\\Bin\\MSBuild.exe',
-                'C:\\Program Files\\Microsoft Visual Studio\\2022\\Enterprise\\MSBuild\\Current\\Bin\\MSBuild.exe',
-                'C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\Community\\MSBuild\\Current\\Bin\\MSBuild.exe',
-                'C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\Professional\\MSBuild\\Current\\Bin\\MSBuild.exe',
-                'C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\Enterprise\\MSBuild\\Current\\Bin\\MSBuild.exe'
-            ];
-            
-            for (const msbuildPath of msbuildPaths) {
-                if (fs.existsSync(msbuildPath)) {
-                    logSuccess(`MSBuild: Found at ${msbuildPath}`);
-                    hasMSBuild = true;
-                    break;
+            this.issues.push(`Error reading package.json: ${error.message}`);
+            return false;
+        }
+    }
+
+    checkDirectories() {
+        logInfo('Checking/creating required directories...');
+        
+        const requiredDirs = [
+            'binaries',
+            'models',
+            'resources'
+        ];
+
+        for (const dir of requiredDirs) {
+            const dirPath = path.join(this.projectRoot, dir);
+            if (!fs.existsSync(dirPath)) {
+                try {
+                    fs.mkdirSync(dirPath, { recursive: true });
+                    logInfo(`Created directory: ${dir}`);
+                } catch (error) {
+                    this.issues.push(`Could not create directory ${dir}: ${error.message}`);
                 }
             }
         }
-        
-        if (!hasMSBuild) {
-            logError('MSBuild: Not found');
-            allRequired = false;
-        }
-        
-    } else if (isMacOS) {
-        try {
-            execSync('xcode-select -p', { stdio: 'ignore' });
-            const xcodeVersion = execSync('xcode-select --version', { encoding: 'utf8', stdio: 'pipe' }).trim();
-            logSuccess(`Xcode Command Line Tools: ${xcodeVersion}`);
-        } catch (error) {
-            logError('Xcode Command Line Tools: Not found');
-            allRequired = false;
-        }
-        
-    } else if (isLinux) {
-        if (!checkCommand('gcc --version', 'GCC')) allRequired = false;
-        if (!checkCommand('make --version', 'Make')) allRequired = false;
+
+        logSuccess('Required directories OK');
+        return true;
     }
-    
-    // Check project structure
-    logInfo('\nChecking project structure...');
-    
-    const requiredDirs = ['src', 'src/main'];
-    const optionalDirs = ['src/renderer', 'resources', 'scripts'];
-    
-    requiredDirs.forEach(dir => {
-        if (fs.existsSync(dir)) {
-            logSuccess(`Directory: ${dir}/`);
+
+    checkBinaryStatus() {
+        logInfo('Checking whisper binary status...');
+        
+        const binaryExt = this.platform === 'win32' ? '.exe' : '';
+        const binaryPath = path.join(this.projectRoot, 'binaries', `whisper-cli${binaryExt}`);
+
+        if (!fs.existsSync(binaryPath)) {
+            this.issues.push('Whisper binary not found');
+            this.suggestions.push('Run: npm run fix:whisper');
+            return false;
+        }
+
+        const stats = fs.statSync(binaryPath);
+        const sizeKB = Math.round(stats.size / 1024);
+        
+        if (stats.size < 50000) {
+            this.issues.push(`Whisper binary too small (${sizeKB} KB) - likely corrupted`);
+            this.suggestions.push('Run: npm run fix:whisper:force');
+            return false;
+        }
+
+        logSuccess(`Whisper binary found (${sizeKB} KB)`);
+        return true;
+    }
+
+    checkModelStatus() {
+        logInfo('Checking model status...');
+        
+        const modelsDir = path.join(this.projectRoot, 'models');
+        const modelFiles = ['ggml-tiny.bin', 'ggml-base.bin'];
+        
+        let hasModels = false;
+        
+        for (const modelFile of modelFiles) {
+            const modelPath = path.join(modelsDir, modelFile);
+            if (fs.existsSync(modelPath)) {
+                const stats = fs.statSync(modelPath);
+                const sizeMB = Math.round(stats.size / 1024 / 1024);
+                logInfo(`Found model: ${modelFile} (${sizeMB} MB)`);
+                hasModels = true;
+            }
+        }
+
+        if (!hasModels) {
+            this.issues.push('No whisper models found');
+            this.suggestions.push('Run: npm run build:models:tiny');
         } else {
-            logWarning(`Directory: ${dir}/ (missing)`);
+            logSuccess('At least one model found');
         }
-    });
-    
-    optionalDirs.forEach(dir => {
-        if (fs.existsSync(dir)) {
-            logSuccess(`Directory: ${dir}/`);
+
+        return hasModels;
+    }
+
+    checkRendererStatus() {
+        logInfo('Checking renderer status...');
+        
+        const rendererDir = path.join(this.projectRoot, 'src/renderer/whisperdesk-ui');
+        
+        if (!fs.existsSync(rendererDir)) {
+            this.issues.push('Renderer directory not found');
+            return false;
+        }
+
+        const rendererPackage = path.join(rendererDir, 'package.json');
+        if (!fs.existsSync(rendererPackage)) {
+            this.issues.push('Renderer package.json not found');
+            return false;
+        }
+
+        const distDir = path.join(rendererDir, 'dist');
+        if (!fs.existsSync(distDir)) {
+            this.issues.push('Renderer not built');
+            this.suggestions.push('Run: npm run build:renderer');
+            return false;
+        }
+
+        logSuccess('Renderer OK');
+        return true;
+    }
+
+    checkSystemRequirements() {
+        logInfo('Checking system requirements...');
+        
+        // Check Node.js version
+        const nodeVersion = process.version;
+        const majorVersion = parseInt(nodeVersion.slice(1).split('.')[0]);
+        
+        if (majorVersion < 18) {
+            this.issues.push(`Node.js ${nodeVersion} is too old (requires >=18)`);
         } else {
-            logInfo(`Directory: ${dir}/ (optional, not found)`);
+            logSuccess(`Node.js ${nodeVersion} OK`);
         }
-    });
-    
-    // Check if scripts directory exists for our build scripts
-    const scriptsDir = path.join(process.cwd(), 'scripts');
-    if (!fs.existsSync(scriptsDir)) {
-        logWarning('Scripts directory not found, creating...');
-        try {
-            fs.mkdirSync(scriptsDir, { recursive: true });
-            logSuccess('Created scripts directory');
-        } catch (error) {
-            logError('Could not create scripts directory');
+
+        // Platform-specific checks
+        if (this.platform === 'darwin') {
+            logInfo(`macOS detected (${this.arch})`);
+        } else if (this.platform === 'win32') {
+            logInfo('Windows detected');
+        } else if (this.platform === 'linux') {
+            logInfo('Linux detected');
+        } else {
+            this.issues.push(`Unsupported platform: ${this.platform}`);
         }
+
+        return true;
     }
-    
-    // Show summary
-    log('\n' + '='.repeat(60), 'cyan');
-    logBold('📋 Setup Summary');
-    log('='.repeat(60), 'cyan');
-    
-    if (allRequired) {
-        logSuccess('✅ All required tools are available!');
-    } else {
-        logError('❌ Some required tools are missing');
-    }
-    
-    if (!hasOptional) {
-        logWarning('⚠️  Some optional tools are missing (recommended for better experience)');
-    }
-    
-    // Show available npm scripts
-    log('\n📜 Available npm scripts:', 'cyan');
-    log('');
-    log('🔧 Build Components:');
-    log('  npm run build:deps        - Install all dependencies');
-    log('  npm run build:whisper     - Build whisper.cpp for current platform');
-    log('  npm run build:models:tiny - Download tiny model for testing');
-    log('  npm run build:renderer    - Build React renderer');
-    log('');
-    log('🚀 Full Workflows:');
-    log('  npm run workflow:local    - Complete build for current platform');
-    log('  npm run workflow:windows  - Build for Windows');
-    log('  npm run workflow:macos    - Build for macOS');
-    log('  npm run workflow:linux    - Build for Linux');
-    log('');
-    log('🧪 Testing:');
-    log('  npm run test:binary       - Test built whisper binary');
-    log('  npm start                 - Run the app in development mode');
-    log('');
-    log('🧹 Cleanup:');
-    log('  npm run clean             - Clean all generated files');
-    log('  npm run clean:build       - Clean build artifacts only');
-    
-    // Installation recommendations
-    if (!allRequired) {
-        log('\n🛠️  Installation Recommendations:', 'yellow');
-        log('');
+
+    generateReport() {
+        console.log('\n' + '='.repeat(60));
+        log('WhisperDesk Setup Check Report', 'blue');
+        console.log('='.repeat(60));
+
+        if (this.issues.length === 0) {
+            logSuccess('✨ All checks passed! WhisperDesk is ready to run.');
+        } else {
+            logError(`Found ${this.issues.length} issue(s):`);
+            this.issues.forEach((issue, index) => {
+                log(`  ${index + 1}. ${issue}`, 'red');
+            });
+        }
+
+        if (this.suggestions.length > 0) {
+            console.log('');
+            logInfo('Suggested fixes:');
+            this.suggestions.forEach((suggestion, index) => {
+                log(`  ${index + 1}. ${suggestion}`, 'yellow');
+            });
+        }
+
+        console.log('\n' + '='.repeat(60));
         
-        if (isWindows) {
-            log('For Windows:');
-            log('• Install Visual Studio Community 2022 (free): https://visualstudio.microsoft.com/vs/community/');
-            log('• Or install "Build Tools for Visual Studio 2022": https://visualstudio.microsoft.com/downloads/#build-tools-for-visual-studio-2022');
-            log('• Make sure to include "C++ build tools" workload');
-        } else if (isMacOS) {
-            log('For macOS:');
-            log('• Install Xcode Command Line Tools: xcode-select --install');
-            log('• Or install full Xcode from the App Store');
-        } else if (isLinux) {
-            log('For Linux (Ubuntu/Debian):');
-            log('• sudo apt-get update');
-            log('• sudo apt-get install build-essential cmake');
-            log('');
-            log('For Linux (CentOS/RHEL/Fedora):');
-            log('• sudo yum groupinstall "Development Tools"');
-            log('• sudo yum install cmake');
+        if (this.issues.length === 0) {
+            logInfo('Run "npm start" to launch WhisperDesk');
+        } else {
+            logInfo('Fix the issues above, then run "npm start"');
         }
-        
-        log('');
-        log('For CMake:');
-        log('• Download from: https://cmake.org/download/');
-        log('• Or use package manager (brew install cmake, choco install cmake, etc.)');
     }
-    
-    log('\n🎯 Quick Start:', 'cyan');
-    log('1. Run: npm run workflow:local');
-    log('2. This will build whisper.cpp, download a model, and create your app');
-    log('3. Check the dist/ folder for your built application');
-    
-    log('\n' + '='.repeat(60), 'cyan');
-    
-    if (!allRequired) {
-        process.exit(1);
+
+    async run() {
+        log('🔍 WhisperDesk Setup Check', 'blue');
+        console.log('');
+
+        this.checkSystemRequirements();
+        this.checkProjectStructure();
+        this.checkPackageJson();
+        this.checkDirectories();
+        this.checkBinaryStatus();
+        this.checkModelStatus();
+        this.checkRendererStatus();
+
+        this.generateReport();
+
+        return this.issues.length === 0;
     }
 }
 
-// Only run if this script is executed directly (not required)
+// Main execution
 if (require.main === module) {
-    checkSetup();
+    const checker = new SetupChecker();
+    checker.run().then(success => {
+        process.exit(success ? 0 : 1);
+    }).catch(error => {
+        console.error('Setup check failed:', error);
+        process.exit(1);
+    });
 }
+
+module.exports = SetupChecker;
