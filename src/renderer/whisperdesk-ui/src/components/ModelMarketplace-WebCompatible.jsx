@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { Separator } from '@/components/ui/separator'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Package, Download, Trash2, HardDrive, Wifi, Clock, Check, AlertCircle, Loader2 } from 'lucide-react'
+import { Package, Download, Trash2, HardDrive, Gauge, Clock, Check, AlertCircle, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 
 export function ModelMarketplace() {
@@ -173,7 +173,7 @@ export function ModelMarketplace() {
         name: 'Whisper Tiny',
         size: '39 MB',
         sizeBytes: 39000000,
-        description: 'Fastest model, good for testing',
+        description: 'Fastest model, English only, good for real-time transcription',
         accuracy: 'Basic',
         speed: 'Very Fast',
         isInstalled: false
@@ -258,102 +258,40 @@ export function ModelMarketplace() {
     }
   }
 
-  const ModelCard = ({ model }) => {
-    const status = getModelStatus(model)
+  const getSpeedColor = (speed) => {
+    if (!speed) return 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400'
     
-    return (
-      <Card key={model.id} className="relative">
-        <CardHeader>
-          <div className="flex items-start justify-between">
-            <div className="space-y-1">
-              <CardTitle className="text-lg">{model.name}</CardTitle>
-              <CardDescription>{model.description}</CardDescription>
-            </div>
-            <div className="flex flex-col items-end space-y-1">
-              <Badge variant={status.isInstalled ? 'default' : 'secondary'}>
-                {model.size}
-              </Badge>
-              {status.isInstalled && (
-                <Badge variant="default" className="bg-green-100 text-green-800">
-                  <Check className="w-3 h-3 mr-1" />
-                  Installed
-                </Badge>
-              )}
-              {status.isDownloading && (
-                <Badge variant="secondary" className="bg-blue-100 text-blue-800">
-                  <Loader2 className="w-3 h-3 mr-1 animate-spin" />
-                  {status.status === 'queued' ? 'Queued' : 'Downloading'}
-                </Badge>
-              )}
-            </div>
-          </div>
-        </CardHeader>
-        
-        <CardContent className="space-y-4">
-          {/* Model Details */}
-          <div className="grid grid-cols-2 gap-4 text-sm">
-            <div className="flex items-center space-x-2">
-              <Clock className="w-4 h-4 text-muted-foreground" />
-              <span>Speed: {model.speed}</span>
-            </div>
-            <div className="flex items-center space-x-2">
-              <AlertCircle className="w-4 h-4 text-muted-foreground" />
-              <span>Accuracy: {model.accuracy}</span>
-            </div>
-          </div>
+    switch (speed.toLowerCase()) {
+      case 'very fast':
+        return 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+      case 'fast':
+        return 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
+      case 'medium':
+        return 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400'
+      case 'medium-slow':
+        return 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400'
+      case 'slow':
+        return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+      default:
+        return 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400'
+    }
+  }
 
-          {/* Download Progress */}
-          {status.isDownloading && (
-            <div className="space-y-2">
-              <div className="flex justify-between text-sm">
-                <span>
-                  {status.status === 'queued' ? 'Queued for download...' : 
-                   `${Math.round(status.progress)}% - ${formatBytes(status.downloadedBytes)} / ${formatBytes(status.totalBytes)}`}
-                </span>
-                {status.speed > 0 && (
-                  <span className="text-muted-foreground">
-                    {formatSpeed(status.speed)}
-                  </span>
-                )}
-              </div>
-              <Progress value={status.progress} className="w-full" />
-            </div>
-          )}
-
-          {/* Actions */}
-          <div className="flex gap-2">
-            {!status.isInstalled && !status.isDownloading && (
-              <Button 
-                onClick={() => handleDownloadModel(model.id)}
-                className="flex-1"
-                disabled={!isElectron}
-              >
-                <Download className="w-4 h-4 mr-2" />
-                Download
-              </Button>
-            )}
-            
-            {status.isInstalled && (
-              <Button 
-                onClick={() => handleDeleteModel(model.id)}
-                variant="outline"
-                disabled={!isElectron}
-              >
-                <Trash2 className="w-4 h-4 mr-2" />
-                Delete
-              </Button>
-            )}
-            
-            {status.isDownloading && (
-              <Button disabled className="flex-1">
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                {status.status === 'queued' ? 'Queued...' : `Downloading ${Math.round(status.progress)}%`}
-              </Button>
-            )}
-          </div>
-        </CardContent>
-      </Card>
-    )
+  const getAccuracyColor = (accuracy) => {
+    if (!accuracy) return 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400'
+    
+    switch (accuracy.toLowerCase()) {
+      case 'excellent':
+        return 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'
+      case 'very good':
+        return 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400'
+      case 'good':
+        return 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
+      case 'basic':
+        return 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400'
+      default:
+        return 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400'
+    }
   }
 
   if (loading) {
@@ -369,129 +307,126 @@ export function ModelMarketplace() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight">Model Marketplace</h2>
-          <p className="text-muted-foreground">
-            Download and manage Whisper models for transcription
-          </p>
-        </div>
-        <div className="flex items-center space-x-2">
-          {isElectron ? (
-            <Badge variant="secondary" className="bg-green-100 text-green-800">
-              <HardDrive className="w-3 h-3 mr-1" />
-              Local Storage
-            </Badge>
-          ) : (
-            <Badge variant="secondary" className="bg-orange-100 text-orange-800">
-              <Wifi className="w-3 h-3 mr-1" />
-              Web Preview
-            </Badge>
-          )}
-        </div>
-      </div>
-
-      {!isElectron && (
-        <Card className="border-orange-200 bg-orange-50">
-          <CardContent className="pt-6">
-            <div className="flex items-center space-x-2 text-orange-800">
-              <AlertCircle className="w-4 h-4" />
-              <span className="text-sm">
-                Model downloads are only available in the Electron app. Use the web interface for testing with existing models.
-              </span>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      {/* Quick Stats */}
+      <div className="grid grid-cols-3 gap-4">
         <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center space-x-2">
-              <Package className="w-4 h-4 text-muted-foreground" />
-              <span className="text-sm font-medium">Available Models</span>
-            </div>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium">Available Models</CardTitle>
+          </CardHeader>
+          <CardContent>
             <div className="text-2xl font-bold">{availableModels.length}</div>
           </CardContent>
         </Card>
-
         <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center space-x-2">
-              <Check className="w-4 h-4 text-green-600" />
-              <span className="text-sm font-medium">Installed Models</span>
-            </div>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium">Installed Models</CardTitle>
+          </CardHeader>
+          <CardContent>
             <div className="text-2xl font-bold">{installedModels.length}</div>
           </CardContent>
         </Card>
-
         <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center space-x-2">
-              <Download className="w-4 h-4 text-blue-600" />
-              <span className="text-sm font-medium">Active Downloads</span>
-            </div>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium">Active Downloads</CardTitle>
+          </CardHeader>
+          <CardContent>
             <div className="text-2xl font-bold">{downloads.size}</div>
           </CardContent>
         </Card>
       </div>
 
-      {/* Active Downloads Section */}
-      {downloads.size > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center space-x-2">
-              <Download className="w-5 h-5" />
-              <span>Active Downloads</span>
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {Array.from(downloads.entries()).map(([modelId, download]) => {
-                const model = availableModels.find(m => m.id === modelId)
-                if (!model) return null
-                
-                return (
-                  <div key={modelId} className="space-y-2">
-                    <div className="flex justify-between text-sm">
-                      <span className="font-medium">{model.name}</span>
-                      <span>
-                        {download.status === 'queued' ? 'Queued' : 
-                         `${Math.round(download.progress)}% - ${formatSpeed(download.speed)}`}
-                      </span>
+      {/* Models Marketplace */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Package className="w-5 h-5" />
+            Model Marketplace
+          </CardTitle>
+          <CardDescription>
+            Download and manage your WhisperDesk models
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-4">
+            {availableModels.map((model) => {
+              const status = getModelStatus(model)
+              const isInstalled = installedModels.some(m => m.id === model.id)
+              
+              return (
+                <Card key={model.id} className="relative overflow-hidden">
+                  <CardContent className="p-4">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="space-y-1 flex-1">
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-medium">{model.name}</h3>
+                          {isInstalled && (
+                            <Badge variant="secondary" className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
+                              <Check className="w-3 h-3 mr-1" />
+                              Installed
+                            </Badge>
+                          )}
+                        </div>
+                        <p className="text-sm text-muted-foreground">{model.description}</p>
+                      </div>
+                      <div className="flex flex-col items-end gap-2">
+                        <div className="flex items-center gap-2">
+                          {model.speed && (
+                            <Badge variant="secondary" className={getSpeedColor(model.speed)}>
+                              <Gauge className="w-3 h-3 mr-1" />
+                              {model.speed}
+                            </Badge>
+                          )}
+                          {model.accuracy && (
+                            <Badge variant="secondary" className={getAccuracyColor(model.accuracy)}>
+                              <Check className="w-3 h-3 mr-1" />
+                              {model.accuracy}
+                            </Badge>
+                          )}
+                          {model.size && (
+                            <Badge variant="secondary" className="bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400">
+                              <HardDrive className="w-3 h-3 mr-1" />
+                              {model.size}
+                            </Badge>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {status.isDownloading ? (
+                            <div className="flex items-center gap-2">
+                              <Progress value={status.progress} className="w-24" />
+                              <span className="text-sm text-muted-foreground">
+                                {status.progress}%
+                              </span>
+                            </div>
+                          ) : isInstalled ? (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleDeleteModel(model.id)}
+                              className="text-destructive hover:text-destructive/90"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          ) : (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleDownloadModel(model.id)}
+                              disabled={!isElectron}
+                            >
+                              <Download className="w-4 h-4 mr-2" />
+                              Download
+                            </Button>
+                          )}
+                        </div>
+                      </div>
                     </div>
-                    <Progress value={download.progress} className="w-full" />
-                  </div>
-                )
-              })}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Available Models */}
-      <div className="space-y-4">
-        <h3 className="text-lg font-semibold">Available Models</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {availableModels.map((model) => (
-            <ModelCard key={model.id} model={model} />
-          ))}
-        </div>
-      </div>
-
-      {availableModels.length === 0 && (
-        <Card>
-          <CardContent className="p-8 text-center">
-            <Package className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-            <h3 className="text-lg font-medium mb-2">No Models Available</h3>
-            <p className="text-muted-foreground">
-              Unable to load available models. Please check your connection.
-            </p>
-          </CardContent>
-        </Card>
-      )}
+                  </CardContent>
+                </Card>
+              )
+            })}
+          </div>
+        </CardContent>
+      </Card>
     </div>
   )
 }

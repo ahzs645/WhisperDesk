@@ -11,6 +11,8 @@ const TranscriptionService = require('./services/transcription-service-native');
 const AudioService = require('./services/audio-service');
 const SettingsService = require('./services/settings-service');
 const ExportService = require('./services/export-service');
+const ScreenRecorder = require('./services/screen-recorder');
+const SettingsStore = require('./services/settings-store');
 
 // Initialize stores
 const store = new Store();
@@ -20,6 +22,7 @@ const transcriptionStore = new Store({
     activeTranscription: null
   }
 });
+const settingsStore = new SettingsStore();
 
 // Prevent multiple instances
 if (!app.requestSingleInstanceLock()) {
@@ -44,6 +47,7 @@ class WhisperDeskApp {
     this.transcriptionService = null;
     this.audioService = null;
     this.settingsService = null;
+    this.screenRecorder = null;
     this.isInitialized = false;
     
     // Always clear transcription state when app starts
@@ -160,6 +164,11 @@ class WhisperDeskApp {
       this.exportService = new ExportService();
       await this.exportService.initialize();
       console.log('✅ Export Service initialized');
+
+      // Initialize Screen Recorder
+      this.screenRecorder = new ScreenRecorder();
+      await this.screenRecorder.initialize();
+      console.log('✅ Screen Recorder initialized');
       
       // Set up model manager events
       this.setupModelManagerEvents();
@@ -627,6 +636,32 @@ class WhisperDeskApp {
     ipcMain.handle('debug:test', async () => {
       console.log('Debug IPC test called');
       return { success: true, message: 'IPC communication working' };
+    });
+
+    // Screen recording handlers
+    ipcMain.handle('screenRecorder:startRecording', async (event, options) => {
+      try {
+        return await this.screenRecorder.startRecording(options);
+      } catch (error) {
+        console.error('Error starting screen recording:', error);
+        throw error;
+      }
+    });
+
+    ipcMain.handle('screenRecorder:stopRecording', async () => {
+      try {
+        return await this.screenRecorder.stopRecording();
+      } catch (error) {
+        console.error('Error stopping screen recording:', error);
+        throw error;
+      }
+    });
+
+    ipcMain.handle('screenRecorder:getStatus', () => {
+      return {
+        isRecording: this.screenRecorder.isRecording,
+        duration: this.screenRecorder.isRecording ? Date.now() - this.screenRecorder.recordingStartTime : 0
+      };
     });
   }
 

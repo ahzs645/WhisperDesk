@@ -4,10 +4,12 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "vite --force",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "clean": "rm -rf node_modules/.vite dist",
+    "dev:clean": "pnpm clean && pnpm dev"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.0.1",

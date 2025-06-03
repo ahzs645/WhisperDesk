@@ -44,6 +44,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
     onModelDeleted: createEventListener('model:modelDeleted')
   },
 
+  // Screen recording
+  screenRecorder: {
+    startRecording: createSafeIPC('screenRecorder:startRecording'),
+    stopRecording: createSafeIPC('screenRecorder:stopRecording'),
+    
+    // Screen recording events
+    onRecordingStarted: createEventListener('screenRecorder:started'),
+    onRecordingStopped: createEventListener('screenRecorder:stopped'),
+    onRecordingError: createEventListener('screenRecorder:error')
+  },
+
   // Transcription with enhanced progress tracking
   transcription: {
     processFile: createSafeIPC('transcription:processFile'),

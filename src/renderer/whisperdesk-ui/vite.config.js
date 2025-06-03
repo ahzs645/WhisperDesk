@@ -15,9 +15,19 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
+    sourcemap: true,
   },
   server: {
     port: 3000,
     strictPort: true,
-  }
+    hmr: {
+      overlay: true,
+    },
+    watch: {
+      usePolling: true,
+    },
+  },
+  optimizeDeps: {
+    force: true,
+  },
 })

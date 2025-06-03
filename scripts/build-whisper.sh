@@ -86,7 +86,10 @@ cd "$TEMP_DIR"
 
 # Build with cmake (modern approach)
 print_status "Configuring build with cmake..."
-cmake -B build -DCMAKE_BUILD_TYPE=Release
+cmake -B build -DCMAKE_BUILD_TYPE=Release \
+    -DBUILD_SHARED_LIBS=OFF \
+    -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0 \
+    -DCMAKE_OSX_ARCHITECTURES=arm64
 
 if [ $? -ne 0 ]; then
     print_error "CMake configuration failed"
@@ -140,12 +143,12 @@ fi
 mkdir -p "$BINARIES_DIR"
 
 if [[ "$OSTYPE" == "darwin"* ]] || [[ "$OSTYPE" == "linux-gnu"* ]]; then
-    cp "$WHISPER_BINARY" "$BINARIES_DIR/whisper"
-    chmod +x "$BINARIES_DIR/whisper"
-    FINAL_BINARY="$BINARIES_DIR/whisper"
+    cp "$WHISPER_BINARY" "$BINARIES_DIR/whisper-cli"
+    chmod +x "$BINARIES_DIR/whisper-cli"
+    FINAL_BINARY="$BINARIES_DIR/whisper-cli"
 else
-    cp "$WHISPER_BINARY" "$BINARIES_DIR/whisper.exe"
-    FINAL_BINARY="$BINARIES_DIR/whisper.exe"
+    cp "$WHISPER_BINARY" "$BINARIES_DIR/whisper-cli.exe"
+    FINAL_BINARY="$BINARIES_DIR/whisper-cli.exe"
 fi
 
 # Verify the copied binary

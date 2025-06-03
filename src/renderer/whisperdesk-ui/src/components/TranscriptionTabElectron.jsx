@@ -9,9 +9,10 @@ import { Textarea } from '@/components/ui/textarea'
 import { Progress } from '@/components/ui/progress'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
-import { Upload, FileAudio, Mic, Square, Play, Pause, Copy, Download, AlertCircle } from 'lucide-react'
+import { Upload, FileAudio, Mic, Square, Play, Pause, Copy, Download, AlertCircle, Circle, FileUp, Video } from 'lucide-react'
 import { useAppState } from '@/App'
 import { toast } from 'sonner'
+import { Switch } from '@/components/ui/switch'
 
 export function TranscriptionTabElectron() {
   const { appState, updateAppState, resetTranscription } = useAppState()
@@ -21,6 +22,9 @@ export function TranscriptionTabElectron() {
   const [models, setModels] = useState([])
   const [isLoading, setIsLoading] = useState(false)
   const [dragOver, setDragOver] = useState(false)
+  const [isRecording, setIsRecording] = useState(false)
+  const [includeMicrophone, setIncludeMicrophone] = useState(true)
+  const [includeSystemAudio, setIncludeSystemAudio] = useState(true)
   
   // Refs for cleanup and toast management
   const progressCleanupRef = useRef(null)
@@ -369,85 +373,172 @@ export function TranscriptionTabElectron() {
     toast.success('🆕 Ready for new transcription')
   }
 
+  const handleStartRecording = async () => {
+    if (!window.electronAPI?.screenRecorder?.startRecording) {
+      toast.error('Screen recording API not available')
+      return
+    }
+
+    try {
+      const settings = {
+        includeMicrophone: appState.recordingSettings?.includeMicrophone ?? true,
+        includeSystemAudio: appState.recordingSettings?.includeSystemAudio ?? true
+      }
+
+      await window.electronAPI.screenRecorder.startRecording(settings)
+      updateAppState({ isRecording: true })
+      toast.success('🎥 Screen recording started')
+    } catch (error) {
+      console.error('Failed to start recording:', error)
+      toast.error('Failed to start recording: ' + error.message)
+    }
+  }
+
+  const handleStopRecording = async () => {
+    if (!window.electronAPI?.screenRecorder?.stopRecording) {
+      toast.error('Screen recording API not available')
+      return
+    }
+
+    try {
+      const result = await window.electronAPI.screenRecorder.stopRecording()
+      updateAppState({ 
+        isRecording: false,
+        selectedFile: {
+          path: result.filePath,
+          name: result.filePath.split('/').pop() || result.filePath.split('\\').pop(),
+          size: 0
+        }
+      })
+      toast.success('🎥 Screen recording saved')
+    } catch (error) {
+      console.error('Failed to stop recording:', error)
+      toast.error('Failed to stop recording: ' + error.message)
+    }
+  }
+
+  const handleDragOver = (e) => {
+    e.preventDefault()
+    setDragOver(true)
+  }
+
+  const handleDragLeave = () => {
+    setDragOver(false)
+  }
+
   return (
     <div className="space-y-6">
-      {/* File Selection */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center space-x-2">
-            <Upload className="w-5 h-5" />
-            <span>File Selection</span>
-            {appState.selectedFile && (
-              <Badge variant="secondary">File Ready</Badge>
-            )}
-          </CardTitle>
-          <CardDescription>
-            Select an audio or video file to transcribe using native Whisper
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div
-            className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
-              dragOver ? 'border-primary bg-primary/5' : 'border-muted-foreground/25'
-            }`}
-            onDragOver={(e) => {
-              e.preventDefault()
-              setDragOver(true)
-            }}
-            onDragLeave={() => setDragOver(false)}
-            onDrop={handleDrop}
-          >
-            {appState.selectedFile ? (
+      {/* Unified Input Section */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* File Upload */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center space-x-2">
+              <FileUp className="w-5 h-5" />
+              <span>File Upload</span>
+            </CardTitle>
+            <CardDescription>
+              Upload an audio or video file for transcription
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div
+              className={`border-2 border-dashed rounded-lg p-6 text-center cursor-pointer hover:border-primary/50 transition-colors ${
+                dragOver ? 'border-primary bg-primary/5' : 'border-muted-foreground/25'
+              }`}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+              onClick={handleFileSelect}
+            >
               <div className="space-y-2">
-                <FileAudio className="w-12 h-12 mx-auto text-primary" />
-                <div className="space-y-1">
-                  <p className="font-medium">{appState.selectedFile.name}</p>
-                  {appState.selectedFile.size > 0 && (
-                    <p className="text-sm text-muted-foreground">
-                      {(appState.selectedFile.size / 1024 / 1024).toFixed(2)} MB
-                    </p>
-                  )}
+                <Upload className="w-8 h-8 mx-auto text-muted-foreground" />
+                <div className="text-sm text-muted-foreground">
+                  Drag and drop your file here, or click to browse
                 </div>
-                <div className="flex gap-2 justify-center">
-                  <Button onClick={handleFileSelect} variant="outline" size="sm">
-                    Change File
-                  </Button>
-                  <Button onClick={handleNewTranscription} variant="outline" size="sm">
-                    Clear
-                  </Button>
-                </div>
+                {appState.selectedFile && (
+                  <div className="mt-2 text-sm">
+                    Selected: {appState.selectedFile.name}
+                  </div>
+                )}
               </div>
-            ) : (
-              <div className="space-y-4">
-                <Upload className="w-12 h-12 mx-auto text-muted-foreground" />
-                <div className="space-y-2">
-                  <p className="text-lg font-medium">Drop your audio file here</p>
-                  <p className="text-sm text-muted-foreground">
-                    Or click to browse files
-                  </p>
-                </div>
-                <Button onClick={handleFileSelect}>
-                  Select Audio File
-                </Button>
-              </div>
-            )}
-          </div>
-        </CardContent>
-      </Card>
+            </div>
+          </CardContent>
+        </Card>
 
-      {/* Configuration */}
+        {/* Screen Recording */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center space-x-2">
+              <Video className="w-5 h-5" />
+              <span>Screen Recording</span>
+            </CardTitle>
+            <CardDescription>
+              Record your screen with audio for transcription
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <div className={`w-2 h-2 rounded-full ${isRecording ? 'bg-red-500 animate-pulse' : 'bg-gray-300'}`} />
+                  <span className="text-sm font-medium">
+                    {isRecording ? 'Recording...' : 'Ready to record'}
+                  </span>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center space-x-2">
+                  <Switch
+                    id="microphone"
+                    checked={includeMicrophone}
+                    onCheckedChange={setIncludeMicrophone}
+                  />
+                  <Label htmlFor="microphone">Include Microphone</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Switch
+                    id="system-audio"
+                    checked={includeSystemAudio}
+                    onCheckedChange={setIncludeSystemAudio}
+                  />
+                  <Label htmlFor="system-audio">Include System Audio</Label>
+                </div>
+              </div>
+
+              <Button
+                className={`w-full ${isRecording ? 'bg-red-500 hover:bg-red-600' : 'bg-primary hover:bg-primary/90'}`}
+                onClick={isRecording ? handleStopRecording : handleStartRecording}
+              >
+                {isRecording ? (
+                  <>
+                    <Square className="w-4 h-4 mr-2" />
+                    Stop Recording
+                  </>
+                ) : (
+                  <>
+                    <Circle className="w-4 h-4 mr-2" />
+                    Start Recording
+                  </>
+                )}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Transcription Settings */}
       <Card>
         <CardHeader>
           <CardTitle>Transcription Settings</CardTitle>
-          <CardDescription>
-            Configure the transcription provider and model
-          </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
+        <CardContent>
+          <div className="grid gap-4">
+            <div className="grid gap-2">
               <Label htmlFor="provider">Provider</Label>
               <Select
+                id="provider"
                 value={appState.selectedProvider}
                 onValueChange={(value) => updateAppState({ selectedProvider: value })}
               >
@@ -457,16 +548,16 @@ export function TranscriptionTabElectron() {
                 <SelectContent>
                   {providers.map((provider) => (
                     <SelectItem key={provider.id} value={provider.id}>
-                      {provider.name} {provider.isAvailable ? '' : '(Unavailable)'}
+                      {provider.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
-
-            <div className="space-y-2">
+            <div className="grid gap-2">
               <Label htmlFor="model">Model</Label>
               <Select
+                id="model"
                 value={appState.selectedModel}
                 onValueChange={(value) => updateAppState({ selectedModel: value })}
               >
@@ -476,126 +567,91 @@ export function TranscriptionTabElectron() {
                 <SelectContent>
                   {models.map((model) => (
                     <SelectItem key={model.id} value={model.id}>
-                      {model.name || model.id}
+                      {model.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
           </div>
-
-          {models.length === 0 && (
-            <div className="flex items-center space-x-2 text-amber-600">
-              <AlertCircle className="w-4 h-4" />
-              <span className="text-sm">
-                No models installed. Please download a model from the Models tab.
-              </span>
-            </div>
-          )}
         </CardContent>
       </Card>
 
       {/* Transcription Controls */}
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center justify-between">
-            <span>Transcription</span>
-            <div className="flex items-center space-x-2">
-              {appState.isTranscribing && (
-                <Badge variant="secondary" className="animate-pulse">
-                  Processing...
-                </Badge>
-              )}
-              {appState.transcription && !appState.isTranscribing && (
-                <Badge variant="secondary">
-                  Complete ✅
-                </Badge>
-              )}
-            </div>
-          </CardTitle>
+          <CardTitle>Transcription</CardTitle>
           <CardDescription>
             Process your audio file with the selected provider and model
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          {appState.isTranscribing && (
-            <div className="space-y-2">
-              <div className="flex justify-between text-sm">
-                <span>{appState.progressMessage}</span>
-                <span>{Math.round(appState.progress)}%</span>
+        <CardContent>
+          <div className="space-y-4">
+            {/* Progress Bar */}
+            {appState.isTranscribing && (
+              <div className="space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span>{appState.progressMessage}</span>
+                  <span>{Math.round(appState.progress)}%</span>
+                </div>
+                <Progress value={appState.progress} />
               </div>
-              <Progress value={appState.progress} className="w-full" />
-            </div>
-          )}
+            )}
 
-          <div className="flex gap-2">
-            <Button
-              onClick={handleStartTranscription}
-              disabled={!appState.selectedFile || appState.isTranscribing || models.length === 0 || isLoading}
-              className="flex-1"
-            >
-              {appState.isTranscribing ? (
+            {/* Action Buttons */}
+            <div className="flex justify-end space-x-2">
+              {appState.transcription && (
                 <>
-                  <Square className="w-4 h-4 mr-2" />
-                  Processing...
-                </>
-              ) : (
-                <>
-                  <Play className="w-4 h-4 mr-2" />
-                  Start Transcription
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleCopyText}
+                  >
+                    <Copy className="w-4 h-4 mr-2" />
+                    Copy Text
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleExport}
+                  >
+                    <Download className="w-4 h-4 mr-2" />
+                    Export
+                  </Button>
                 </>
               )}
-            </Button>
+              <Button
+                onClick={handleStartTranscription}
+                disabled={!appState.selectedFile || appState.isTranscribing}
+              >
+                {appState.isTranscribing ? (
+                  <>
+                    <Pause className="w-4 h-4 mr-2" />
+                    Processing...
+                  </>
+                ) : (
+                  <>
+                    <Play className="w-4 h-4 mr-2" />
+                    Start Transcription
+                  </>
+                )}
+              </Button>
+            </div>
 
+            {/* Transcription Result */}
             {appState.transcription && (
-              <>
-                <Button onClick={handleCopyText} variant="outline">
-                  <Copy className="w-4 h-4 mr-2" />
-                  Copy
-                </Button>
-                <Button onClick={handleExport} variant="outline">
-                  <Download className="w-4 h-4 mr-2" />
-                  Export
-                </Button>
-              </>
+              <div className="mt-4">
+                <Label>Result</Label>
+                <Textarea
+                  value={appState.transcription}
+                  readOnly
+                  className="mt-2 h-[200px]"
+                />
+              </div>
             )}
           </div>
         </CardContent>
       </Card>
-
-      {/* Results */}
-      {appState.transcription && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Transcription Result</CardTitle>
-            <CardDescription>
-              {appState.lastTranscriptionResult?.segments?.length 
-                ? `${appState.lastTranscriptionResult.segments.length} segments found`
-                : 'Raw transcription text'}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              <Textarea
-                value={appState.transcription}
-                onChange={(e) => updateAppState({ transcription: e.target.value })}
-                placeholder="Transcription will appear here..."
-                className="min-h-[200px] font-mono text-sm"
-              />
-              
-              {appState.lastTranscriptionResult?.metadata && (
-                <div className="text-xs text-muted-foreground space-y-1">
-                  <div>Provider: {appState.lastTranscriptionResult.metadata.provider}</div>
-                  {appState.lastTranscriptionResult.metadata.duration && (
-                    <div>Duration: {appState.lastTranscriptionResult.metadata.duration.toFixed(2)}s</div>
-                  )}
-                  <div>Character count: {appState.transcription.length}</div>
-                </div>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-      )}
     </div>
   )
 }

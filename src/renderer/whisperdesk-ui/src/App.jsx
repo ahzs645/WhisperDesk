@@ -1,14 +1,18 @@
 // src/renderer/whisperdesk-ui/src/App.jsx - With persistent file state
 import { useState, useEffect, createContext, useContext } from 'react'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Mic, Package, Clock, Settings } from 'lucide-react'
-import { ModelMarketplace } from '@/components/ModelMarketplace-WebCompatible'
-import { TranscriptionTab } from '@/components/TranscriptionTab-WebCompatible'
-import { TranscriptionTabElectron } from '@/components/TranscriptionTab-Electron'
+import { Button } from './components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './components/ui/card'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from './components/ui/tabs'
+import { Mic, Package, Clock, Settings, Video } from 'lucide-react'
+import { ModelMarketplace } from './components/ModelMarketplace-WebCompatible'
+import { TranscriptionTab } from './components/TranscriptionTab-WebCompatible'
+import { TranscriptionTabElectron } from './components/TranscriptionTabElectron'
+import { ScreenRecorder } from './components/ScreenRecorder'
+import { SettingsTab } from './components/SettingsTab'
 import { Toaster } from 'sonner'
 import './App.css'
+import { Label } from './components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './components/ui/select'
 
 // Create context for app-wide state
 const AppStateContext = createContext()
@@ -22,7 +26,6 @@ export const useAppState = () => {
 }
 
 function AppStateProvider({ children }) {
-  // Persistent state that survives tab switches
   const [appState, setAppState] = useState({
     // File selection state
     selectedFile: null,
@@ -37,12 +40,34 @@ function AppStateProvider({ children }) {
     selectedProvider: 'whisper-native',
     selectedModel: 'whisper-tiny',
     
+    // Recording state
+    isRecording: false,
+    recordingSettings: {
+      includeMicrophone: true,
+      includeSystemAudio: true
+    },
+    
     // Results state
     lastTranscriptionResult: null,
     
     // Environment
-    isElectron: false
+    isElectron: false,
+    theme: localStorage.getItem('theme') || 'system'
   })
+
+  // Initialize theme
+  useEffect(() => {
+    const theme = localStorage.getItem('theme') || 'system'
+    setAppState(prev => ({ ...prev, theme }))
+    
+    // Apply initial theme
+    if (theme === 'system') {
+      const systemTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+      document.documentElement.classList.add(systemTheme)
+    } else {
+      document.documentElement.classList.add(theme)
+    }
+  }, [])
 
   // Update helper function
   const updateAppState = (updates) => {
@@ -73,113 +98,127 @@ function AppStateProvider({ children }) {
     })
   }
 
-  const value = {
-    appState,
-    updateAppState,
-    resetTranscription,
-    clearAll
-  }
+  // Add theme change listener
+  useEffect(() => {
+    const handleThemeChange = (event, theme) => {
+      if (appState.theme === 'system') {
+        document.documentElement.classList.remove('dark', 'light')
+        document.documentElement.classList.add(theme)
+      }
+    }
+
+    window.electronAPI?.window?.onThemeChanged(handleThemeChange)
+    return () => {
+      window.electronAPI?.window?.removeThemeListener(handleThemeChange)
+    }
+  }, [appState.theme])
+
+  // Single useEffect for Electron detection
+  useEffect(() => {
+    const isElectron = typeof window !== 'undefined' && !!window.electronAPI
+    if (isElectron !== appState.isElectron) {
+      updateAppState({ isElectron })
+    }
+  }, [appState.isElectron])
 
   return (
-    <AppStateContext.Provider value={value}>
+    <AppStateContext.Provider value={{ appState, updateAppState, resetTranscription, clearAll }}>
       {children}
     </AppStateContext.Provider>
   )
 }
 
-function App() {
+function AppContent() {
+  const { appState } = useAppState()
   const [activeTab, setActiveTab] = useState('transcribe')
 
-  useEffect(() => {
-    // Detect if we're running in Electron and update global state
-    const isElectron = typeof window !== 'undefined' && window.electronAPI
-    
-    // We can't use useAppState here since this component provides the context
-    // Instead, we'll pass this down or detect it in each component
-  }, [])
-
   // Choose the appropriate transcription component
-  const isElectron = typeof window !== 'undefined' && window.electronAPI
-  const TranscriptionComponent = isElectron ? TranscriptionTabElectron : TranscriptionTab
+  const TranscriptionComponent = appState.isElectron ? TranscriptionTabElectron : TranscriptionTab
 
   return (
-    <AppStateProvider>
-      <div className="min-h-screen bg-background">
-        {/* Toast notifications */}
-        <Toaster />
-        
-        {/* Header */}
-        <header className="border-b bg-card/50 backdrop-blur-sm sticky top-0 z-50">
-          <div className="container mx-auto px-4 py-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-2">
-                <Mic className="w-8 h-8 text-primary" />
-                <h1 className="text-xl font-bold">WhisperDesk Enhanced</h1>
-                {isElectron && (
-                  <span className="text-xs bg-primary/10 text-primary px-2 py-1 rounded">
-                    Electron
-                  </span>
-                )}
-              </div>
-              
-              {/* Quick actions in header */}
-              <div className="flex items-center space-x-2">
-                <AppStateIndicator />
-              </div>
+    <div className="min-h-screen bg-background">
+      {/* Toast notifications */}
+      <Toaster />
+      
+      {/* Header */}
+      <header className="border-b bg-card/50 backdrop-blur-sm sticky top-0 z-50">
+        <div className="container mx-auto px-4 py-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2">
+              <Mic className="w-8 h-8 text-primary" />
+              <h1 className="text-xl font-bold">WhisperDesk Enhanced</h1>
+              {appState.isElectron && (
+                <span className="text-xs bg-primary/10 text-primary px-2 py-1 rounded">
+                  Electron
+                </span>
+              )}
+            </div>
+            
+            {/* Quick actions in header */}
+            <div className="flex items-center space-x-2">
+              <AppStateIndicator />
             </div>
           </div>
-        </header>
+        </div>
+      </header>
 
-        {/* Main Content */}
-        <main className="container mx-auto px-4 py-6">
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-            <TabsList className="grid w-full grid-cols-4">
-              <TabsTrigger value="transcribe" className="flex items-center space-x-2">
-                <Mic className="w-4 h-4" />
-                <span>Transcribe</span>
-                <FileIndicator />
-              </TabsTrigger>
-              <TabsTrigger value="models" className="flex items-center space-x-2">
-                <Package className="w-4 h-4" />
-                <span>Models</span>
-              </TabsTrigger>
-              <TabsTrigger value="history" className="flex items-center space-x-2">
-                <Clock className="w-4 h-4" />
-                <span>History</span>
-              </TabsTrigger>
-              <TabsTrigger value="settings" className="flex items-center space-x-2">
-                <Settings className="w-4 h-4" />
-                <span>Settings</span>
-              </TabsTrigger>
-            </TabsList>
+      {/* Main Content */}
+      <main className="container mx-auto px-4 py-6">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+          <TabsList className="grid w-full grid-cols-4">
+            <TabsTrigger value="transcribe" className="flex items-center space-x-2">
+              <Mic className="w-4 h-4" />
+              <span>Transcribe</span>
+              <FileIndicator />
+            </TabsTrigger>
+            <TabsTrigger value="models" className="flex items-center space-x-2">
+              <Package className="w-4 h-4" />
+              <span>Models</span>
+            </TabsTrigger>
+            <TabsTrigger value="history" className="flex items-center space-x-2">
+              <Clock className="w-4 h-4" />
+              <span>History</span>
+            </TabsTrigger>
+            <TabsTrigger value="settings" className="flex items-center space-x-2">
+              <Settings className="w-4 h-4" />
+              <span>Settings</span>
+            </TabsTrigger>
+          </TabsList>
 
-            {/* Transcription Tab */}
-            <TabsContent value="transcribe" className="space-y-6">
-              <TranscriptionComponent />
-            </TabsContent>
+          {/* Tab Contents */}
+          <TabsContent value="transcribe" className="space-y-6">
+            <TranscriptionComponent />
+          </TabsContent>
 
-            {/* Models Tab */}
-            <TabsContent value="models" className="space-y-6">
-              <ModelMarketplace />
-            </TabsContent>
+          <TabsContent value="models" className="space-y-6">
+            <ModelMarketplace />
+          </TabsContent>
 
-            {/* History Tab */}
-            <TabsContent value="history" className="space-y-6">
-              <HistoryTab />
-            </TabsContent>
+          <TabsContent value="history" className="space-y-6">
+            <HistoryTab />
+          </TabsContent>
 
-            {/* Settings Tab */}
-            <TabsContent value="settings" className="space-y-6">
-              <SettingsTab />
-            </TabsContent>
-          </Tabs>
-        </main>
-      </div>
+          <TabsContent value="settings" className="space-y-6">
+            <SettingsTab />
+          </TabsContent>
+        </Tabs>
+      </main>
+    </div>
+  )
+}
+
+// Main App component
+const App = () => {
+  return (
+    <AppStateProvider>
+      <AppContent />
     </AppStateProvider>
   )
 }
 
-// Component to show file selection indicator in tab
+export default App
+
+// Helper Components
 function FileIndicator() {
   const { appState } = useAppState()
   
@@ -192,7 +231,6 @@ function FileIndicator() {
   return null
 }
 
-// Component to show app state in header
 function AppStateIndicator() {
   const { appState } = useAppState()
   
@@ -217,7 +255,6 @@ function AppStateIndicator() {
   )
 }
 
-// Enhanced History Tab with persistent state
 function HistoryTab() {
   const { appState, clearAll } = useAppState()
   
@@ -279,92 +316,3 @@ function HistoryTab() {
     </Card>
   )
 }
-
-// Enhanced Settings Tab
-function SettingsTab() {
-  const { appState, updateAppState } = useAppState()
-  const isElectron = typeof window !== 'undefined' && window.electronAPI
-  
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Settings</CardTitle>
-        <CardDescription>
-          Configure your preferences and view current state
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div className="space-y-6">
-          {/* Environment Info */}
-          <div className="space-y-2">
-            <h4 className="font-medium">Environment</h4>
-            <div className="text-sm space-y-1">
-              <div className="flex justify-between">
-                <span>Platform:</span>
-                <span className="font-mono">{isElectron ? 'Electron App' : 'Web Browser'}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Provider:</span>
-                <span className="font-mono">{appState.selectedProvider}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Model:</span>
-                <span className="font-mono">{appState.selectedModel}</span>
-              </div>
-            </div>
-          </div>
-          
-          {/* Electron API Status */}
-          {isElectron && (
-            <div className="space-y-2">
-              <h4 className="font-medium">Electron API Status</h4>
-              <div className="text-sm space-y-1">
-                <div className="flex justify-between">
-                  <span>Model API:</span>
-                  <span>{window.electronAPI?.model ? '✅' : '❌'}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Transcription API:</span>
-                  <span>{window.electronAPI?.transcription ? '✅' : '❌'}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>File API:</span>
-                  <span>{window.electronAPI?.file ? '✅' : '❌'}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Export API:</span>
-                  <span>{window.electronAPI?.export ? '✅' : '❌'}</span>
-                </div>
-              </div>
-            </div>
-          )}
-          
-          {/* Current Session State */}
-          <div className="space-y-2">
-            <h4 className="font-medium">Session State</h4>
-            <div className="text-sm space-y-1">
-              <div className="flex justify-between">
-                <span>File Selected:</span>
-                <span>{appState.selectedFile ? '✅' : '❌'}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Transcribing:</span>
-                <span>{appState.isTranscribing ? '🔄' : '⏸️'}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Has Result:</span>
-                <span>{appState.transcription ? '✅' : '❌'}</span>
-              </div>
-            </div>
-          </div>
-          
-          <p className="text-sm text-muted-foreground">
-            More settings options coming soon...
-          </p>
-        </div>
-      </CardContent>
-    </Card>
-  )
-}
-
-export default App
