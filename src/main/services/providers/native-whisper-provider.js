@@ -1,4 +1,4 @@
-// src/main/services/providers/native-whisper-provider.js - FIXED BINARY DETECTION
+// src/main/services/providers/native-whisper-provider.js - FIXED VERSION
 const { EventEmitter } = require('events');
 const { spawn } = require('child_process');
 const fs = require('fs').promises;
@@ -16,8 +16,7 @@ class NativeWhisperProvider extends EventEmitter {
     this.available = false;
     this.activeProcesses = new Map();
     this.tempDir = path.join(os.tmpdir(), 'whisperdesk-native');
-    this.binaryVersion = null;
-    this.argumentStyle = 'unknown'; // Will be detected through actual testing
+    this.argumentStyle = 'unknown';
   }
 
   async initialize() {
@@ -26,8 +25,8 @@ class NativeWhisperProvider extends EventEmitter {
       
       await fs.mkdir(this.tempDir, { recursive: true });
       
-      // FIXED: More accurate binary format detection
-      await this.detectBinaryFormatAccurate();
+      // Detect binary format
+      await this.detectBinaryFormat();
       
       this.available = await this.checkAvailability();
       
@@ -36,7 +35,7 @@ class NativeWhisperProvider extends EventEmitter {
         console.log(`🔧 Binary format: ${this.argumentStyle}`);
       } else {
         console.log('⚠️ Native Whisper provider not fully available, but will attempt runtime usage');
-        this.available = true;
+        this.available = true; // Allow runtime attempts
       }
       
       this.isInitialized = true;
@@ -48,48 +47,30 @@ class NativeWhisperProvider extends EventEmitter {
     }
   }
 
-  // COMPLETELY REWRITTEN: Accurate format detection through actual argument testing
-  async detectBinaryFormatAccurate() {
+  async detectBinaryFormat() {
     try {
       const binaryPath = this.binaryManager.getWhisperBinaryPath();
-      console.log(`🔍 Accurately detecting binary format for: ${binaryPath}`);
+      console.log(`🔍 Detecting binary format for: ${binaryPath}`);
       
-      // Test specific arguments to determine actual support
-      const newFormatSupported = await this.testSpecificArguments(['--help', '--model']);
-      const legacyFormatSupported = await this.testSpecificArguments(['-h', '-m']);
+      // Quick test to determine format
+      const testResult = await this.quickBinaryTest(binaryPath);
       
-      console.log(`🧪 New format test result: ${newFormatSupported}`);
-      console.log(`🧪 Legacy format test result: ${legacyFormatSupported}`);
-      
-      // Test actual transcription arguments to be sure
-      if (newFormatSupported) {
-        const newArgsWork = await this.testActualArguments('new');
-        if (newArgsWork) {
-          this.argumentStyle = 'new';
-          console.log('✅ Confirmed NEW argument format through actual testing');
-          return;
-        } else {
-          console.log('⚠️ New format help exists but actual arguments fail');
-        }
-      }
-      
-      if (legacyFormatSupported) {
-        const legacyArgsWork = await this.testActualArguments('legacy');
-        if (legacyArgsWork) {
-          this.argumentStyle = 'legacy';
-          console.log('✅ Confirmed LEGACY argument format through actual testing');
-          return;
-        }
-      }
-      
-      // Fallback: determine from binary name and path
-      const binaryName = path.basename(binaryPath).toLowerCase();
-      if (binaryName.includes('whisper-cli') || binaryName.includes('whisper-cpp')) {
+      if (testResult.supportsNewFormat) {
         this.argumentStyle = 'new';
-        console.log('🔧 Fallback: Assuming NEW format based on binary name');
-      } else {
+        console.log('✅ Detected NEW argument format (--file, --model)');
+      } else if (testResult.supportsLegacyFormat) {
         this.argumentStyle = 'legacy';
-        console.log('🔧 Fallback: Assuming LEGACY format based on binary name');
+        console.log('✅ Detected LEGACY argument format (-f, -m)');
+      } else {
+        // Fallback based on binary name
+        const binaryName = path.basename(binaryPath).toLowerCase();
+        if (binaryName.includes('whisper-cli') || binaryName.includes('whisper-cpp')) {
+          this.argumentStyle = 'new';
+          console.log('🔧 Fallback: Assuming NEW format based on binary name');
+        } else {
+          this.argumentStyle = 'legacy';
+          console.log('🔧 Fallback: Assuming LEGACY format based on binary name');
+        }
       }
       
     } catch (error) {
@@ -98,11 +79,11 @@ class NativeWhisperProvider extends EventEmitter {
     }
   }
 
-  // Test specific arguments without requiring a model or file
-  async testSpecificArguments(args) {
+  async quickBinaryTest(binaryPath) {
     return new Promise((resolve) => {
+      const results = { supportsNewFormat: false, supportsLegacyFormat: false };
+      
       try {
-        const binaryPath = this.binaryManager.getWhisperBinaryPath();
         const env = { ...process.env };
         const binaryDir = path.dirname(binaryPath);
         
@@ -110,69 +91,8 @@ class NativeWhisperProvider extends EventEmitter {
           env.PATH = `${binaryDir};${env.PATH}`;
         }
         
-        const testProcess = spawn(binaryPath, args, {
-          stdio: ['pipe', 'pipe', 'pipe'],
-          windowsHide: true,
-          cwd: binaryDir,
-          env: env,
-          timeout: 5000
-        });
-        
-        let stdout = '';
-        let stderr = '';
-        
-        testProcess.stdout.on('data', (data) => stdout += data.toString());
-        testProcess.stderr.on('data', (data) => stderr += data.toString());
-        
-        testProcess.on('close', (code) => {
-          const output = stdout + stderr;
-          
-          // Success if exit code is 0 OR we get help output (even with code 1)
-          const success = code === 0 || output.length > 50;
-          
-          console.log(`📊 Args ${args.join(' ')}: exit=${code}, output_len=${output.length}, success=${success}`);
-          resolve(success);
-        });
-        
-        testProcess.on('error', (error) => {
-          console.log(`📊 Args ${args.join(' ')}: error=${error.message}`);
-          resolve(false);
-        });
-        
-        setTimeout(() => {
-          testProcess.kill('SIGTERM');
-          resolve(false);
-        }, 5000);
-        
-      } catch (error) {
-        resolve(false);
-      }
-    });
-  }
-
-  // Test actual transcription arguments with dummy values
-  async testActualArguments(format) {
-    return new Promise((resolve) => {
-      try {
-        const binaryPath = this.binaryManager.getWhisperBinaryPath();
-        const env = { ...process.env };
-        const binaryDir = path.dirname(binaryPath);
-        
-        if (process.platform === 'win32') {
-          env.PATH = `${binaryDir};${env.PATH}`;
-        }
-        
-        let args = [];
-        
-        if (format === 'new') {
-          // Test new format with dummy model path (should fail gracefully if format is supported)
-          args = ['--model', '/dummy/path', '--file', '/dummy/file'];
-        } else {
-          // Test legacy format with dummy model path
-          args = ['-m', '/dummy/path', '-f', '/dummy/file'];
-        }
-        
-        const testProcess = spawn(binaryPath, args, {
+        // Test new format
+        const testProcess = spawn(binaryPath, ['--help'], {
           stdio: ['pipe', 'pipe', 'pipe'],
           windowsHide: true,
           cwd: binaryDir,
@@ -180,35 +100,34 @@ class NativeWhisperProvider extends EventEmitter {
           timeout: 3000
         });
         
-        let stderr = '';
-        testProcess.stderr.on('data', (data) => stderr += data.toString());
+        let output = '';
+        
+        testProcess.stdout.on('data', (data) => output += data.toString());
+        testProcess.stderr.on('data', (data) => output += data.toString());
         
         testProcess.on('close', (code) => {
-          // If format is supported, we should get specific errors about missing files
-          // rather than "unknown argument" errors
-          const formatSupported = !stderr.includes('unknown argument') && 
-                                 !stderr.includes('invalid option') &&
-                                 !stderr.includes('unrecognized option');
-          
-          console.log(`📊 Testing ${format} args: exit=${code}, format_supported=${formatSupported}`);
-          if (stderr.length > 0) {
-            console.log(`📊 Error output: ${stderr.substring(0, 100)}...`);
+          if (code === 0 || output.length > 50) {
+            if (output.includes('--file') || output.includes('--model')) {
+              results.supportsNewFormat = true;
+            }
+            if (output.includes('-f ') || output.includes('-m ')) {
+              results.supportsLegacyFormat = true;
+            }
           }
-          
-          resolve(formatSupported);
+          resolve(results);
         });
         
-        testProcess.on('error', (error) => {
-          resolve(false);
+        testProcess.on('error', () => {
+          resolve(results);
         });
         
         setTimeout(() => {
           testProcess.kill('SIGTERM');
-          resolve(false);
+          resolve(results);
         }, 3000);
         
       } catch (error) {
-        resolve(false);
+        resolve(results);
       }
     });
   }
@@ -217,10 +136,8 @@ class NativeWhisperProvider extends EventEmitter {
     try {
       const binaryPath = this.binaryManager.getWhisperBinaryPath();
       await fs.access(binaryPath);
-      
       console.log('✅ Whisper binary file exists, provider will be available');
       return true;
-      
     } catch (error) {
       console.log('❌ Whisper binary file not found:', error.message);
       return false;
@@ -269,7 +186,7 @@ class NativeWhisperProvider extends EventEmitter {
       const modelPath = await this.getModelPath(modelName);
       
       const binaryPath = this.binaryManager.getWhisperBinaryPath();
-      const args = await this.buildWhisperArgs(filePath, modelPath, options);
+      const args = this.buildWhisperArgs(filePath, modelPath, options);
       
       console.log(`Executing: ${binaryPath} ${args.join(' ')}`);
       
@@ -293,10 +210,10 @@ class NativeWhisperProvider extends EventEmitter {
       
       if (error.message.includes('ENOENT')) {
         throw new Error('Whisper binary not found. Please check if whisper.cpp is properly installed.');
+      } else if (error.message.includes('3221225501') || error.message.includes('access violation')) {
+        throw new Error('Binary crashed (access violation). The whisper.exe may be corrupted or incompatible with your system. Try downloading a fresh copy of WhisperDesk.');
       } else if (error.message.includes('model')) {
         throw new Error(`Model error: ${error.message}. Please check if the model file exists and is valid.`);
-      } else if (error.message.includes('codec') || error.message.includes('format')) {
-        throw new Error(`Audio format error: ${error.message}. Please try a different audio format.`);
       } else {
         throw new Error(`Transcription failed: ${error.message}`);
       }
@@ -325,6 +242,13 @@ class NativeWhisperProvider extends EventEmitter {
     console.log(`🔍 Looking for model: ${modelName}`);
     
     try {
+      // Use the model manager's compatible path method if available
+      if (this.modelManager.getCompatibleModelPath) {
+        const modelId = modelName.replace('ggml-', '').replace('.bin', '');
+        return await this.modelManager.getCompatibleModelPath(`whisper-${modelId}`);
+      }
+      
+      // Fallback to manual search
       const installedModels = await this.modelManager.getInstalledModels();
       console.log(`📋 Installed models: ${installedModels.map(m => m.id).join(', ')}`);
       
@@ -345,86 +269,41 @@ class NativeWhisperProvider extends EventEmitter {
       if (installedModel) {
         console.log(`✅ Found installed model: ${installedModel.path}`);
         
-        try {
-          await fs.access(installedModel.path);
-          
-          const filename = path.basename(installedModel.path);
-          if (filename === modelName) {
-            return installedModel.path;
-          } else {
-            const modelsDir = path.dirname(installedModel.path);
-            const correctPath = path.join(modelsDir, modelName);
-            
-            try {
-              await fs.access(correctPath);
-              console.log(`✅ Found correctly named file: ${correctPath}`);
-              return correctPath;
-            } catch (error) {
-              console.log(`🔄 Creating correctly named copy: ${filename} -> ${modelName}`);
-              await fs.copyFile(installedModel.path, correctPath);
-              console.log(`✅ Created correctly named model file: ${correctPath}`);
-              return correctPath;
-            }
-          }
-        } catch (error) {
-          console.warn(`⚠️ Model file not accessible: ${installedModel.path}`);
-        }
-      }
-    } catch (error) {
-      console.warn('⚠️ Error getting installed models:', error.message);
-    }
-    
-    const modelsDir = this.modelManager.modelsDir;
-    const possiblePaths = [
-      path.join(modelsDir, modelName),
-      path.join(modelsDir, `whisper-${modelName.replace('ggml-', '').replace('.bin', '')}.bin`),
-      path.join(modelsDir, modelName.replace('ggml-', '').replace('.bin', '') + '.bin'),
-    ];
-    
-    console.log(`🔍 Checking paths in models directory: ${modelsDir}`);
-    for (const modelPath of possiblePaths) {
-      try {
-        await fs.access(modelPath);
-        console.log(`✅ Found model at: ${modelPath}`);
-        
-        const filename = path.basename(modelPath);
-        if (filename !== modelName) {
+        const filename = path.basename(installedModel.path);
+        if (filename === modelName) {
+          return installedModel.path;
+        } else {
+          // Create compatible named version
+          const modelsDir = path.dirname(installedModel.path);
           const correctPath = path.join(modelsDir, modelName);
+          
           try {
             await fs.access(correctPath);
-            console.log(`✅ Correctly named file already exists: ${correctPath}`);
+            console.log(`✅ Found correctly named file: ${correctPath}`);
             return correctPath;
           } catch (error) {
             console.log(`🔄 Creating correctly named copy: ${filename} -> ${modelName}`);
-            await fs.copyFile(modelPath, correctPath);
+            await fs.copyFile(installedModel.path, correctPath);
             console.log(`✅ Created correctly named model file: ${correctPath}`);
             return correctPath;
           }
         }
-        
-        return modelPath;
-      } catch (error) {
-        console.log(`❌ Not found: ${modelPath}`);
       }
+    } catch (error) {
+      console.warn('⚠️ Error getting model path:', error.message);
     }
     
     const baseModelName = modelName.replace('ggml-', '').replace('.bin', '');
     throw new Error(`Model not found: ${modelName}. Please download the '${baseModelName}' model first from the Models tab.`);
   }
 
-  // REWRITTEN: Universal argument builder based on ACCURATE detection
-  async buildWhisperArgs(filePath, modelPath, options) {
-    console.log(`🔧 Building arguments for CONFIRMED format: ${this.argumentStyle}`);
-    
-    // Ensure we have detected the format
-    if (this.argumentStyle === 'unknown') {
-      await this.detectBinaryFormatAccurate();
-    }
+  buildWhisperArgs(filePath, modelPath, options) {
+    console.log(`🔧 Building arguments for format: ${this.argumentStyle}`);
     
     let args = [];
     
     if (this.argumentStyle === 'new') {
-      // NEW format (true whisper-cli / whisper-cpp)
+      // NEW format (whisper-cli)
       args = [
         '--model', modelPath,
         '--file', filePath,
@@ -455,13 +334,12 @@ class NativeWhisperProvider extends EventEmitter {
       }
       
       if (options.enableTimestamps) {
-        args.push('-nt'); // No timestamps to reduce clutter
+        args.push('-nt');
       }
       
       const threads = Math.min(require('os').cpus().length, 8);
       args.push('-t', threads.toString());
-      
-      args.push('-p', '1'); // Single processor
+      args.push('-p', '1');
     }
     
     console.log(`📋 Final arguments: ${args.join(' ')}`);
@@ -524,10 +402,7 @@ class NativeWhisperProvider extends EventEmitter {
       whisperProcess.stderr.on('data', (data) => {
         stderr += data.toString();
         
-        if (stderr.includes('deprecated')) {
-          console.log('ℹ️ Whisper binary shows deprecation warning (this is normal)');
-        }
-        
+        // Parse progress from stderr
         const progressMatch = stderr.match(/\[(\d+)%\]/);
         if (progressMatch) {
           const progress = parseInt(progressMatch[1]) / 100;
@@ -546,10 +421,9 @@ class NativeWhisperProvider extends EventEmitter {
         console.log(`Whisper process finished with code ${code}`);
         console.log(`Processing time: ${processingTime}ms`);
         
-        // Handle different exit codes more gracefully
         if (code === 0 || (code === 1 && stdout.length > 0)) {
           try {
-            const result = this.parseWhisperOutput(stdout, stderr, args);
+            const result = this.parseWhisperOutput(stdout, stderr, args, filePath);
             result.processingTime = processingTime;
             
             this.emit('progress', {
@@ -566,22 +440,15 @@ class NativeWhisperProvider extends EventEmitter {
         } else {
           let errorMessage = `Whisper process failed with code ${code}`;
           
-          // Windows-specific error handling
-          if (process.platform === 'win32') {
-            if (code === 3221225501 || code === -1073741795) {
-              errorMessage = 'Binary crashed (access violation). The whisper.exe may be corrupted or incompatible with your system. Try downloading a fresh copy of WhisperDesk.';
-            } else if (code === 3221225781 || code === -1073741515) {
-              errorMessage = 'Missing Visual C++ runtime. Install vc_redist.x64.exe from the application folder.';
-            }
-          }
-          
-          // Handle argument errors
-          if (stderr.includes('unknown argument') || stderr.includes('invalid option')) {
+          // Handle specific error codes
+          if (code === 3221225501 || code === -1073741795) {
+            errorMessage = 'Binary crashed (access violation). The whisper.exe may be corrupted or incompatible with your system. Try downloading a fresh copy of WhisperDesk.';
+          } else if (stderr.includes('unknown argument') || stderr.includes('invalid option')) {
             errorMessage = `Argument format error: ${stderr.trim()}. The binary may use a different argument format than detected.`;
           } else if (code === 1 && stderr.includes('deprecated')) {
             // Try to parse output despite deprecation warning
             try {
-              const result = this.parseWhisperOutput(stdout, stderr, args);
+              const result = this.parseWhisperOutput(stdout, stderr, args, filePath);
               if (result.text && result.text.trim().length > 0) {
                 console.log('✅ Transcription succeeded despite deprecation warning');
                 result.processingTime = processingTime;
@@ -591,11 +458,6 @@ class NativeWhisperProvider extends EventEmitter {
             } catch (parseError) {
               // Fall through to error
             }
-            errorMessage = 'Binary shows deprecation warning and failed to produce output.';
-          } else if (code === 1) {
-            errorMessage = 'Transcription failed - check input file format and model availability';
-          } else if (stderr.trim()) {
-            errorMessage = `Whisper error: ${stderr.trim()}`;
           }
           
           console.error(`Whisper stderr: ${stderr}`);
@@ -616,6 +478,7 @@ class NativeWhisperProvider extends EventEmitter {
         }
       });
       
+      // Set timeout
       setTimeout(() => {
         if (this.activeProcesses.has(transcriptionId)) {
           console.log(`Whisper process timeout for transcription ${transcriptionId}`);
@@ -623,53 +486,50 @@ class NativeWhisperProvider extends EventEmitter {
           this.activeProcesses.delete(transcriptionId);
           reject(new Error('Transcription timeout - file may be too large'));
         }
-      }, 30 * 60 * 1000);
+      }, 30 * 60 * 1000); // 30 minutes
     });
   }
 
-  // Enhanced output parsing
-  parseWhisperOutput(stdout, stderr, args) {
+  // IMPROVED: Better output parsing with multiple strategies
+  parseWhisperOutput(stdout, stderr, args, filePath) {
     console.log('🔍 Parsing whisper output...');
     
-    // Strategy 1: Look for output files based on input filename
+    // Strategy 1: Check for output files first
     try {
-      const fileIndex = args.findIndex(arg => arg === '--file' || arg === '-f');
-      if (fileIndex !== -1 && fileIndex + 1 < args.length) {
-        const inputFile = args[fileIndex + 1];
-        const baseName = path.basename(inputFile, path.extname(inputFile));
-        
-        // Check common output locations
-        const possibleOutputFiles = [
-          path.join(process.cwd(), `${baseName}.txt`),
-          path.join(this.tempDir, `${baseName}.txt`),
-          `${baseName}.txt`
-        ];
-        
-        for (const outputFile of possibleOutputFiles) {
-          try {
-            const fs = require('fs');
-            if (fs.existsSync(outputFile)) {
-              const text = fs.readFileSync(outputFile, 'utf8').trim();
-              if (text.length > 0) {
-                console.log(`✅ Read transcription from output file: ${outputFile}`);
-                
-                // Clean up
-                try {
-                  fs.unlinkSync(outputFile);
-                } catch (e) {}
-                
-                return {
-                  text,
-                  segments: [{ start: 0, end: 0, text }],
-                  language: 'unknown',
-                  confidence: null,
-                  duration: null
-                };
+      const baseName = path.basename(filePath, path.extname(filePath));
+      const possibleOutputFiles = [
+        `${filePath}.txt`,
+        path.join(process.cwd(), `${baseName}.txt`),
+        path.join(this.tempDir, `${baseName}.txt`),
+        `${baseName}.txt`
+      ];
+      
+      const fs = require('fs');
+      for (const outputFile of possibleOutputFiles) {
+        try {
+          if (fs.existsSync(outputFile)) {
+            const text = fs.readFileSync(outputFile, 'utf8').trim();
+            if (text.length > 0) {
+              console.log(`✅ Read transcription from output file: ${outputFile}`);
+              
+              // Clean up
+              try {
+                fs.unlinkSync(outputFile);
+              } catch (e) {
+                console.warn('Could not clean up output file:', e.message);
               }
+              
+              return {
+                text,
+                segments: [{ start: 0, end: 0, text }],
+                language: 'unknown',
+                confidence: null,
+                duration: null
+              };
             }
-          } catch (error) {
-            continue;
           }
+        } catch (error) {
+          continue;
         }
       }
     } catch (error) {
@@ -678,41 +538,84 @@ class NativeWhisperProvider extends EventEmitter {
     
     // Strategy 2: Parse from stdout/stderr
     const allOutput = stdout + '\n' + stderr;
-    const lines = allOutput.split('\n').filter(line => line.trim());
+    console.log('📋 Raw output length:', allOutput.length);
     
-    // Filter out metadata and system messages
-    const textLines = lines.filter(line => {
-      const l = line.toLowerCase().trim();
-      return !l.includes('whisper.cpp') && 
-             !l.includes('loading model') &&
-             !l.includes('deprecated') &&
-             !l.includes('warning') &&
-             !l.includes('system_info') &&
-             !l.includes('sampling') &&
-             !l.includes('[') &&
-             !l.includes('usage:') &&
-             !l.includes('options:') &&
-             line.trim().length > 5;
-    });
+    // Look for the actual transcription text
+    const lines = allOutput.split('\n');
+    const textLines = [];
     
-    let text = textLines.join(' ').trim();
+    let foundTranscriptionStart = false;
     
-    // Clean common artifacts
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      
+      // Skip system messages and metadata
+      if (line.includes('whisper_') || 
+          line.includes('ggml_') ||
+          line.includes('main: ') ||
+          line.includes('output_txt:') ||
+          line.includes('whisper_print_timings:') ||
+          line.includes('load time') ||
+          line.includes('sampling') ||
+          line.startsWith('[') ||
+          line.length < 3) {
+        continue;
+      }
+      
+      // Look for actual transcription content
+      // Usually comes after "main: processing" line
+      if (line.includes('main: processing')) {
+        foundTranscriptionStart = true;
+        continue;
+      }
+      
+      if (foundTranscriptionStart && line.length > 5) {
+        // This looks like transcription text
+        textLines.push(line);
+      }
+    }
+    
+    let text = '';
+    
+    if (textLines.length > 0) {
+      text = textLines.join(' ').trim();
+    } else {
+      // Fallback: look for any substantial text that doesn't look like system output
+      const substantialLines = lines.filter(line => {
+        const l = line.trim();
+        return l.length > 10 && 
+               !l.includes('whisper_') && 
+               !l.includes('ggml_') && 
+               !l.includes('main:') &&
+               !l.includes('output_txt:') &&
+               !l.includes('[') &&
+               !l.includes('ms') &&
+               !l.includes('load time') &&
+               !l.includes('sample time');
+      });
+      
+      if (substantialLines.length > 0) {
+        text = substantialLines.join(' ').trim();
+      }
+    }
+    
+    // Clean up the text
     text = text
-      .replace(/\[\d+:\d+:\d+\.\d+ --> \d+:\d+:\d+\.\d+\]/g, '')
-      .replace(/\[BLANK_AUDIO\]/g, '')
-      .replace(/\s+/g, ' ')
+      .replace(/\[\d+:\d+:\d+\.\d+ --> \d+:\d+:\d+\.\d+\]/g, '') // Remove timestamps
+      .replace(/\[BLANK_AUDIO\]/g, '') // Remove blank audio markers
+      .replace(/\s+/g, ' ') // Normalize whitespace
       .trim();
     
     if (!text || text.length < 3) {
       console.error('❌ No transcription text found');
-      console.log('📋 Raw stdout:', stdout.substring(0, 200));
-      console.log('📋 Raw stderr:', stderr.substring(0, 200));
+      console.log('📋 Raw stdout preview:', stdout.substring(0, 300));
+      console.log('📋 Raw stderr preview:', stderr.substring(0, 300));
       
       throw new Error('No transcription text found. The audio may be empty, corrupted, or the binary failed to process it.');
     }
     
     console.log(`✅ Extracted transcription text (${text.length} characters)`);
+    console.log(`📝 Preview: ${text.substring(0, 100)}...`);
     
     return {
       text,
