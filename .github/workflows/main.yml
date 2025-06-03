@@ -295,7 +295,46 @@ jobs:
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
         run: |
-          npx electron-builder --win --x64 --publish=never
+          # Create electron-builder config without background requirement
+          cat > electron-builder.yml << EOF
+          appId: com.whisperdesk.app
+          productName: WhisperDesk
+          mac:
+            target:
+              - dmg
+              - zip
+            category: public.app-category.utilities
+            darkModeSupport: true
+            contents:
+              - x: 130
+                y: 220
+                type: file
+                path: dist/mac/WhisperDesk.app
+              - x: 410
+                y: 220
+                type: link
+                path: /Applications
+          dmg:
+            iconSize: 100
+            contents:
+              - x: 130
+                y: 220
+                type: file
+                path: dist/mac/WhisperDesk.app
+              - x: 410
+                y: 220
+                type: link
+                path: /Applications
+            window:
+              width: 540
+              height: 380
+          EOF
+          
+          if [ "${{ matrix.arch }}" = "arm64" ]; then
+            npx electron-builder --mac --arm64 --publish=never --config electron-builder.yml
+          else
+            npx electron-builder --mac --x64 --publish=never --config electron-builder.yml
+          fi
 
       # Upload artifacts
       - name: Upload Windows artifacts
@@ -466,10 +505,45 @@ jobs:
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
         run: |
+          # Create electron-builder config without background requirement
+          cat > electron-builder.yml << EOF
+          appId: com.whisperdesk.app
+          productName: WhisperDesk
+          mac:
+            target:
+              - dmg
+              - zip
+            category: public.app-category.utilities
+            darkModeSupport: true
+            contents:
+              - x: 130
+                y: 220
+                type: file
+                path: dist/mac/WhisperDesk.app
+              - x: 410
+                y: 220
+                type: link
+                path: /Applications
+          dmg:
+            iconSize: 100
+            contents:
+              - x: 130
+                y: 220
+                type: file
+                path: dist/mac/WhisperDesk.app
+              - x: 410
+                y: 220
+                type: link
+                path: /Applications
+            window:
+              width: 540
+              height: 380
+          EOF
+          
           if [ "${{ matrix.arch }}" = "arm64" ]; then
-            npx electron-builder --mac --arm64 --publish=never
+            npx electron-builder --mac --arm64 --publish=never --config electron-builder.yml
           else
-            npx electron-builder --mac --x64 --publish=never
+            npx electron-builder --mac --x64 --publish=never --config electron-builder.yml
           fi
 
       # Upload artifacts
