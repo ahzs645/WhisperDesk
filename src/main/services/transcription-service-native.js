@@ -50,42 +50,54 @@ class NativeTranscriptionService extends EventEmitter {
 
   async initializeProviders() {
     // Initialize Native Whisper provider
-    if (!this.providers.has('whisper-native')) {
-      try {
-        const nativeWhisperProvider = new NativeWhisperProvider(this.modelManager, this.binaryManager);
-        await nativeWhisperProvider.initialize();
-        
-        // Forward events
-        nativeWhisperProvider.on('progress', (data) => this.emit('progress', data));
-        nativeWhisperProvider.on('error', (data) => this.emit('error', data));
-        nativeWhisperProvider.on('complete', (data) => this.emit('complete', data));
-        
-        this.providers.set('whisper-native', nativeWhisperProvider);
-        console.log('✅ Native Whisper provider initialized');
-      } catch (error) {
-        console.warn('⚠️ Failed to initialize Native Whisper provider:', error.message);
-      }
+    try {
+      const nativeWhisperProvider = new NativeWhisperProvider(this.modelManager, this.binaryManager);
+      await nativeWhisperProvider.initialize();
+      
+      // Forward events
+      nativeWhisperProvider.on('progress', (data) => this.emit('progress', data));
+      nativeWhisperProvider.on('error', (data) => this.emit('error', data));
+      nativeWhisperProvider.on('complete', (data) => this.emit('complete', data));
+      
+      this.providers.set('whisper-native', nativeWhisperProvider);
+      console.log('✅ Native Whisper provider initialized');
+    } catch (error) {
+      console.warn('⚠️ Failed to initialize Native Whisper provider:', error.message);
+      
+      // Create a disabled provider for UI display
+      this.providers.set('whisper-native', {
+        getName: () => 'whisper-native',
+        getDescription: () => 'Local whisper.cpp transcription (unavailable)',
+        isAvailable: () => false,
+        getCapabilities: () => ({ error: error.message })
+      });
     }
 
-    // Initialize Deepgram provider (keep as fallback)
-    if (!this.providers.has('deepgram')) {
-      try {
-        const deepgramProvider = new DeepgramProvider();
-        await deepgramProvider.initialize();
-        
-        // Forward events
-        deepgramProvider.on('progress', (data) => this.emit('progress', data));
-        deepgramProvider.on('error', (data) => this.emit('error', data));
-        deepgramProvider.on('complete', (data) => this.emit('complete', data));
-        
-        this.providers.set('deepgram', deepgramProvider);
-        console.log('✅ Deepgram provider initialized');
-      } catch (error) {
-        console.warn('⚠️ Failed to initialize Deepgram provider:', error.message);
-      }
+    // Initialize Deepgram provider (graceful fallback)
+    try {
+      const deepgramProvider = new DeepgramProvider();
+      await deepgramProvider.initialize();
+      
+      // Forward events
+      deepgramProvider.on('progress', (data) => this.emit('progress', data));
+      deepgramProvider.on('error', (data) => this.emit('error', data));
+      deepgramProvider.on('complete', (data) => this.emit('complete', data));
+      
+      this.providers.set('deepgram', deepgramProvider);
+      console.log('✅ Deepgram provider initialized');
+    } catch (error) {
+      console.warn('⚠️ Failed to initialize Deepgram provider:', error.message);
+      
+      // Create a disabled provider for UI display
+      this.providers.set('deepgram', {
+        getName: () => 'deepgram',
+        getDescription: () => 'Deepgram Nova API (unavailable - check dependencies)',
+        isAvailable: () => false,
+        getCapabilities: () => ({ error: error.message })
+      });
     }
 
-    // FIXED: Set default provider based on availability with intelligent fallback
+    // Set default provider based on availability with intelligent fallback
     const nativeProvider = this.providers.get('whisper-native');
     const deepgramProvider = this.providers.get('deepgram');
     
@@ -95,13 +107,10 @@ class NativeTranscriptionService extends EventEmitter {
     } else if (deepgramProvider && deepgramProvider.isAvailable()) {
       this.defaultProvider = 'deepgram';
       console.log('⚠️ Native Whisper not available, falling back to: deepgram');
-    } else if (nativeProvider) {
-      // FIXED: Even if native provider reports as unavailable, try to use it
-      // Runtime errors will be handled gracefully
-      this.defaultProvider = 'whisper-native';
-      console.log('⚠️ Using whisper-native despite availability issues - will handle runtime errors');
     } else {
-      throw new Error('No transcription providers available');
+      // Even if all providers failed to initialize, don't crash - let the UI show them as disabled
+      this.defaultProvider = 'whisper-native'; // Default to native for UI purposes
+      console.warn('⚠️ All providers failed to initialize - they will show as unavailable in UI');
     }
   }
 

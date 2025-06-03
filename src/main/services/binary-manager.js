@@ -12,12 +12,20 @@ class BinaryManager {
   }
 
   getBinariesDirectory() {
-    if (process.env.NODE_ENV === 'development') {
-      // Development mode - binaries in project root
-      return path.join(process.cwd(), 'binaries');
+    // Always check project root first (for development and building)
+    const projectBinaries = path.join(process.cwd(), 'binaries');
+    
+    // In development or when running from project directory
+    if (process.env.NODE_ENV === 'development' || require('fs').existsSync(projectBinaries)) {
+      return projectBinaries;
     } else {
       // Production mode - binaries in app resources
-      return path.join(process.resourcesPath, 'binaries');
+      try {
+        return path.join(process.resourcesPath, 'binaries');
+      } catch (error) {
+        // Fallback to project root
+        return projectBinaries;
+      }
     }
   }
 

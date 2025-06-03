@@ -139,31 +139,73 @@ class WhisperDeskApp {
       // Initialize Model Manager
       this.modelManager = new ModelManager();
       await this.modelManager.initialize();
+      console.log('✅ Model Manager initialized');
       
-      // Initialize Transcription Service
+      // Initialize Transcription Service (graceful failure)
       this.transcriptionService = new TranscriptionService(this.modelManager);
       await this.transcriptionService.initialize();
+      console.log('✅ Transcription Service initialized');
       
       // Initialize Audio Service
       this.audioService = new AudioService();
       await this.audioService.initialize();
+      console.log('✅ Audio Service initialized');
       
       // Initialize Settings Service
       this.settingsService = new SettingsService();
       await this.settingsService.initialize();
+      console.log('✅ Settings Service initialized');
       
       // Initialize Export Service
       this.exportService = new ExportService();
       await this.exportService.initialize();
+      console.log('✅ Export Service initialized');
       
       // Set up model manager events
       this.setupModelManagerEvents();
       
       // Set up transcription service events
       this.setupTranscriptionServiceEvents();
+      
+      console.log('✅ All services initialized successfully');
+      
     } catch (error) {
-      console.error('Error initializing services:', error);
-      throw error;
+      console.error('❌ Error initializing services:', error);
+      
+      // Don't crash the whole app - initialize what we can
+      console.warn('⚠️ Some services failed to initialize, continuing with limited functionality');
+      
+      // Ensure critical services are available even if they failed
+      if (!this.modelManager) {
+        console.warn('⚠️ Model Manager failed, creating minimal fallback');
+        this.modelManager = { 
+          getAvailableModels: () => Promise.resolve([]),
+          getInstalledModels: () => Promise.resolve([])
+        };
+      }
+      
+      if (!this.settingsService) {
+        console.warn('⚠️ Settings Service failed, creating minimal fallback');
+        this.settingsService = {
+          get: () => null,
+          set: () => {},
+          getAll: () => ({}),
+          getTranscriptionSettings: () => ({ defaultModel: 'base', defaultProvider: 'whisper-native' })
+        };
+      }
+      
+      if (!this.transcriptionService) {
+        console.warn('⚠️ Transcription Service failed, creating minimal fallback');
+        this.transcriptionService = {
+          getProviders: () => [
+            { id: 'whisper-native', name: 'Native Whisper (Unavailable)', isAvailable: false },
+            { id: 'deepgram', name: 'Deepgram (Unavailable)', isAvailable: false }
+          ],
+          processFile: () => Promise.reject(new Error('Transcription service unavailable'))
+        };
+      }
+      
+      // Continue initialization - don't throw
     }
   }
 
@@ -215,7 +257,7 @@ class WhisperDeskApp {
         nodeIntegration: false,
         contextIsolation: true,
         enableRemoteModule: false,
-        preload: path.join(__dirname, 'preload-enhanced.js'),
+        preload: path.join(__dirname, 'preload.js'),
         webSecurity: true
       },
       icon: path.join(__dirname, '../../resources/icon.png')
