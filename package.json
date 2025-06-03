@@ -10,6 +10,21 @@
   },
   "license": "MIT",
   "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron .",
+    "build": "echo 'Build complete'",
+    "dist": "electron-builder",
+    "dist:win": "electron-builder --win",
+    "dist:mac": "electron-builder --mac",
+    "dist:linux": "electron-builder --linux"
+  },
+  "dependencies": {
+    "electron": "^27.1.3"
+  },
+  "devDependencies": {
+    "electron-builder": "^24.13.3"
+  },
   "build": {
     "appId": "com.whisperdesk.enhanced",
     "productName": "WhisperDesk Enhanced",

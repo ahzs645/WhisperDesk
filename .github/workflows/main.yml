@@ -43,6 +43,11 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
       - name: Determine version
         id: version
         shell: bash
@@ -87,7 +92,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '20'
           cache: 'npm'
 
       - name: Setup pnpm
@@ -131,7 +136,7 @@ jobs:
         shell: pwsh
         run: |
           if (Test-Path "src/renderer/whisperdesk-ui") {
-            cd src/renderer/whisperdesk-ui
+            Set-Location "src/renderer/whisperdesk-ui"
             
             # Update renderer package.json version if it exists
             if (Test-Path "package.json") {
@@ -149,6 +154,7 @@ jobs:
             }
             
             pnpm install --frozen-lockfile
+            Set-Location "$env:GITHUB_WORKSPACE"
           } else {
             Write-Host "⚠️ Renderer directory not found, skipping"
           }
@@ -288,19 +294,22 @@ jobs:
 
       # Download tiny model
       - name: Download tiny model
+        shell: pwsh
         run: |
-          mkdir -p models
-          curl -L -o models/ggml-tiny.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin
+          New-Item -ItemType Directory -Force -Path "models" | Out-Null
+          Invoke-WebRequest -Uri "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin" -OutFile "models/ggml-tiny.bin"
 
       # Build renderer
       - name: Build renderer
+        shell: pwsh
         run: |
-          if [ -d "src/renderer/whisperdesk-ui" ]; then
-            cd src/renderer/whisperdesk-ui
+          if (Test-Path "src/renderer/whisperdesk-ui") {
+            Set-Location "src/renderer/whisperdesk-ui"
             pnpm run build
-          else
-            echo "⚠️ Renderer directory not found, skipping"
-          fi
+            Set-Location "$env:GITHUB_WORKSPACE"
+          } else {
+            Write-Host "⚠️ Renderer directory not found, skipping"
+          }
 
       # Build Electron app
       - name: Build Electron app
@@ -336,7 +345,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '20'
           cache: 'npm'
 
       - name: Setup pnpm
@@ -498,7 +507,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '20'
           cache: 'npm'
 
       - name: Setup pnpm
