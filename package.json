@@ -44,8 +44,6 @@
       "icon": "resources/icons/icon.icns",
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
-      "entitlements": "resources/entitlements.mac.plist",
-      "entitlementsInherit": "resources/entitlements.mac.plist",
       "target": [
         {
           "target": "dmg",
@@ -60,7 +58,8 @@
       "extraFiles": [
         {
           "from": "binaries/whisper-cli",
-          "to": "MacOS/whisper-cli"
+          "to": "MacOS/",
+          "filter": ["**/*"]
         }
       ]
     },
@@ -76,22 +75,13 @@
           "arch": ["x64"]
         }
       ],
-      "publisherName": "WhisperDesk Team",
       "verifyUpdateCodeSignature": false,
       "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
       "extraFiles": [
         {
-          "from": "binaries/whisper-cli.exe",
-          "to": "binaries/whisper-cli.exe"
-        },
-        {
-          "from": "binaries/*.dll",
+          "from": "binaries/",
           "to": "binaries/",
-          "filter": ["*.dll"]
-        },
-        {
-          "from": "binaries/vc_redist.x64.exe",
-          "to": "binaries/vc_redist.x64.exe"
+          "filter": ["**/*"]
         }
       ]
     },
@@ -120,7 +110,8 @@
       "extraFiles": [
         {
           "from": "binaries/whisper-cli",
-          "to": "whisper-cli"
+          "to": "./",
+          "filter": ["**/*"]
         }
       ]
     },
@@ -129,15 +120,12 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "WhisperDesk Enhanced",
-      "include": "resources/installer.nsh",
       "installerIcon": "resources/icons/icon.ico",
       "uninstallerIcon": "resources/icons/icon.ico"
     },
     "dmg": {
       "title": "WhisperDesk Enhanced ${version}",
       "icon": "resources/icons/icon.icns",
-      "background": "resources/dmg-background.png",
       "contents": [
         {
           "x": 130,
@@ -177,7 +165,7 @@
     "url": "https://github.com/whisperdesk/whisperdesk-enhanced/issues"
   },
   "engines": {
-    "node": ">=18.0.0",
-    "npm": ">=8.0.0"
+    "node": ">=20.0.0",
+    "npm": ">=10.0.0"
   }
 }
