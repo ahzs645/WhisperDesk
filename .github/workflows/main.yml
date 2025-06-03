@@ -1,4 +1,4 @@
-# .github/workflows/main.yml - COMPLETE UPDATE with all fixes
+# .github/workflows/main.yml - FIXED with correct binary detection
 name: Build WhisperDesk for All Platforms
 
 on:
@@ -143,8 +143,8 @@ jobs:
         
         pnpm install --frozen-lockfile
 
-    # Build whisper.cpp from source - UNIX platforms - UPDATED
-    - name: Build whisper.cpp (Linux/macOS) - UPDATED for new naming
+    # Build whisper.cpp from source - UNIX platforms - FIXED binary detection
+    - name: Build whisper.cpp (Linux/macOS) - FIXED binary detection
       if: runner.os != 'Windows'
       run: |
         echo "🔨 Building whisper.cpp with cmake for Unix platforms..."
@@ -157,27 +157,57 @@ jobs:
         cmake -B build -DCMAKE_BUILD_TYPE=Release
         cmake --build build --config Release --parallel $(nproc 2>/dev/null || sysctl -n hw.ncpu || echo 4)
         
-        # Find the whisper binary with UPDATED naming priority
-        WHISPER_BINARY=""
+        # FIXED: Updated binary search with correct 2025 naming
+        echo "🔍 Searching for whisper binary with correct naming..."
         
-        # Priority order: newest names first, then legacy (UPDATED for April 2025 naming)
-        BINARY_NAMES=("whisper-cpp" "whisper-whisper" "whisper-cli" "main" "whisper")
+        # Current whisper.cpp binary names (as of 2025)
+        BINARY_NAMES=("whisper-cli" "main")
         BUILD_DIRS=("build/bin" "bin" "build")
         
-        echo "🔍 Searching for whisper binary..."
+        WHISPER_BINARY=""
+        
         for name in "${BINARY_NAMES[@]}"; do
           for dir in "${BUILD_DIRS[@]}"; do
             candidate="${dir}/${name}"
             if [ -f "$candidate" ]; then
-              WHISPER_BINARY="$candidate"
-              echo "✅ Found whisper binary: $WHISPER_BINARY"
-              break 2
+              # Check if binary is a working binary (not a stub)
+              echo "🧪 Testing binary: $candidate"
+              
+              # Test the binary to ensure it's not a deprecated stub
+              if timeout 10s "$candidate" --help > test_output.txt 2> test_error.txt; then
+                # Check output and error for deprecation warnings
+                if grep -q "deprecated" test_error.txt 2>/dev/null; then
+                  echo "⚠️ Found deprecated binary: $candidate"
+                  # Extract recommended binary name from deprecation message
+                  RECOMMENDED=$(grep -o "Please use '[^']*'" test_error.txt | sed "s/Please use '//;s/'//")
+                  if [ -n "$RECOMMENDED" ]; then
+                    echo "🔍 Looking for recommended binary: $RECOMMENDED"
+                    for search_dir in "${BUILD_DIRS[@]}"; do
+                      recommended_path="${search_dir}/${RECOMMENDED}"
+                      if [ -f "$recommended_path" ]; then
+                        WHISPER_BINARY="$recommended_path"
+                        echo "✅ Found recommended binary: $WHISPER_BINARY"
+                        break 3  # Break all loops
+                      fi
+                    done
+                  fi
+                else
+                  WHISPER_BINARY="$candidate"
+                  echo "✅ Found working binary: $WHISPER_BINARY"
+                  break 2  # Break outer loops
+                fi
+              else
+                echo "⚠️ Binary test failed for: $candidate"
+              fi
             fi
           done
         done
         
+        # Clean up test files
+        rm -f test_output.txt test_error.txt
+        
         if [ -z "$WHISPER_BINARY" ]; then
-          echo "❌ Could not find any whisper binary"
+          echo "❌ Could not find any working whisper binary"
           echo "📋 Available files in build directories:"
           for dir in "${BUILD_DIRS[@]}"; do
             if [ -d "$dir" ]; then
@@ -188,50 +218,20 @@ jobs:
           exit 1
         fi
         
-        # Test the binary to ensure it's not a deprecated stub
-        echo "🧪 Testing binary: $WHISPER_BINARY"
-        if timeout 10s "$WHISPER_BINARY" --help > test_output.txt 2> test_error.txt; then
-          # Check if it's a deprecated binary
-          if grep -q "deprecated" test_error.txt 2>/dev/null; then
-            echo "⚠️ Found deprecated binary, looking for recommended replacement..."
-            
-            # Extract recommended binary name from deprecation message
-            RECOMMENDED=$(grep -o "Please use '[^']*'" test_error.txt | sed "s/Please use '//;s/'//")
-            if [ -n "$RECOMMENDED" ]; then
-              echo "🔍 Looking for recommended binary: $RECOMMENDED"
-              for dir in "${BUILD_DIRS[@]}"; do
-                if [ -f "${dir}/${RECOMMENDED}" ]; then
-                  WHISPER_BINARY="${dir}/${RECOMMENDED}"
-                  echo "✅ Found recommended binary: $WHISPER_BINARY"
-                  break
-                fi
-              done
-            fi
-          fi
-          
-          echo "✅ Binary test passed"
-        else
-          echo "⚠️ Binary test failed, but continuing..."
-          cat test_error.txt 2>/dev/null || echo "No error output"
-        fi
-        
         # Copy to project binaries directory with standard name
         mkdir -p "$GITHUB_WORKSPACE/binaries"
         cp "$WHISPER_BINARY" "$GITHUB_WORKSPACE/binaries/whisper"
         chmod +x "$GITHUB_WORKSPACE/binaries/whisper"
         
-        # Clean up test files
-        rm -f test_output.txt test_error.txt
-        
         echo "✅ whisper.cpp built and installed successfully"
         echo "📍 Final binary: $GITHUB_WORKSPACE/binaries/whisper"
 
-    # Build whisper.cpp from source - Windows - UPDATED
-    - name: Build whisper.cpp (Windows) - UPDATED with OpenMP fix
+    # Build whisper.cpp from source - Windows - FIXED binary detection
+    - name: Build whisper.cpp (Windows) - FIXED binary detection
       if: runner.os == 'Windows'
       shell: pwsh
       run: |
-        Write-Host "🔨 Building whisper.cpp for Windows with enhanced fixes..." -ForegroundColor Green
+        Write-Host "🔨 Building whisper.cpp for Windows..." -ForegroundColor Green
         
         # Clone whisper.cpp from OFFICIAL repository
         git clone https://github.com/ggml-org/whisper.cpp.git C:\temp\whisper.cpp
@@ -250,14 +250,15 @@ jobs:
         
         Write-Host "✅ Built with MSBuild"
         
-        # Find the whisper executable with UPDATED naming priority (April 2025)
+        # FIXED: Updated binary search with correct 2025 naming
         $buildDirs = @("bin\Release", "Release", "bin")
-        $binaryNames = @("whisper-cpp.exe", "whisper-whisper.exe", "whisper-cli.exe", "main.exe", "whisper.exe")
+        # Current whisper.cpp binary names (as of 2025)
+        $binaryNames = @("whisper-cli.exe", "main.exe")
         
         $foundBinary = $null
         $foundPath = ""
         
-        Write-Host "🔍 Searching for whisper binary with priority: $($binaryNames -join ', ')"
+        Write-Host "🔍 Searching for whisper binary with correct naming: $($binaryNames -join ', ')"
         
         foreach ($dir in $buildDirs) {
             if (-not (Test-Path $dir)) { continue }
@@ -265,17 +266,69 @@ jobs:
             foreach ($name in $binaryNames) {
                 $candidate = Join-Path $dir $name
                 if (Test-Path $candidate) {
-                    $foundBinary = $name
-                    $foundPath = $candidate
-                    Write-Host "✅ Found binary: $foundPath" -ForegroundColor Green
-                    break
+                    Write-Host "🧪 Testing binary: $candidate"
+                    
+                    # Test the binary to ensure it's not a deprecated stub
+                    $isWorkingBinary = $false
+                    $recommendedBinary = ""
+                    
+                    try {
+                        $process = Start-Process -FilePath $candidate -ArgumentList "--help" -Wait -NoNewWindow -PassThru -RedirectStandardOutput "test_output.txt" -RedirectStandardError "test_error.txt"
+                        
+                        # Check for deprecation warning
+                        if (Test-Path "test_error.txt") {
+                            $errorContent = Get-Content "test_error.txt" -Raw
+                            if ($errorContent -match "deprecated") {
+                                Write-Host "⚠️ Found deprecated binary: $candidate" -ForegroundColor Yellow
+                                
+                                # Extract recommended binary name
+                                if ($errorContent -match "Please use '([^']+)'") {
+                                    $recommendedBinary = $matches[1]
+                                    Write-Host "🔍 Looking for recommended binary: $recommendedBinary" -ForegroundColor Yellow
+                                    
+                                    # Search for the recommended binary
+                                    foreach ($searchDir in $buildDirs) {
+                                        $recommendedPath = Join-Path $searchDir $recommendedBinary
+                                        if (Test-Path $recommendedPath) {
+                                            $foundPath = $recommendedPath
+                                            $foundBinary = $recommendedBinary
+                                            $isWorkingBinary = $true
+                                            Write-Host "✅ Found recommended binary: $foundPath" -ForegroundColor Green
+                                            break
+                                        }
+                                    }
+                                }
+                            } else {
+                                $foundPath = $candidate
+                                $foundBinary = $name
+                                $isWorkingBinary = $true
+                                Write-Host "✅ Found working binary: $foundPath" -ForegroundColor Green
+                            }
+                        } else {
+                            $foundPath = $candidate
+                            $foundBinary = $name
+                            $isWorkingBinary = $true
+                            Write-Host "✅ Found working binary: $foundPath" -ForegroundColor Green
+                        }
+                        
+                    } catch {
+                        Write-Host "⚠️ Binary test failed for: $candidate - $($_.Exception.Message)" -ForegroundColor Yellow
+                    } finally {
+                        # Clean up test files
+                        Remove-Item "test_output.txt" -ErrorAction SilentlyContinue
+                        Remove-Item "test_error.txt" -ErrorAction SilentlyContinue
+                    }
+                    
+                    if ($isWorkingBinary) {
+                        break
+                    }
                 }
             }
             if ($foundBinary) { break }
         }
         
         if (-not $foundBinary) {
-            Write-Host "❌ Could not find any whisper binary" -ForegroundColor Red
+            Write-Host "❌ Could not find any working whisper binary" -ForegroundColor Red
             Write-Host "📋 Available files in build directories:" -ForegroundColor Yellow
             foreach ($dir in $buildDirs) {
                 if (Test-Path $dir) {
@@ -284,57 +337,6 @@ jobs:
                 }
             }
             exit 1
-        }
-        
-        # Test the binary to ensure it's not a deprecated stub
-        Write-Host "🧪 Testing binary: $foundPath"
-        
-        $isDeprecated = $false
-        $recommendedBinary = ""
-        
-        try {
-            $process = Start-Process -FilePath $foundPath -ArgumentList "--help" -Wait -NoNewWindow -PassThru -RedirectStandardOutput "test_output.txt" -RedirectStandardError "test_error.txt"
-            
-            # Check for deprecation warning
-            if (Test-Path "test_error.txt") {
-                $errorContent = Get-Content "test_error.txt" -Raw
-                if ($errorContent -match "deprecated") {
-                    $isDeprecated = $true
-                    Write-Host "⚠️ Found deprecated binary" -ForegroundColor Yellow
-                    
-                    # Extract recommended binary name
-                    if ($errorContent -match "Please use '([^']+)'") {
-                        $recommendedBinary = $matches[1]
-                        Write-Host "🔍 Looking for recommended binary: $recommendedBinary" -ForegroundColor Yellow
-                        
-                        # Search for the recommended binary
-                        foreach ($dir in $buildDirs) {
-                            $recommendedPath = Join-Path $dir $recommendedBinary
-                            if (Test-Path $recommendedPath) {
-                                $foundPath = $recommendedPath
-                                $foundBinary = $recommendedBinary
-                                Write-Host "✅ Found recommended binary: $foundPath" -ForegroundColor Green
-                                $isDeprecated = $false
-                                break
-                            }
-                        }
-                    }
-                }
-            }
-            
-            if (-not $isDeprecated) {
-                Write-Host "✅ Binary test passed" -ForegroundColor Green
-            } else {
-                Write-Host "⚠️ Still using deprecated binary, but continuing..." -ForegroundColor Yellow
-            }
-            
-        } catch {
-            Write-Host "⚠️ Binary test failed: $($_.Exception.Message)" -ForegroundColor Yellow
-            Write-Host "💡 Continuing with build..." -ForegroundColor Yellow
-        } finally {
-            # Clean up test files
-            Remove-Item "test_output.txt" -ErrorAction SilentlyContinue
-            Remove-Item "test_error.txt" -ErrorAction SilentlyContinue
         }
         
         # Create target directory and copy binary
@@ -362,12 +364,12 @@ jobs:
         Write-Host "✅ whisper.cpp built and installed successfully" -ForegroundColor Green
         Write-Host "📍 Final binary: $targetDir\whisper.exe" -ForegroundColor Cyan
 
-    # Package Visual C++ Runtime Dependencies (Windows) - UPDATED with OpenMP
-    - name: Package VC++ Runtime (Windows) - UPDATED with OpenMP support
+    # Package Visual C++ Runtime Dependencies (Windows)
+    - name: Package VC++ Runtime (Windows)
       if: runner.os == 'Windows'
       shell: pwsh
       run: |
-        Write-Host "📦 Packaging Visual C++ Runtime Dependencies with OpenMP..." -ForegroundColor Green
+        Write-Host "📦 Packaging Visual C++ Runtime Dependencies..." -ForegroundColor Green
         
         $targetDir = "$env:GITHUB_WORKSPACE\binaries"
         
@@ -383,12 +385,12 @@ jobs:
             Write-Host "⚠️ Failed to download VC++ Redistributable: $($_.Exception.Message)"
         }
         
-        # Try to copy runtime DLLs from system (UPDATED with OpenMP)
+        # Try to copy runtime DLLs from system
         $runtimeDlls = @(
             @{ Name = "msvcp140.dll"; Path = "C:\Windows\System32\msvcp140.dll" },
             @{ Name = "vcruntime140.dll"; Path = "C:\Windows\System32\vcruntime140.dll" },
             @{ Name = "vcruntime140_1.dll"; Path = "C:\Windows\System32\vcruntime140_1.dll" },
-            @{ Name = "vcomp140.dll"; Path = "C:\Windows\System32\vcomp140.dll" }  # OpenMP runtime
+            @{ Name = "vcomp140.dll"; Path = "C:\Windows\System32\vcomp140.dll" }
         )
         
         foreach ($dll in $runtimeDlls) {
@@ -404,7 +406,7 @@ jobs:
             }
         }
 
-    # Enhanced binary verification - UPDATED
+    # Enhanced binary verification - FIXED
     - name: Enhanced binary verification
       shell: bash
       run: |
@@ -429,11 +431,11 @@ jobs:
           
           echo "📊 Binary size: $SIZE bytes"
           
-          # Updated size check - modern whisper binaries are larger
-          # Check if binary size is below the threshold for modern builds (200KB+ expected for non-stub binaries)
-          if [ "$SIZE" -lt 200000 ]; then
-            echo "❌ ERROR: Binary is small ($SIZE bytes) - likely a deprecated stub!"
-            echo "🔍 Modern whisper.cpp binaries should be 200KB+ with OpenMP/MSVC"
+          # FIXED: Updated size check for modern whisper.cpp binaries
+          # Modern whisper-cli binaries are typically 1MB+ (much larger than old stubs)
+          if [ "$SIZE" -lt 500000 ]; then
+            echo "❌ ERROR: Binary is suspiciously small ($SIZE bytes) - likely a stub!"
+            echo "🔍 Modern whisper-cli binaries should be 500KB+ in size"
             
             # List all executables in binaries directory for debugging
             echo "📋 All executables in binaries directory:"
@@ -474,7 +476,7 @@ jobs:
       run: |
         echo "🔧 Configuring electron-builder with BINARY PACKAGING and platform-specific naming..."
         
-        # Create electron-builder config with proper binary packaging and unique naming and unique naming
+        # Create electron-builder config with proper binary packaging and unique naming
         cat > electron-builder-fixed.json << 'EOF'
         {
           "appId": "com.yourcompany.whisperdesk",
