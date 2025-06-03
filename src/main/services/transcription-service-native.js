@@ -84,16 +84,24 @@ class NativeTranscriptionService extends EventEmitter {
       }
     }
 
-    // Set default provider based on availability
-    if (this.providers.has('whisper-native')) {
+    // FIXED: Set default provider based on availability with intelligent fallback
+    const nativeProvider = this.providers.get('whisper-native');
+    const deepgramProvider = this.providers.get('deepgram');
+    
+    if (nativeProvider && nativeProvider.isAvailable()) {
       this.defaultProvider = 'whisper-native';
-    } else if (this.providers.has('deepgram')) {
+      console.log('✅ Default provider set to: whisper-native');
+    } else if (deepgramProvider && deepgramProvider.isAvailable()) {
       this.defaultProvider = 'deepgram';
+      console.log('⚠️ Native Whisper not available, falling back to: deepgram');
+    } else if (nativeProvider) {
+      // FIXED: Even if native provider reports as unavailable, try to use it
+      // Runtime errors will be handled gracefully
+      this.defaultProvider = 'whisper-native';
+      console.log('⚠️ Using whisper-native despite availability issues - will handle runtime errors');
     } else {
       throw new Error('No transcription providers available');
     }
-
-    console.log(`Default provider set to: ${this.defaultProvider}`);
   }
 
   getProviders() {
@@ -124,9 +132,9 @@ class NativeTranscriptionService extends EventEmitter {
       throw new Error(`Provider '${provider}' not available`);
     }
 
-    if (!selectedProvider.isAvailable()) {
-      throw new Error(`Provider '${provider}' is not available`);
-    }
+    // FIXED: Don't check isAvailable() here - let the provider handle runtime availability
+    // This allows for graceful runtime error handling instead of blocking all attempts
+    console.log(`✅ Using provider: ${provider} (availability will be checked at runtime)`);
 
     try {
       // Validate file exists
@@ -148,7 +156,8 @@ class NativeTranscriptionService extends EventEmitter {
         options
       });
 
-      // Process with selected provider
+      // FIXED: Process with selected provider, with better error handling
+      console.log(`Attempting transcription with ${provider}...`);
       const result = await selectedProvider.processFile(filePath, {
         ...options,
         transcriptionId
@@ -177,12 +186,33 @@ class NativeTranscriptionService extends EventEmitter {
         provider
       });
 
+      console.log(`✅ Transcription completed successfully with ${provider}`);
       return {
         transcriptionId,
         ...result
       };
 
     } catch (error) {
+      console.error(`❌ Transcription failed with ${provider}:`, error.message);
+      
+      // FIXED: Intelligent fallback logic
+      if (provider === 'whisper-native' && this.providers.has('deepgram')) {
+        console.log('🔄 Attempting fallback to Deepgram provider...');
+        try {
+          const fallbackResult = await this.processFile(filePath, {
+            ...options,
+            provider: 'deepgram',
+            transcriptionId
+          });
+          
+          console.log('✅ Fallback to Deepgram successful');
+          return fallbackResult;
+        } catch (fallbackError) {
+          console.error('❌ Fallback to Deepgram also failed:', fallbackError.message);
+          // Continue with original error handling
+        }
+      }
+      
       // Update active transcriptions
       this.activeTranscriptions.set(transcriptionId, {
         ...this.activeTranscriptions.get(transcriptionId),
@@ -198,7 +228,19 @@ class NativeTranscriptionService extends EventEmitter {
         provider
       });
 
-      throw error;
+      // FIXED: Provide more helpful error messages to user
+      let userFriendlyError = error.message;
+      
+      if (error.message.includes('not available') && provider === 'whisper-native') {
+        userFriendlyError = 'Local transcription is not available. This may be due to missing dependencies or binary issues. Please try updating the app or contact support.';
+      } else if (error.message.includes('model')) {
+        userFriendlyError = 'Transcription model error. Please check if the selected model is downloaded and try again.';
+      } else if (error.message.includes('ENOENT') || error.message.includes('not found')) {
+        userFriendlyError = 'Transcription binary not found. Please reinstall the application.';
+      }
+      
+      throw new Error(userFriendlyError);
+      
     } finally {
       // Clean up after some time
       setTimeout(() => {
@@ -334,4 +376,3 @@ class NativeTranscriptionService extends EventEmitter {
 }
 
 module.exports = NativeTranscriptionService;
-

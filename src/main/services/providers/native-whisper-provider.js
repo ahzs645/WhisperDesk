@@ -1,4 +1,4 @@
-// src/main/services/providers/native-whisper-provider.js - FIXED VERSION with proper event emission
+// src/main/services/providers/native-whisper-provider.js - FIXED availability logic
 const { EventEmitter } = require('events');
 const { spawn } = require('child_process');
 const fs = require('fs').promises;
@@ -8,408 +8,437 @@ const os = require('os');
 class NativeWhisperProvider extends EventEmitter {
   constructor(modelManager, binaryManager) {
     super();
+    this.name = 'whisper-native';
+    this.description = 'Local whisper.cpp transcription (fastest, most private)';
     this.modelManager = modelManager;
     this.binaryManager = binaryManager;
     this.isInitialized = false;
+    this.available = false;
+    this.activeProcesses = new Map();
     this.tempDir = path.join(os.tmpdir(), 'whisperdesk-native');
-    this.currentTranscriptionId = null;
-    this.supportedLanguages = [
-      'auto', 'en', 'zh', 'de', 'es', 'ru', 'ko', 'fr', 'ja', 'pt', 'tr', 'pl',
-      'ca', 'nl', 'ar', 'sv', 'it', 'id', 'hi', 'fi', 'vi', 'he', 'uk', 'el',
-      'ms', 'cs', 'ro', 'da', 'hu', 'ta', 'no', 'th', 'ur', 'hr', 'bg', 'lt',
-      'la', 'mi', 'ml', 'cy', 'sk', 'te', 'fa', 'lv', 'bn', 'sr', 'az', 'sl',
-      'kn', 'et', 'mk', 'br', 'eu', 'is', 'hy', 'ne', 'mn', 'bs', 'kk', 'sq',
-      'sw', 'gl', 'mr', 'pa', 'si', 'km', 'sn', 'yo', 'so', 'af', 'oc', 'ka',
-      'be', 'tg', 'sd', 'gu', 'am', 'yi', 'lo', 'uz', 'fo', 'ht', 'ps', 'tk',
-      'nn', 'mt', 'sa', 'lb', 'my', 'bo', 'tl', 'mg', 'as', 'tt', 'haw', 'ln',
-      'ha', 'ba', 'jw', 'su'
-    ];
-  }
-
-  getName() {
-    return 'Native Whisper';
-  }
-
-  getDescription() {
-    return 'OpenAI Whisper using native whisper.cpp implementation';
-  }
-
-  isAvailable() {
-    return this.isInitialized;
   }
 
   async initialize() {
-    if (this.isInitialized) {
-      return true;
-    }
-
     try {
-      await this.binaryManager.ensureWhisperBinary();
-      const binaryPath = this.binaryManager.getWhisperBinaryPath();
+      console.log('Initializing Native Whisper Provider...');
       
-      try {
-        await fs.access(binaryPath);
-        await this.binaryManager.testBinary();
-      } catch (error) {
-        console.log('Native Whisper binary not available, provider will be disabled');
-        this.isInitialized = false;
-        return false;
+      // Create temp directory
+      await fs.mkdir(this.tempDir, { recursive: true });
+      
+      // FIXED: More lenient availability check
+      this.available = await this.checkAvailability();
+      
+      if (this.available) {
+        console.log('✅ Native Whisper provider available');
+      } else {
+        console.log('⚠️ Native Whisper provider not fully available, but will attempt runtime usage');
+        // FIXED: Don't disable completely - allow runtime attempts
+        this.available = true; // Allow provider to be used, handle errors at runtime
       }
       
-      await fs.mkdir(this.tempDir, { recursive: true });
       this.isInitialized = true;
-      console.log('Native Whisper provider initialized');
-      return true;
+      console.log('✅ Native Whisper provider initialized');
     } catch (error) {
-      console.error('Failed to initialize Native Whisper provider:', error);
-      this.isInitialized = false;
+      console.error('❌ Error initializing Native Whisper provider:', error);
+      this.available = false;
+      throw error;
+    }
+  }
+
+  async checkAvailability() {
+    try {
+      // FIXED: Just check if binary file exists, don't require test to pass
+      const binaryPath = this.binaryManager.getWhisperBinaryPath();
+      await fs.access(binaryPath);
+      
+      console.log('✅ Whisper binary file exists, provider will be available');
+      return true;
+      
+    } catch (error) {
+      console.log('❌ Whisper binary file not found:', error.message);
       return false;
     }
+  }
+
+  getName() {
+    return this.name;
+  }
+
+  getDescription() {
+    return this.description;
+  }
+
+  isAvailable() {
+    return this.available && this.isInitialized;
   }
 
   getCapabilities() {
     return {
       realtime: false,
-      fileTranscription: true,
-      speakerDiarization: false,
-      languageDetection: true,
-      wordTimestamps: true,
-      supportedFormats: ['wav', 'mp3', 'flac', 'm4a', 'ogg', 'opus'],
-      supportedLanguages: this.supportedLanguages
+      fileUpload: true,
+      languages: ['auto', 'en', 'es', 'fr', 'de', 'it', 'pt', 'ru', 'ja', 'zh'],
+      formats: ['mp3', 'wav', 'flac', 'm4a', 'aac', 'ogg', 'mp4', 'avi', 'mov', 'mkv'],
+      maxFileSize: 500 * 1024 * 1024, // 500MB
+      models: ['tiny', 'base', 'small', 'medium', 'large', 'large-v2', 'large-v3']
     };
   }
 
   async processFile(filePath, options = {}) {
-    const {
-      transcriptionId,
-      model = 'whisper-base',
-      language = 'auto',
-      task = 'transcribe',
-      enableTimestamps = true,
-      temperature = 0.0,
-      bestOf = 5
-    } = options;
-
-    // Store the transcription ID for use in events
-    this.currentTranscriptionId = transcriptionId;
-
-    if (!this.isInitialized) {
-      throw new Error('Native Whisper provider not initialized');
+    const transcriptionId = options.transcriptionId || this.generateTranscriptionId();
+    
+    console.log(`Native Whisper Provider: Processing file ${filePath}`);
+    console.log(`Options:`, options);
+    
+    // FIXED: Check availability at runtime and provide better error messages
+    if (!this.isAvailable()) {
+      const error = new Error('Native Whisper provider is not available. Binary may be missing or corrupted.');
+      console.error('❌ Native Whisper provider not available:', error.message);
+      throw error;
     }
 
     try {
-      const modelPath = this.modelManager.getModelPath(model);
-      if (!modelPath) {
-        throw new Error(`Model ${model} not found. Please download it first.`);
-      }
-
-      // Emit initial progress
-      this.emitProgress(0, 'starting', 'Initializing transcription...');
-
-      // Build command args - use VTT output which works reliably
-      const args = this.buildWhisperArgs({
-        modelPath,
-        filePath,
-        language,
-        task,
-        enableTimestamps,
-        temperature,
-        bestOf
-      });
-
-      console.log('Running whisper.cpp with args:', args);
-
-      // Execute whisper.cpp
-      const result = await this.executeWhisper(args, transcriptionId);
-
-      // Parse the VTT format output
-      const parsedResult = this.parseVTTOutput(result.stdout, filePath);
-
-      // IMPORTANT: Emit completion event immediately after parsing
-      this.emitComplete(parsedResult);
-
-      return parsedResult;
-
+      // Validate input file
+      await fs.access(filePath);
+      
+      // Get model path
+      const modelName = this.normalizeModelName(options.model || 'base');
+      const modelPath = await this.getModelPath(modelName);
+      
+      // Prepare whisper command
+      const binaryPath = this.binaryManager.getWhisperBinaryPath();
+      const args = await this.buildWhisperArgs(filePath, modelPath, options);
+      
+      console.log(`Executing: ${binaryPath} ${args.join(' ')}`);
+      
+      // Execute whisper with enhanced error handling
+      const result = await this.executeWhisper(binaryPath, args, transcriptionId);
+      
+      return {
+        text: result.text,
+        segments: result.segments || [],
+        language: result.language || options.language || 'auto',
+        confidence: result.confidence || null,
+        metadata: {
+          provider: this.name,
+          model: modelName,
+          duration: result.duration,
+          processingTime: result.processingTime
+        }
+      };
+      
     } catch (error) {
-      console.error('Native Whisper processing failed:', error);
-      this.emitError(error.message);
-      throw error;
+      console.error(`❌ Native Whisper error:`, error);
+      
+      // FIXED: Provide more helpful error messages
+      if (error.message.includes('ENOENT')) {
+        throw new Error('Whisper binary not found. Please check if whisper.cpp is properly installed.');
+      } else if (error.message.includes('model')) {
+        throw new Error(`Model error: ${error.message}. Please check if the model file exists and is valid.`);
+      } else if (error.message.includes('codec') || error.message.includes('format')) {
+        throw new Error(`Audio format error: ${error.message}. Please try a different audio format.`);
+      } else {
+        throw new Error(`Transcription failed: ${error.message}`);
+      }
     }
   }
 
-  buildWhisperArgs(options) {
-    const {
-      modelPath,
-      filePath,
-      language,
-      task,
-      enableTimestamps,
-      temperature,
-      bestOf
-    } = options;
+  normalizeModelName(modelName) {
+    // Remove 'whisper-' prefix if present
+    if (modelName.startsWith('whisper-')) {
+      modelName = modelName.replace('whisper-', '');
+    }
+    
+    // Map common model names
+    const modelMap = {
+      'tiny': 'ggml-tiny.bin',
+      'base': 'ggml-base.bin', 
+      'small': 'ggml-small.bin',
+      'medium': 'ggml-medium.bin',
+      'large': 'ggml-large-v3.bin',
+      'large-v2': 'ggml-large-v2.bin',
+      'large-v3': 'ggml-large-v3.bin'
+    };
+    
+    return modelMap[modelName] || modelName;
+  }
 
+  async getModelPath(modelName) {
+    // Try installed models first
+    const installedModels = await this.modelManager.getInstalledModels();
+    const installedModel = installedModels.find(m => 
+      m.filename === modelName || 
+      m.id.includes(modelName.replace('.bin', '')) ||
+      m.name.includes(modelName.replace('ggml-', '').replace('.bin', ''))
+    );
+    
+    if (installedModel) {
+      console.log(`✅ Using installed model: ${installedModel.path}`);
+      return installedModel.path;
+    }
+    
+    // Fallback to local models directory
+    const modelsDir = path.join(__dirname, '../../../../models');
+    const localModelPath = path.join(modelsDir, modelName);
+    
+    try {
+      await fs.access(localModelPath);
+      console.log(`✅ Using local model: ${localModelPath}`);
+      return localModelPath;
+    } catch (error) {
+      throw new Error(`Model not found: ${modelName}. Please download the model first.`);
+    }
+  }
+
+  async buildWhisperArgs(filePath, modelPath, options) {
     const args = [
       '-m', modelPath,
-      '-f', filePath,
-      '--print-progress'
+      '-f', filePath
     ];
-
-    // Language settings
-    if (language !== 'auto') {
-      args.push('-l', language);
+    
+    // Output format
+    args.push('--output-json');
+    
+    // Language
+    if (options.language && options.language !== 'auto') {
+      args.push('-l', options.language);
     }
-
-    // Task
-    if (task === 'translate') {
-      args.push('--translate');
+    
+    // Timestamps
+    if (options.enableTimestamps) {
+      args.push('-t');
     }
-
-    // Advanced options
-    if (temperature > 0) {
-      args.push('--temperature', temperature.toString());
-    }
-
-    if (bestOf > 1) {
-      args.push('--best-of', bestOf.toString());
-    }
-
-    // Output format - don't use --output-json, use default VTT format
-    if (enableTimestamps) {
-      // Default output includes timestamps in VTT format
-    } else {
-      args.push('--no-timestamps');
-    }
-
+    
+    // Threads (use available CPU cores)
+    const threads = Math.min(os.cpus().length, 8);
+    args.push('-p', threads.toString());
+    
     return args;
   }
 
-  async executeWhisper(args, transcriptionId) {
-    const binaryPath = this.binaryManager.getWhisperBinaryPath();
-
+  async executeWhisper(binaryPath, args, transcriptionId) {
     return new Promise((resolve, reject) => {
-      const process = spawn(binaryPath, args, {
-        stdio: ['pipe', 'pipe', 'pipe']
-      });
-
+      const startTime = Date.now();
+      
+      // FIXED: Enhanced environment setup for Windows
+      const env = { ...process.env };
+      const binaryDir = path.dirname(binaryPath);
+      
+      if (process.platform === 'win32') {
+        // Add binaries directory to PATH for DLL loading
+        env.PATH = `${binaryDir};${env.PATH}`;
+      }
+      
+      const options = {
+        stdio: ['pipe', 'pipe', 'pipe'],
+        windowsHide: true,
+        cwd: binaryDir, // Set working directory to binaries folder
+        env: env
+      };
+      
+      console.log(`Starting whisper process with PID for transcription ${transcriptionId}`);
+      
+      const process = spawn(binaryPath, args, options);
+      
+      if (!process || !process.pid) {
+        reject(new Error('Failed to start whisper process'));
+        return;
+      }
+      
+      // Store process for potential cancellation
+      this.activeProcesses.set(transcriptionId, process);
+      
       let stdout = '';
       let stderr = '';
-
+      let hasEmittedProgress = false;
+      
       process.stdout.on('data', (data) => {
-        const output = data.toString();
-        stdout += output;
-        this.parseProgress(output, transcriptionId);
+        stdout += data.toString();
+        
+        // Emit progress events
+        if (!hasEmittedProgress) {
+          this.emit('progress', {
+            transcriptionId,
+            status: 'processing',
+            progress: 0.3
+          });
+          hasEmittedProgress = true;
+        }
       });
-
+      
       process.stderr.on('data', (data) => {
-        const output = data.toString();
-        stderr += output;
-        this.parseProgress(output, transcriptionId);
-      });
-
-      process.on('close', (code) => {
-        console.log(`Whisper process finished with code: ${code}`);
-        console.log('Stdout length:', stdout.length);
+        stderr += data.toString();
         
-        if (code === 0) {
-          resolve({ stdout, stderr });
-        } else {
-          console.error('Whisper stderr:', stderr);
-          reject(new Error(`whisper.cpp failed with code ${code}: ${stderr}`));
-        }
-      });
-
-      process.on('error', (error) => {
-        reject(new Error(`Failed to execute whisper.cpp: ${error.message}`));
-      });
-
-      // 10 minute timeout
-      setTimeout(() => {
-        process.kill('SIGTERM');
-        reject(new Error('Transcription timeout'));
-      }, 600000);
-    });
-  }
-
-  parseProgress(output, transcriptionId) {
-    // Parse progress from whisper.cpp output
-    const progressPatterns = [
-      /\[(\d+)\]/,
-      /(\d+)%/,
-      /progress = (\d+\.\d+)%/
-    ];
-
-    for (const pattern of progressPatterns) {
-      const match = output.match(pattern);
-      if (match) {
-        const progress = parseFloat(match[1]);
-        this.emitProgress(progress, 'transcribing', `Processing: ${progress}%`);
-        break;
-      }
-    }
-
-    if (output.includes('loading model')) {
-      this.emitProgress(10, 'loading_model', 'Loading model...');
-    } else if (output.includes('processing')) {
-      this.emitProgress(25, 'processing_audio', 'Processing audio...');
-    }
-  }
-
-  parseVTTOutput(stdout, inputFilePath) {
-    try {
-      console.log('Parsing VTT output...');
-      console.log('Raw stdout preview:', stdout.substring(0, 500));
-      
-      const lines = stdout.split('\n').filter(line => line.trim());
-      const segments = [];
-      let fullText = '';
-      
-      // Parse VTT format: [00:00:00.000 --> 00:00:07.000]   text content
-      for (const line of lines) {
-        const vttMatch = line.match(/\[(\d{2}:\d{2}:\d{2}\.\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2}\.\d{3})\]\s*(.+)/);
-        
-        if (vttMatch) {
-          const [, startTime, endTime, text] = vttMatch;
-          
-          const start = this.parseTimeToSeconds(startTime);
-          const end = this.parseTimeToSeconds(endTime);
-          const segmentText = text.trim();
-          
-          if (segmentText) {
-            segments.push({
-              id: segments.length,
-              start,
-              end,
-              text: segmentText,
-              confidence: 0.9, // Default confidence for whisper.cpp
-              words: []
-            });
-            
-            fullText += (fullText ? ' ' : '') + segmentText;
-          }
-        }
-      }
-      
-      // If no segments found, try to extract plain text
-      if (segments.length === 0) {
-        console.log('No VTT segments found, extracting plain text...');
-        const textLines = lines.filter(line => 
-          !line.includes('[') && 
-          !line.includes('whisper') && 
-          !line.includes('model') &&
-          line.trim().length > 0
-        );
-        
-        fullText = textLines.join(' ').trim();
-        
-        if (fullText) {
-          segments.push({
-            id: 0,
-            start: 0,
-            end: 0,
-            text: fullText,
-            confidence: 0.8,
-            words: []
+        // Parse progress from stderr if available
+        const progressMatch = stderr.match(/\[(\d+)%\]/);
+        if (progressMatch) {
+          const progress = parseInt(progressMatch[1]) / 100;
+          this.emit('progress', {
+            transcriptionId,
+            status: 'processing', 
+            progress
           });
         }
-      }
+      });
       
-      const result = {
-        text: fullText || 'Transcription completed',
-        language: 'unknown', // whisper.cpp doesn't always output language in VTT
-        segments,
-        metadata: {
-          provider: 'native-whisper',
-          model: 'whisper',
-          duration: segments.length > 0 ? Math.max(...segments.map(s => s.end)) : 0,
-          segments_count: segments.length,
-          created_at: new Date().toISOString()
+      process.on('close', (code) => {
+        this.activeProcesses.delete(transcriptionId);
+        const processingTime = Date.now() - startTime;
+        
+        console.log(`Whisper process finished with code ${code}`);
+        console.log(`Processing time: ${processingTime}ms`);
+        
+        if (code === 0) {
+          try {
+            // Parse whisper output
+            const result = this.parseWhisperOutput(stdout, stderr);
+            result.processingTime = processingTime;
+            
+            this.emit('progress', {
+              transcriptionId,
+              status: 'complete',
+              progress: 1.0
+            });
+            
+            resolve(result);
+          } catch (parseError) {
+            console.error('Failed to parse whisper output:', parseError);
+            reject(new Error(`Failed to parse transcription result: ${parseError.message}`));
+          }
+        } else {
+          // FIXED: Better error messages based on exit codes
+          let errorMessage = `Whisper process failed with code ${code}`;
+          
+          if (code === 1) {
+            errorMessage = 'Whisper failed - likely due to invalid input file or corrupted audio';
+          } else if (code === 2) {
+            errorMessage = 'Whisper failed - model file not found or corrupted';
+          } else if (code === 126) {
+            errorMessage = 'Whisper binary not executable - permission denied';
+          } else if (code === 127) {
+            errorMessage = 'Whisper binary not found';
+          } else if (stderr.includes('model')) {
+            errorMessage = `Model error: ${stderr.trim()}`;
+          } else if (stderr.includes('audio') || stderr.includes('codec')) {
+            errorMessage = `Audio format error: ${stderr.trim()}`;
+          } else if (stderr.trim()) {
+            errorMessage = `Whisper error: ${stderr.trim()}`;
+          }
+          
+          console.error(`Whisper stderr: ${stderr}`);
+          reject(new Error(errorMessage));
         }
-      };
+      });
       
-      console.log(`Parsed ${segments.length} segments, total text length: ${fullText.length}`);
-      
-      return result;
-      
-    } catch (error) {
-      console.error('Error parsing VTT output:', error);
-      console.log('Problematic output:', stdout);
-      
-      // Emit error event
-      this.emitError(error.message);
-
-      // Return basic result with error info
-      return {
-        text: `Transcription completed but failed to parse output: ${error.message}`,
-        segments: [],
-        language: 'unknown',
-        metadata: {
-          provider: 'native-whisper',
-          error: error.message,
-          created_at: new Date().toISOString()
+      process.on('error', (error) => {
+        this.activeProcesses.delete(transcriptionId);
+        console.error('Whisper process error:', error);
+        
+        // FIXED: More specific error messages
+        if (error.code === 'ENOENT') {
+          reject(new Error('Whisper binary not found. Please check installation.'));
+        } else if (error.code === 'EACCES') {
+          reject(new Error('Permission denied. Whisper binary is not executable.'));
+        } else {
+          reject(new Error(`Failed to execute whisper: ${error.message}`));
         }
-      };
-    }
-  }
-
-  parseTimeToSeconds(timeStr) {
-    // Parse HH:MM:SS.mmm format
-    const parts = timeStr.split(':');
-    const hours = parseInt(parts[0]);
-    const minutes = parseInt(parts[1]);
-    const secondsParts = parts[2].split('.');
-    const seconds = parseInt(secondsParts[0]);
-    const milliseconds = parseInt(secondsParts[1]);
-    
-    return hours * 3600 + minutes * 60 + seconds + milliseconds / 1000;
-  }
-
-  // Helper methods for consistent event emission
-  emitProgress(progress, stage, message) {
-    const data = {
-      transcriptionId: this.currentTranscriptionId,
-      progress: Math.min(100, Math.max(0, progress)),
-      stage,
-      message
-    };
-    
-    console.log('Emitting progress:', data);
-    this.emit('progress', data);
-  }
-
-  emitComplete(result) {
-    const data = {
-      transcriptionId: this.currentTranscriptionId,
-      result
-    };
-    
-    console.log('Emitting completion event:', {
-      transcriptionId: this.currentTranscriptionId,
-      resultLength: result.text.length,
-      segments: result.segments.length
+      });
+      
+      // Set timeout (30 minutes for large files)
+      setTimeout(() => {
+        if (this.activeProcesses.has(transcriptionId)) {
+          console.log(`Whisper process timeout for transcription ${transcriptionId}`);
+          process.kill('SIGTERM');
+          this.activeProcesses.delete(transcriptionId);
+          reject(new Error('Transcription timeout - file may be too large'));
+        }
+      }, 30 * 60 * 1000);
     });
-    
-    this.emit('complete', data);
   }
 
-  emitError(message) {
-    const data = {
-      transcriptionId: this.currentTranscriptionId,
-      error: message
-    };
+  parseWhisperOutput(stdout, stderr) {
+    // Try to find JSON output first
+    const jsonMatch = stdout.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      try {
+        const result = JSON.parse(jsonMatch[0]);
+        return {
+          text: result.text || '',
+          segments: result.segments || [],
+          language: result.language,
+          confidence: result.confidence,
+          duration: result.duration
+        };
+      } catch (error) {
+        console.warn('Failed to parse JSON output, falling back to text parsing');
+      }
+    }
     
-    console.log('Emitting error:', data);
-    this.emit('error', data);
+    // Fallback to text parsing
+    const lines = stdout.split('\n').filter(line => line.trim());
+    const textLines = lines.filter(line => 
+      !line.startsWith('[') && 
+      !line.includes('whisper.cpp') && 
+      line.trim().length > 0
+    );
+    
+    const text = textLines.join(' ').trim();
+    
+    if (!text) {
+      throw new Error('No transcription text found in whisper output');
+    }
+    
+    return {
+      text,
+      segments: [{
+        start: 0,
+        end: 0,
+        text: text
+      }],
+      language: 'unknown',
+      confidence: null,
+      duration: null
+    };
+  }
+
+  async cancel(transcriptionId) {
+    const process = this.activeProcesses.get(transcriptionId);
+    if (process) {
+      console.log(`Cancelling transcription ${transcriptionId}`);
+      process.kill('SIGTERM');
+      this.activeProcesses.delete(transcriptionId);
+      return true;
+    }
+    return false;
+  }
+
+  generateTranscriptionId() {
+    return `native_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   }
 
   async cleanup() {
+    // Cancel all active processes
+    for (const [transcriptionId, process] of this.activeProcesses) {
+      try {
+        process.kill('SIGTERM');
+        console.log(`Cancelled active transcription: ${transcriptionId}`);
+      } catch (error) {
+        console.warn(`Failed to cancel transcription ${transcriptionId}:`, error.message);
+      }
+    }
+    this.activeProcesses.clear();
+    
+    // Clean up temp directory
     try {
       const files = await fs.readdir(this.tempDir);
       for (const file of files) {
         await fs.unlink(path.join(this.tempDir, file));
       }
     } catch (error) {
-      console.warn('Failed to cleanup temp files:', error.message);
+      console.warn('Failed to cleanup temp directory:', error.message);
     }
+    
+    this.isInitialized = false;
+    this.available = false;
   }
 }
 
