@@ -104,12 +104,24 @@ jobs:
           $version = "${{ needs.determine-version.outputs.version }}"
           Write-Host "🏷️ Setting version to: $version"
           
-          # Update main package.json
-          $packageJson = Get-Content package.json -Raw | ConvertFrom-Json
-          $packageJson.version = $version
-          $packageJson | ConvertTo-Json -Depth 100 | Set-Content package.json
-          
-          Write-Host "✅ Updated package.json version to: $version"
+          # Read and update main package.json
+          $packageJsonPath = "package.json"
+          if (Test-Path $packageJsonPath) {
+            $packageJson = Get-Content $packageJsonPath -Raw | ConvertFrom-Json
+            
+            # Ensure version property exists
+            if (-not $packageJson.PSObject.Properties['version']) {
+              $packageJson | Add-Member -MemberType NoteProperty -Name 'version' -Value $version
+            } else {
+              $packageJson.version = $version
+            }
+            
+            $packageJson | ConvertTo-Json -Depth 100 | Set-Content $packageJsonPath
+            Write-Host "✅ Updated package.json version to: $version"
+          } else {
+            Write-Host "❌ package.json not found"
+            exit 1
+          }
 
       # Install dependencies
       - name: Install main dependencies
@@ -118,15 +130,28 @@ jobs:
       - name: Install renderer dependencies
         shell: pwsh
         run: |
-          cd src/renderer/whisperdesk-ui
-          
-          # Update renderer package.json version
-          $version = "${{ needs.determine-version.outputs.version }}"
-          $packageJson = Get-Content package.json -Raw | ConvertFrom-Json
-          $packageJson.version = $version
-          $packageJson | ConvertTo-Json -Depth 100 | Set-Content package.json
-          
-          pnpm install --frozen-lockfile
+          if (Test-Path "src/renderer/whisperdesk-ui") {
+            cd src/renderer/whisperdesk-ui
+            
+            # Update renderer package.json version if it exists
+            if (Test-Path "package.json") {
+              $version = "${{ needs.determine-version.outputs.version }}"
+              $packageJson = Get-Content package.json -Raw | ConvertFrom-Json
+              
+              if (-not $packageJson.PSObject.Properties['version']) {
+                $packageJson | Add-Member -MemberType NoteProperty -Name 'version' -Value $version
+              } else {
+                $packageJson.version = $version
+              }
+              
+              $packageJson | ConvertTo-Json -Depth 100 | Set-Content package.json
+              Write-Host "✅ Updated renderer package.json version"
+            }
+            
+            pnpm install --frozen-lockfile
+          } else {
+            Write-Host "⚠️ Renderer directory not found, skipping"
+          }
 
       # Build whisper.cpp from source with better approach
       - name: Build whisper.cpp for Windows
@@ -270,8 +295,12 @@ jobs:
       # Build renderer
       - name: Build renderer
         run: |
-          cd src/renderer/whisperdesk-ui
-          pnpm run build
+          if [ -d "src/renderer/whisperdesk-ui" ]; then
+            cd src/renderer/whisperdesk-ui
+            pnpm run build
+          else
+            echo "⚠️ Renderer directory not found, skipping"
+          fi
 
       # Build Electron app
       - name: Build Electron app
@@ -326,26 +355,37 @@ jobs:
           echo "🏷️ Setting version to: $VERSION"
           
           # Update main package.json
-          cat package.json | jq --arg version "$VERSION" '.version = $version' > package.json.tmp
-          mv package.json.tmp package.json
-          
-          echo "✅ Updated package.json version"
+          if [ -f "package.json" ]; then
+            cat package.json | jq --arg version "$VERSION" '.version = $version' > package.json.tmp
+            mv package.json.tmp package.json
+            echo "✅ Updated package.json version"
+          else
+            echo "❌ package.json not found"
+            exit 1
+          fi
 
       - name: Install main dependencies
         run: npm install
 
       - name: Install renderer dependencies
         run: |
-          cd src/renderer/whisperdesk-ui
-          
-          # Update renderer package.json version
-          VERSION="${{ needs.determine-version.outputs.version }}"
-          cat package.json | jq --arg version "$VERSION" '.version = $version' > package.json.tmp
-          mv package.json.tmp package.json
-          
-          pnpm install --frozen-lockfile
+          if [ -d "src/renderer/whisperdesk-ui" ]; then
+            cd src/renderer/whisperdesk-ui
+            
+            # Update renderer package.json version if it exists
+            if [ -f "package.json" ]; then
+              VERSION="${{ needs.determine-version.outputs.version }}"
+              cat package.json | jq --arg version "$VERSION" '.version = $version' > package.json.tmp
+              mv package.json.tmp package.json
+              echo "✅ Updated renderer package.json version"
+            fi
+            
+            pnpm install --frozen-lockfile
+          else
+            echo "⚠️ Renderer directory not found, skipping"
+          fi
 
-      # Build whisper.cpp for macOS
+      # Build whisper.cpp for macOS with fixed architecture handling
       - name: Build whisper.cpp for macOS
         run: |
           echo "🔨 Building whisper.cpp for macOS (${{ matrix.arch }})..."
@@ -354,18 +394,25 @@ jobs:
           git clone https://github.com/ggerganov/whisper.cpp.git /tmp/whisper-build
           cd /tmp/whisper-build
           
-          # Configure for specific architecture
+          # Configure for specific architecture with proper CPU targets
           if [ "${{ matrix.arch }}" = "arm64" ]; then
             CMAKE_ARCH_FLAGS="-DCMAKE_OSX_ARCHITECTURES=arm64"
+            CMAKE_CPU_FLAGS=""
           else
             CMAKE_ARCH_FLAGS="-DCMAKE_OSX_ARCHITECTURES=x86_64"
+            # Use x86_64 instead of apple-m1 for x64 builds
+            CMAKE_CPU_FLAGS="-DGGML_NATIVE=OFF"
           fi
+          
+          echo "Using CMAKE_ARCH_FLAGS: $CMAKE_ARCH_FLAGS"
+          echo "Using CMAKE_CPU_FLAGS: $CMAKE_CPU_FLAGS"
           
           cmake -B build \
             -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
             -DWHISPER_BUILD_TESTS=OFF \
             -DWHISPER_BUILD_EXAMPLES=ON \
-            $CMAKE_ARCH_FLAGS
+            $CMAKE_ARCH_FLAGS \
+            $CMAKE_CPU_FLAGS
           
           cmake --build build --config ${{ matrix.build_type }} --parallel $(sysctl -n hw.logicalcpu)
           
@@ -406,8 +453,12 @@ jobs:
       # Build renderer
       - name: Build renderer
         run: |
-          cd src/renderer/whisperdesk-ui
-          pnpm run build
+          if [ -d "src/renderer/whisperdesk-ui" ]; then
+            cd src/renderer/whisperdesk-ui
+            pnpm run build
+          else
+            echo "⚠️ Renderer directory not found, skipping"
+          fi
 
       # Build Electron app
       - name: Build Electron app
@@ -466,24 +517,35 @@ jobs:
           echo "🏷️ Setting version to: $VERSION"
           
           # Update main package.json
-          cat package.json | jq --arg version "$VERSION" '.version = $version' > package.json.tmp
-          mv package.json.tmp package.json
-          
-          echo "✅ Updated package.json version"
+          if [ -f "package.json" ]; then
+            cat package.json | jq --arg version "$VERSION" '.version = $version' > package.json.tmp
+            mv package.json.tmp package.json
+            echo "✅ Updated package.json version"
+          else
+            echo "❌ package.json not found"
+            exit 1
+          fi
 
       - name: Install main dependencies
         run: npm install
 
       - name: Install renderer dependencies
         run: |
-          cd src/renderer/whisperdesk-ui
-          
-          # Update renderer package.json version
-          VERSION="${{ needs.determine-version.outputs.version }}"
-          cat package.json | jq --arg version "$VERSION" '.version = $version' > package.json.tmp
-          mv package.json.tmp package.json
-          
-          pnpm install --frozen-lockfile
+          if [ -d "src/renderer/whisperdesk-ui" ]; then
+            cd src/renderer/whisperdesk-ui
+            
+            # Update renderer package.json version if it exists
+            if [ -f "package.json" ]; then
+              VERSION="${{ needs.determine-version.outputs.version }}"
+              cat package.json | jq --arg version "$VERSION" '.version = $version' > package.json.tmp
+              mv package.json.tmp package.json
+              echo "✅ Updated renderer package.json version"
+            fi
+            
+            pnpm install --frozen-lockfile
+          else
+            echo "⚠️ Renderer directory not found, skipping"
+          fi
 
       # Build whisper.cpp for Linux
       - name: Build whisper.cpp for Linux
@@ -538,8 +600,12 @@ jobs:
       # Build renderer
       - name: Build renderer
         run: |
-          cd src/renderer/whisperdesk-ui
-          pnpm run build
+          if [ -d "src/renderer/whisperdesk-ui" ]; then
+            cd src/renderer/whisperdesk-ui
+            pnpm run build
+          else
+            echo "⚠️ Renderer directory not found, skipping"
+          fi
 
       # Build Electron app
       - name: Build Electron app

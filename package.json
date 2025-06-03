@@ -1,4 +1,15 @@
 {
+  "name": "whisperdesk-enhanced",
+  "version": "2.1.0",
+  "description": "Advanced cross-platform transcription application with AI-powered speech recognition",
+  "main": "src/main/main.js",
+  "homepage": "https://whisperdesk.com",
+  "author": {
+    "name": "WhisperDesk Team",
+    "email": "support@whisperdesk.com"
+  },
+  "license": "MIT",
+  "private": true,
   "build": {
     "appId": "com.whisperdesk.enhanced",
     "productName": "WhisperDesk Enhanced",
@@ -145,5 +156,28 @@
       "owner": "whisperdesk",
       "repo": "whisperdesk-enhanced"
     }
+  },
+  "keywords": [
+    "transcription",
+    "speech-to-text",
+    "whisper",
+    "ai",
+    "audio",
+    "voice",
+    "electron",
+    "cross-platform",
+    "native",
+    "real-time"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/whisperdesk/whisperdesk-enhanced.git"
+  },
+  "bugs": {
+    "url": "https://github.com/whisperdesk/whisperdesk-enhanced/issues"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
   }
 }
