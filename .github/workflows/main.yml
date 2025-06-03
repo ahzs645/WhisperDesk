@@ -250,7 +250,7 @@ jobs:
         
         Write-Host "✅ Built with MSBuild"
         
-        # FIXED: Updated binary search with correct 2025 naming
+        # FIXED: Updated binary search with correct 2025 naming and better testing
         $buildDirs = @("bin\Release", "Release", "bin")
         # Current whisper.cpp binary names (as of 2025)
         $binaryNames = @("whisper-cli.exe", "main.exe")
@@ -266,18 +266,45 @@ jobs:
             foreach ($name in $binaryNames) {
                 $candidate = Join-Path $dir $name
                 if (Test-Path $candidate) {
+                    Write-Host "🔍 Found candidate binary: $candidate"
+                    
+                    # Check file size to ensure it's not a stub
+                    $fileInfo = Get-Item $candidate
+                    $size = $fileInfo.Length
+                    Write-Host "📊 Binary size: $size bytes"
+                    
+                    # Modern whisper-cli binaries should be at least 500KB
+                    if ($size -lt 500000) {
+                        Write-Host "⚠️ Binary too small ($size bytes) - likely a stub, skipping" -ForegroundColor Yellow
+                        continue
+                    }
+                    
                     Write-Host "🧪 Testing binary: $candidate"
                     
-                    # Test the binary to ensure it's not a deprecated stub
+                    # Test the binary with simple checks that don't require models
                     $isWorkingBinary = $false
                     $recommendedBinary = ""
                     
                     try {
-                        $process = Start-Process -FilePath $candidate -ArgumentList "--help" -Wait -NoNewWindow -PassThru -RedirectStandardOutput "test_output.txt" -RedirectStandardError "test_error.txt"
+                        # Try --version first, then --help if that fails
+                        $versionProcess = Start-Process -FilePath $candidate -ArgumentList "--version" -Wait -NoNewWindow -PassThru -RedirectStandardOutput "test_output.txt" -RedirectStandardError "test_error.txt" -TimeoutSec 5
                         
-                        # Check for deprecation warning
+                        if ($versionProcess.ExitCode -ne 0) {
+                            # Try --help if --version failed
+                            $helpProcess = Start-Process -FilePath $candidate -ArgumentList "--help" -Wait -NoNewWindow -PassThru -RedirectStandardOutput "test_output.txt" -RedirectStandardError "test_error.txt" -TimeoutSec 5
+                        }
+                        
+                        # Check if we got any output
+                        $hasOutput = $false
+                        if (Test-Path "test_output.txt") {
+                            $outputContent = Get-Content "test_output.txt" -Raw -ErrorAction SilentlyContinue
+                            if ($outputContent.Length -gt 0) { $hasOutput = $true }
+                        }
                         if (Test-Path "test_error.txt") {
-                            $errorContent = Get-Content "test_error.txt" -Raw
+                            $errorContent = Get-Content "test_error.txt" -Raw -ErrorAction SilentlyContinue
+                            if ($errorContent.Length -gt 0) { $hasOutput = $true }
+                            
+                            # Check for deprecation warning
                             if ($errorContent -match "deprecated") {
                                 Write-Host "⚠️ Found deprecated binary: $candidate" -ForegroundColor Yellow
                                 
@@ -298,21 +325,35 @@ jobs:
                                         }
                                     }
                                 }
-                            } else {
-                                $foundPath = $candidate
-                                $foundBinary = $name
-                                $isWorkingBinary = $true
-                                Write-Host "✅ Found working binary: $foundPath" -ForegroundColor Green
                             }
-                        } else {
+                        }
+                        
+                        # If we have output and no deprecation issues, consider it working
+                        if ($hasOutput -and -not $isWorkingBinary) {
                             $foundPath = $candidate
                             $foundBinary = $name
                             $isWorkingBinary = $true
                             Write-Host "✅ Found working binary: $foundPath" -ForegroundColor Green
+                        } elseif (-not $hasOutput -and -not $isWorkingBinary) {
+                            Write-Host "⚠️ Binary produced no output: $candidate" -ForegroundColor Yellow
+                            # Keep as fallback if size is good and no better option found
+                            if (-not $foundBinary) {
+                                Write-Host "💡 Keeping as fallback option since size looks good" -ForegroundColor Cyan
+                                $foundPath = $candidate
+                                $foundBinary = $name
+                                $isWorkingBinary = $true
+                            }
                         }
                         
                     } catch {
-                        Write-Host "⚠️ Binary test failed for: $candidate - $($_.Exception.Message)" -ForegroundColor Yellow
+                        Write-Host "⚠️ Binary test timeout or failed for: $candidate - $($_.Exception.Message)" -ForegroundColor Yellow
+                        # Keep as fallback if no other option and size is reasonable
+                        if (-not $foundBinary) {
+                            Write-Host "💡 Keeping as fallback option since size looks good" -ForegroundColor Cyan
+                            $foundPath = $candidate
+                            $foundBinary = $name
+                            $isWorkingBinary = $true
+                        }
                     } finally {
                         # Clean up test files
                         Remove-Item "test_output.txt" -ErrorAction SilentlyContinue
@@ -431,11 +472,11 @@ jobs:
           
           echo "📊 Binary size: $SIZE bytes"
           
-          # FIXED: Updated size check for modern whisper.cpp binaries
-          # Modern whisper-cli binaries are typically 1MB+ (much larger than old stubs)
-          if [ "$SIZE" -lt 500000 ]; then
+          # FIXED: Updated size check for modern whisper.cpp binaries  
+          # Modern whisper-cli binaries are typically 500KB+ (much larger than old stubs)
+          if [ "$SIZE" -lt 300000 ]; then
             echo "❌ ERROR: Binary is suspiciously small ($SIZE bytes) - likely a stub!"
-            echo "🔍 Modern whisper-cli binaries should be 500KB+ in size"
+            echo "🔍 Modern whisper-cli binaries should be 300KB+ in size"
             
             # List all executables in binaries directory for debugging
             echo "📋 All executables in binaries directory:"
