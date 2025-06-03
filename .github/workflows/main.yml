@@ -103,7 +103,7 @@ jobs:
       - name: Add MSBuild to PATH
         uses: microsoft/setup-msbuild@v2
 
-      - name: Update package.json version
+      - name: Fix package.json dependencies and update version
         shell: pwsh
         run: |
           $version = "${{ needs.determine-version.outputs.version }}"
@@ -119,6 +119,23 @@ jobs:
               $packageJson | Add-Member -MemberType NoteProperty -Name 'version' -Value $version
             } else {
               $packageJson.version = $version
+            }
+            
+            # Fix electron dependency issue - move electron from dependencies to devDependencies
+            if ($packageJson.dependencies -and $packageJson.dependencies.electron) {
+              Write-Host "🔧 Moving electron from dependencies to devDependencies"
+              
+              # Ensure devDependencies exists
+              if (-not $packageJson.PSObject.Properties['devDependencies']) {
+                $packageJson | Add-Member -MemberType NoteProperty -Name 'devDependencies' -Value @{}
+              }
+              
+              # Move electron
+              $electronVersion = $packageJson.dependencies.electron
+              $packageJson.devDependencies.electron = $electronVersion
+              $packageJson.dependencies.PSObject.Properties.Remove('electron')
+              
+              Write-Host "✅ Moved electron $electronVersion to devDependencies"
             }
             
             $packageJson | ConvertTo-Json -Depth 100 | Set-Content $packageJsonPath
@@ -358,16 +375,29 @@ jobs:
           brew update
           brew install cmake
 
-      - name: Update package.json version
+      - name: Fix package.json dependencies and update version
         run: |
           VERSION="${{ needs.determine-version.outputs.version }}"
           echo "🏷️ Setting version to: $VERSION"
           
           # Update main package.json
           if [ -f "package.json" ]; then
-            cat package.json | jq --arg version "$VERSION" '.version = $version' > package.json.tmp
-            mv package.json.tmp package.json
-            echo "✅ Updated package.json version"
+            # Read current package.json
+            TEMP_FILE=$(mktemp)
+            
+            # Fix electron dependency and update version
+            cat package.json | jq --arg version "$VERSION" '
+              .version = $version |
+              if .dependencies.electron then
+                .devDependencies.electron = .dependencies.electron |
+                del(.dependencies.electron)
+              else
+                .
+              end
+            ' > "$TEMP_FILE"
+            
+            mv "$TEMP_FILE" package.json
+            echo "✅ Updated package.json version and fixed electron dependency"
           else
             echo "❌ package.json not found"
             exit 1
@@ -520,16 +550,29 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential cmake libasound2-dev fuse libfuse2
 
-      - name: Update package.json version
+      - name: Fix package.json dependencies and update version
         run: |
           VERSION="${{ needs.determine-version.outputs.version }}"
           echo "🏷️ Setting version to: $VERSION"
           
           # Update main package.json
           if [ -f "package.json" ]; then
-            cat package.json | jq --arg version "$VERSION" '.version = $version' > package.json.tmp
-            mv package.json.tmp package.json
-            echo "✅ Updated package.json version"
+            # Read current package.json
+            TEMP_FILE=$(mktemp)
+            
+            # Fix electron dependency and update version
+            cat package.json | jq --arg version "$VERSION" '
+              .version = $version |
+              if .dependencies.electron then
+                .devDependencies.electron = .dependencies.electron |
+                del(.dependencies.electron)
+              else
+                .
+              end
+            ' > "$TEMP_FILE"
+            
+            mv "$TEMP_FILE" package.json
+            echo "✅ Updated package.json version and fixed electron dependency"
           else
             echo "❌ package.json not found"
             exit 1
