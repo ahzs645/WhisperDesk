@@ -1,4 +1,4 @@
-// src/main/preload.js - Unified preload script
+// src/main/preload.js - Complete preload script with window controls
 const { contextBridge, ipcRenderer } = require('electron');
 
 // Enhanced IPC wrapper with error handling and logging
@@ -27,6 +27,59 @@ const createEventListener = (channel) => {
 
 // Expose unified electronAPI
 contextBridge.exposeInMainWorld('electronAPI', {
+  // Platform info (for backward compatibility)
+  platform: process.platform,
+  
+  // Window controls with proper event handling
+  window: {
+    minimize: () => {
+      console.log('[Preload] Window minimize called');
+      ipcRenderer.send('window:minimize');
+    },
+    maximize: () => {
+      console.log('[Preload] Window maximize called');
+      ipcRenderer.send('window:maximize');
+    },
+    close: () => {
+      console.log('[Preload] Window close called');
+      ipcRenderer.send('window:close');
+    },
+    setTheme: (theme) => ipcRenderer.invoke('window:setTheme', theme),
+    onThemeChanged: (callback) => {
+      const handler = (_, theme) => {
+        console.log('[Preload] Theme changed:', theme);
+        callback(theme);
+      };
+      ipcRenderer.on('theme-changed', handler);
+      return () => ipcRenderer.removeListener('theme-changed', handler);
+    },
+    removeThemeListener: (callback) => {
+      ipcRenderer.removeListener('theme-changed', callback);
+    },
+    onMaximize: (callback) => {
+      const handler = () => {
+        console.log('[Preload] Window maximized');
+        callback();
+      };
+      ipcRenderer.on('window:maximized', handler);
+      return () => ipcRenderer.removeListener('window:maximized', handler);
+    },
+    onUnmaximize: (callback) => {
+      const handler = () => {
+        console.log('[Preload] Window unmaximized');
+        callback();
+      };
+      ipcRenderer.on('window:unmaximized', handler);
+      return () => ipcRenderer.removeListener('window:unmaximized', handler);
+    },
+    removeMaximizeListener: (callback) => {
+      ipcRenderer.removeListener('window:maximized', callback);
+    },
+    removeUnmaximizeListener: (callback) => {
+      ipcRenderer.removeListener('window:unmaximized', callback);
+    }
+  },
+
   // Model management
   model: {
     getAvailable: createSafeIPC('model:getAvailable'),
@@ -42,17 +95,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     onDownloadError: createEventListener('model:downloadError'),
     onDownloadCancelled: createEventListener('model:downloadCancelled'),
     onModelDeleted: createEventListener('model:modelDeleted')
-  },
-
-  // Screen recording
-  screenRecorder: {
-    startRecording: createSafeIPC('screenRecorder:startRecording'),
-    stopRecording: createSafeIPC('screenRecorder:stopRecording'),
-    
-    // Screen recording events
-    onRecordingStarted: createEventListener('screenRecorder:started'),
-    onRecordingStopped: createEventListener('screenRecorder:stopped'),
-    onRecordingError: createEventListener('screenRecorder:error')
   },
 
   // Transcription with enhanced progress tracking
@@ -143,7 +185,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   }
 });
 
-// Platform information
+// Platform information (separate namespace for better organization)
 contextBridge.exposeInMainWorld('platform', {
   os: process.platform,
   arch: process.arch,
@@ -176,3 +218,10 @@ console.log('[Preload] WhisperDesk Enhanced preload script loaded');
 console.log('[Preload] Platform:', process.platform, process.arch);
 console.log('[Preload] Electron version:', process.versions.electron);
 console.log('[Preload] Node version:', process.versions.node);
+console.log('[Preload] Window controls exposed:', !!window.electronAPI?.window);
+console.log('[Preload] Platform detection:', {
+  os: process.platform,
+  isMacOS: process.platform === 'darwin',
+  isWindows: process.platform === 'win32',
+  isLinux: process.platform === 'linux'
+});

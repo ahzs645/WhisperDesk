@@ -211,3 +211,137 @@
   transition-duration: 300ms;
 }
 
+/* Glass header styles */
+.glass-header {
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.3);
+  box-shadow: 
+    0 4px 6px -1px rgba(0, 0, 0, 0.05),
+    0 2px 4px -1px rgba(0, 0, 0, 0.03),
+    inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  position: relative;
+  isolation: isolate;
+  -webkit-app-region: drag;
+}
+
+.dark .glass-header {
+  background: rgba(23, 23, 23, 0.8);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 
+    0 4px 6px -1px rgba(0, 0, 0, 0.2),
+    0 2px 4px -1px rgba(0, 0, 0, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+/* macOS specific spacing for traffic lights */
+.header-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 100%;
+  padding: 0 16px;
+  transition: padding-left 0.2s ease;
+}
+
+/* Add left padding on macOS to account for traffic lights */
+.header-content.macos {
+  padding-left: 88px; /* Space for traffic lights */
+}
+
+/* Logo and title section */
+.header-logo-section {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  -webkit-app-region: no-drag;
+}
+
+/* Right side controls */
+.header-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  -webkit-app-region: no-drag;
+}
+
+/* Non-draggable elements */
+.no-drag {
+  -webkit-app-region: no-drag;
+}
+
+/* Window controls for non-macOS platforms */
+.window-controls {
+  -webkit-app-region: no-drag;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-right: 12px;
+  height: 100%;
+}
+
+/* Hide custom controls on macOS */
+.platform-macos .title-bar,
+.platform-macos .window-controls {
+  display: none;
+}
+
+/* Window controls styles */
+.window-controls {
+  -webkit-app-region: no-drag;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-right: 12px;
+  height: 100%;
+}
+
+.window-control-button {
+  width: 30px;
+  height: 30px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--foreground);
+  background: transparent;
+  border: none;
+  outline: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
+  -webkit-app-region: no-drag;
+}
+
+.window-control-button:hover {
+  background-color: var(--accent);
+}
+
+.window-control-button.close:hover {
+  background-color: rgb(255, 96, 92);
+  color: white;
+}
+
+.window-control-button svg {
+  width: 10px;
+  height: 10px;
+  opacity: 0.7;
+  transition: opacity 0.2s ease;
+}
+
+.window-control-button:hover svg {
+  opacity: 1;
+}
+
+/* Make the title bar draggable */
+.title-bar {
+  -webkit-app-region: drag;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 0;
+  background: transparent;
+}
+

@@ -260,8 +260,9 @@ class WhisperDeskApp {
       center: true,      // Center on screen
       alwaysOnTop: false,
       skipTaskbar: false,
-      frame: true,
-      titleBarStyle: 'default',
+      frame: process.platform === 'darwin',      // Use native frame on macOS
+      titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'hidden',  // Use hiddenInset for macOS
+      trafficLightPosition: { x: 20, y: 20 },  // Position the traffic lights for macOS
       webPreferences: {
         nodeIntegration: false,
         contextIsolation: true,
@@ -296,6 +297,19 @@ class WhisperDeskApp {
         }
       });
     }
+
+    // Handle window maximize/unmaximize
+    this.mainWindow.on('maximize', () => {
+      if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+        this.mainWindow.webContents.send('window:maximized');
+      }
+    });
+
+    this.mainWindow.on('unmaximize', () => {
+      if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+        this.mainWindow.webContents.send('window:unmaximized');
+      }
+    });
 
     // Handle window closed
     this.mainWindow.on('closed', () => {
@@ -493,6 +507,23 @@ class WhisperDeskApp {
   }
 
   setupIpcHandlers() {
+    // Window controls
+    ipcMain.on('window:minimize', () => {
+      this.mainWindow?.minimize();
+    });
+
+    ipcMain.on('window:maximize', () => {
+      if (this.mainWindow?.isMaximized()) {
+        this.mainWindow?.unmaximize();
+      } else {
+        this.mainWindow?.maximize();
+      }
+    });
+
+    ipcMain.on('window:close', () => {
+      this.mainWindow?.close();
+    });
+
     // Model management
     ipcMain.handle('model:getAvailable', () => this.modelManager.getAvailableModels());
     ipcMain.handle('model:getInstalled', () => this.modelManager.getInstalledModels());
