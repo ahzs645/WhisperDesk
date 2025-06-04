@@ -22,9 +22,9 @@ npm install --legacy-peer-deps
 cd ../../..
 
 # Check if whisper binary exists
-if [ -f "binaries/whisper" ]; then
+if [ -f "binaries/whisper-cli" ]; then
     echo "✅ Whisper binary found"
-    chmod +x binaries/whisper
+    chmod +x binaries/whisper-cli
 else
     echo "⚠️  Whisper binary not found"
     echo "📋 Choose setup option:"
@@ -33,37 +33,19 @@ else
     read -p "Enter choice (1 or 2): " choice
     
     if [ "$choice" = "1" ]; then
-        echo "🔨 Building whisper.cpp from source..."
-        
-        # Check for build dependencies
-        if ! command -v make &> /dev/null; then
-            echo "Installing build dependencies..."
-            if command -v apt-get &> /dev/null; then
-                sudo apt-get update
-                sudo apt-get install -y build-essential cmake
-            elif command -v brew &> /dev/null; then
-                brew install cmake
-            else
-                echo "❌ Please install build tools (make, cmake) manually"
-                exit 1
+        echo "🔨 Building whisper.cpp from source using 'npm run build:whisper'..."
+        if npm run build:whisper; then
+            echo "✅ Whisper binary built successfully via npm script."
+            # Ensure the binary is executable if the script doesn't already do it
+            # (Our build-whisper.sh already does chmod +x)
+            if [ -f "$OLDPWD/binaries/whisper-cli" ]; then
+                 chmod +x "$OLDPWD/binaries/whisper-cli" 2>/dev/null || true
             fi
+        else
+            echo "❌ Failed to build whisper.cpp using npm script."
+            echo "Please check for errors and ensure all build dependencies (cmake, C++ compiler) are installed."
+            exit 1
         fi
-        
-        # Clone and build whisper.cpp
-        echo "📥 Cloning whisper.cpp..."
-        git clone https://github.com/ggerganov/whisper.cpp.git /tmp/whisper.cpp
-        
-        echo "🔨 Building whisper.cpp..."
-        cd /tmp/whisper.cpp
-        make -j$(nproc)
-        
-        echo "📋 Installing binary..."
-        mkdir -p "$OLDPWD/binaries"
-        cp build/bin/whisper-cli "$OLDPWD/binaries/whisper"
-        chmod +x "$OLDPWD/binaries/whisper"
-        cd "$OLDPWD"
-        
-        echo "✅ Whisper binary built and installed"
     else
         echo "⏭️  Skipping binary setup"
     fi

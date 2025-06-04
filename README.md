@@ -38,14 +38,14 @@ If you prefer to build from source or want to contribute to development:
 ```bash
 git clone https://github.com/your-username/whisperdesk-enhanced.git
 cd whisperdesk-enhanced
-./setup.sh
+scripts/setup.sh
 ```
 
 **Windows (PowerShell):**
 ```powershell
 git clone https://github.com/your-username/whisperdesk-enhanced.git
 cd whisperdesk-enhanced
-.\setup.ps1
+scripts\setup.ps1
 ```
 
 ### Manual Setup
@@ -60,15 +60,8 @@ cd ../../..
 
 2. **Set up Whisper Binary**
 ```bash
-# Option A: Use included binary (Linux only)
-chmod +x binaries/whisper
-
-# Option B: Build from source (all platforms)
-git clone https://github.com/ggerganov/whisper.cpp.git /tmp/whisper.cpp
-cd /tmp/whisper.cpp
-make -j$(nproc)
-cp build/bin/whisper-cli ./binaries/whisper
-chmod +x ./binaries/whisper
+# Build from source (recommended for all platforms)
+npm run build:whisper
 ```
 
 3. **Download a Model**
@@ -117,9 +110,6 @@ npm run test:native
 
 # Test transcription with audio file
 npm run test:transcription
-
-# Complete system test
-./quick_test_script.sh
 ```
 
 ## ✨ Key Features
@@ -153,7 +143,8 @@ npm run test:transcription
 - `npm run test:native` - Test native services
 - `npm run test:transcription` - Test with audio file
 - `npm run build` - Build for production
-- `./setup.sh` / `.\setup.ps1` - Automated setup scripts
+- `npm run build:whisper` - Builds the whisper.cpp command-line binary from source.
+- `scripts/setup.sh` / `scripts\setup.ps1` - Automated setup scripts
 
 ## 🔧 Core Features
 
@@ -276,27 +267,15 @@ For detailed platform-specific instructions:
 - Verify whisper binary is executable
 - Check that required models are downloaded
 
-## 🔧 Automated Fix Scripts
+## 🔧 Troubleshooting Scripts
 
-If you encounter issues, use these automated diagnostic and fix scripts:
+If you encounter issues on Windows, you can use the diagnostic script:
 
-```bash
-# Complete setup verification
-chmod +x Test\ Scripts/quick_test_script.sh
-./Test\ Scripts/quick_test_script.sh
-
-# Build whisper.cpp from source
-chmod +x Test\ Scripts/build_whisper.sh
-./Test\ Scripts/build_whisper.sh
-
-# Download essential models
-chmod +x Test\ Scripts/download_model.sh
-./Test\ Scripts/download_model.sh
-
-# Verify application state
-chmod +x Test\ Scripts/verify_app_state_script.sh
-./Test\ Scripts/verify_app_state_script.sh
+```powershell
+# Diagnose common issues with whisper.cpp binary on Windows
+scripts\diagnose-whisper-windows.ps1
 ```
+For other platforms, ensure all dependencies are correctly installed as per the build scripts (`scripts/build-whisper.sh`).
 
 ## 📁 Project Structure
 
@@ -317,9 +296,12 @@ WhisperDesk/
 │               ├── TranscriptionTab-Electron.jsx  # Electron transcription interface
 │               └── ModelMarketplace-WebCompatible.jsx     # Model management
 ├── binaries/
-│   └── whisper                        # whisper.cpp binary
+│   └── whisper-cli                    # whisper.cpp binary
 ├── scripts/
-│   └── build-whisper.sh              # Binary build script
+│   ├── build-whisper.sh               # (Unix) Builds whisper.cpp binary
+│   ├── compile-whisper-windows.ps1    # (Windows) Compiles whisper.cpp binary
+│   ├── build-whisper-cross-platform.js # Cross-platform wrapper to build whisper.cpp
+│   └── diagnose-whisper-windows.ps1   # Windows diagnostic script
 ├── transcription-server.js            # API server for web interface
 ├── test-native-services.js            # Native services testing
 ├── test-transcription.js              # Transcription testing
@@ -345,8 +327,8 @@ cd src/renderer/whisperdesk-ui
 npm install --legacy-peer-deps
 cd ../../..
 
-# Build whisper.cpp binary
-./scripts/build-whisper.sh
+# Build whisper.cpp binary (if not already done by setup scripts)
+npm run build:whisper
 
 # Start in development mode
 npm run dev

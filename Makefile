@@ -88,26 +88,10 @@ install: check-deps ## Install all project dependencies
 	$(call print_success,"Dependencies installed")
 
 ## Build whisper.cpp binary
-build-whisper: ## Build whisper.cpp from source
-	$(call print_status,"Building whisper.cpp from source...")
-	@mkdir -p binaries
-	@if [ ! -f binaries/whisper ] && [ ! -f binaries/whisper.exe ]; then \
-		git clone https://github.com/ggerganov/whisper.cpp.git /tmp/whisper-cpp-build || true; \
-		cd /tmp/whisper-cpp-build && \
-		make clean && \
-		make -j$$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4); \
-		if [ -f "build/bin/whisper-cli" ]; then \
-			cp build/bin/whisper-cli $(PWD)/binaries/whisper; \
-		elif [ -f "whisper-cli" ]; then \
-			cp whisper-cli $(PWD)/binaries/whisper; \
-		else \
-			$(call print_error,"Could not find whisper binary"); \
-			exit 1; \
-		fi; \
-		chmod +x $(PWD)/binaries/whisper; \
-		rm -rf /tmp/whisper-cpp-build; \
-	fi
-	$(call print_success,"whisper.cpp binary ready")
+build-whisper: ## Build whisper.cpp from source using npm script
+	$(call print_status,"Building whisper.cpp from source via npm run build:whisper...")
+	@npm run build:whisper
+	$(call print_success,"whisper.cpp binary build process completed via npm script")
 
 ## Download essential models
 download-models: ## Download essential Whisper models

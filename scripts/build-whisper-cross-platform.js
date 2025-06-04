@@ -14,13 +14,13 @@ function runScript(command, args, options = {}) {
   return new Promise((resolve, reject) => {
     console.log(`Running: ${command} ${args.join(' ')}`);
     
-    const process = spawn(command, args, {
+    const processToRun = spawn(command, args, {
       stdio: 'inherit',
       shell: true,
       ...options
     });
     
-    process.on('close', (code) => {
+    processToRun.on('close', (code) => {
       if (code === 0) {
         resolve();
       } else {
@@ -28,7 +28,7 @@ function runScript(command, args, options = {}) {
       }
     });
     
-    process.on('error', (error) => {
+    processToRun.on('error', (error) => {
       reject(error);
     });
   });
@@ -36,17 +36,17 @@ function runScript(command, args, options = {}) {
 
 async function buildWhisper() {
   try {
-    const scriptsDir = path.join(__dirname);
+    const scriptsDir = __dirname; // Correctly refers to the 'scripts' directory
     
     if (platform === 'win32') {
-      // Windows - use PowerShell script
-      const psScript = path.join(scriptsDir, 'build-whisper.ps1');
+      // Windows - use new PowerShell compilation script
+      const psScript = path.join(scriptsDir, 'compile-whisper-windows.ps1');
       
       if (!fs.existsSync(psScript)) {
-        throw new Error(`PowerShell script not found: ${psScript}`);
+        throw new Error(`PowerShell compilation script not found: ${psScript}`);
       }
       
-      console.log('🪟 Using PowerShell script for Windows');
+      console.log('🪟 Using PowerShell script for Windows compilation: compile-whisper-windows.ps1');
       await runScript('powershell', [
         '-ExecutionPolicy', 'Bypass',
         '-File', psScript
@@ -60,11 +60,11 @@ async function buildWhisper() {
         throw new Error(`Bash script not found: ${bashScript}`);
       }
       
-      console.log('🐧 Using bash script for Unix-like systems');
+      console.log('🐧 Using bash script for Unix-like systems: build-whisper.sh');
       
-      // Make script executable
+      // Make script executable (already in original script, good to keep)
       try {
-        fs.chmodSync(bashScript, '755');
+        fs.chmodSync(bashScript, '755'); // Changed from '0755' to '755' (string format for mode)
       } catch (error) {
         console.warn('Warning: Could not make script executable:', error.message);
       }
@@ -73,23 +73,24 @@ async function buildWhisper() {
     }
     
     console.log('');
-    console.log('✅ 🎉 Whisper.cpp build completed successfully!');
+    console.log('✅ 🎉 Whisper.cpp build completed successfully via cross-platform script!');
     
   } catch (error) {
     console.error('');
-    console.error('❌ Build failed:', error.message);
+    console.error('❌ Build failed via cross-platform script:', error.message);
     console.error('');
     console.error('🔧 Troubleshooting:');
     
     if (platform === 'win32') {
-      console.error('   1. Make sure PowerShell is available');
-      console.error('   2. Install Visual Studio Build Tools');
-      console.error('   3. Install CMake: winget install Kitware.CMake');
+      console.error('   1. Make sure PowerShell is available.');
+      console.error('   2. Ensure Visual Studio Build Tools (with C++ workload) and CMake are installed and in PATH.');
+      console.error('   3. Check logs from compile-whisper-windows.ps1 for specific errors.');
     } else {
-      console.error('   1. Make sure bash is available');
-      console.error('   2. Install build tools (make, cmake)');
-      console.error('   3. On macOS: xcode-select --install');
-      console.error('   4. On Ubuntu: sudo apt-get install build-essential cmake');
+      console.error('   1. Make sure bash is available.');
+      console.error('   2. Install build tools (make, cmake, C++ compiler like gcc/clang).');
+      console.error('   3. On macOS: Ensure Xcode Command Line Tools are installed (xcode-select --install).');
+      console.error('   4. On Linux: Ensure build-essential and cmake are installed.');
+      console.error('   5. Check logs from build-whisper.sh for specific errors.');
     }
     
     process.exit(1);
@@ -103,6 +104,7 @@ console.log(`  Node.js: ${process.version}`);
 console.log(`  Platform: ${process.platform}`);
 console.log(`  Architecture: ${process.arch}`);
 console.log(`  Working Directory: ${process.cwd()}`);
+console.log(`  Scripts Directory: ${__dirname}`);
 console.log('');
 
 buildWhisper();

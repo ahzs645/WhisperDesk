@@ -138,75 +138,9 @@ jobs:
             Write-Host "⚠️ Renderer directory not found, skipping"
           }
 
-      # Build whisper.cpp from source with better approach
-      - name: Build whisper.cpp for Windows
-        shell: pwsh
-        run: |
-          Write-Host "🔨 Building whisper.cpp for Windows..." -ForegroundColor Green
-          
-          # Clone official whisper.cpp repository
-          git clone https://github.com/ggerganov/whisper.cpp.git C:\temp\whisper-build
-          Set-Location C:\temp\whisper-build
-          
-          Write-Host "✅ Cloned whisper.cpp repository"
-          
-          # Configure with MSVC (Release mode, shared libs for better compatibility)
-          cmake -S . -B build -A ${{ matrix.arch }} `
-            -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} `
-            -DBUILD_SHARED_LIBS=ON `
-            -DWHISPER_BUILD_TESTS=OFF `
-            -DWHISPER_BUILD_EXAMPLES=ON
-          
-          Write-Host "✅ Configured CMake for ${{ matrix.arch }}"
-          
-          # Build using MSBuild
-          cmake --build build --config ${{ matrix.build_type }} --parallel 4
-          
-          Write-Host "✅ Built whisper.cpp"
-          
-          # Find and verify the binaries
-          $buildDir = "build\bin\${{ matrix.build_type }}"
-          Write-Host "🔍 Looking for binaries in: $buildDir"
-          
-          if (Test-Path "$buildDir\whisper-cli.exe") {
-            $whisperBinary = "$buildDir\whisper-cli.exe"
-            $binaryName = "whisper-cli.exe"
-          } elseif (Test-Path "$buildDir\main.exe") {
-            $whisperBinary = "$buildDir\main.exe"
-            $binaryName = "main.exe"
-          } else {
-            Write-Host "❌ No suitable binary found"
-            Get-ChildItem $buildDir -Filter "*.exe" | Format-Table Name, Length
-            exit 1
-          }
-          
-          # Verify binary size and functionality
-          $fileInfo = Get-Item $whisperBinary
-          $sizeKB = [math]::Round($fileInfo.Length / 1024, 1)
-          Write-Host "📊 Found binary: $binaryName ($sizeKB KB)"
-          
-          if ($fileInfo.Length -lt 50KB) {
-            Write-Host "❌ Binary too small, likely corrupted"
-            exit 1
-          }
-          
-          # Create target directory and copy files
-          $targetDir = "$env:GITHUB_WORKSPACE\binaries"
-          New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
-          
-          # Copy main binary as whisper-cli.exe (consistent naming)
-          Copy-Item $whisperBinary "$targetDir\whisper-cli.exe" -Force
-          Write-Host "✅ Copied binary: $binaryName -> whisper-cli.exe"
-          
-          # Copy all required DLLs
-          $dlls = Get-ChildItem $buildDir -Filter "*.dll"
-          foreach ($dll in $dlls) {
-            Copy-Item $dll.FullName $targetDir -Force
-            $dllSize = [math]::Round($dll.Length / 1024, 1)
-            Write-Host "✅ Copied DLL: $($dll.Name) ($dllSize KB)"
-          }
-          
-          Write-Host "📋 Total files copied: $($dlls.Count + 1)"
+      - name: Build whisper.cpp (via script)
+        run: npm run build:whisper
+        shell: bash # npm commands run fine in bash on Windows too
 
       # Package Visual C++ Runtime
       - name: Package VC++ Runtime
@@ -414,64 +348,9 @@ jobs:
             echo "⚠️ Renderer directory not found, skipping"
           fi
 
-      # Build whisper.cpp for macOS with fixed architecture handling
-      - name: Build whisper.cpp for macOS
-        run: |
-          echo "🔨 Building whisper.cpp for macOS (${{ matrix.arch }})..."
-          
-          # Clone whisper.cpp
-          git clone https://github.com/ggerganov/whisper.cpp.git /tmp/whisper-build
-          cd /tmp/whisper-build
-          
-          # Configure for specific architecture with proper CPU targets
-          if [ "${{ matrix.arch }}" = "arm64" ]; then
-            CMAKE_ARCH_FLAGS="-DCMAKE_OSX_ARCHITECTURES=arm64"
-            CMAKE_CPU_FLAGS=""
-          else
-            CMAKE_ARCH_FLAGS="-DCMAKE_OSX_ARCHITECTURES=x86_64"
-            # Use x86_64 instead of apple-m1 for x64 builds
-            CMAKE_CPU_FLAGS="-DGGML_NATIVE=OFF"
-          fi
-          
-          echo "Using CMAKE_ARCH_FLAGS: $CMAKE_ARCH_FLAGS"
-          echo "Using CMAKE_CPU_FLAGS: $CMAKE_CPU_FLAGS"
-          
-          cmake -B build \
-            -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
-            -DWHISPER_BUILD_TESTS=OFF \
-            -DWHISPER_BUILD_EXAMPLES=ON \
-            $CMAKE_ARCH_FLAGS \
-            $CMAKE_CPU_FLAGS
-          
-          cmake --build build --config ${{ matrix.build_type }} --parallel $(sysctl -n hw.logicalcpu)
-          
-          echo "✅ Built whisper.cpp"
-          
-          # Find binary
-          if [ -f "build/bin/whisper-cli" ]; then
-            WHISPER_BINARY="build/bin/whisper-cli"
-          elif [ -f "build/bin/main" ]; then
-            WHISPER_BINARY="build/bin/main"
-          else
-            echo "❌ No suitable binary found"
-            ls -la build/bin/
-            exit 1
-          fi
-          
-          # Verify and copy
-          SIZE=$(stat -f%z "$WHISPER_BINARY")
-          echo "📊 Found binary: $WHISPER_BINARY ($SIZE bytes)"
-          
-          if [ "$SIZE" -lt 50000 ]; then
-            echo "❌ Binary too small"
-            exit 1
-          fi
-          
-          mkdir -p "$GITHUB_WORKSPACE/binaries"
-          cp "$WHISPER_BINARY" "$GITHUB_WORKSPACE/binaries/whisper-cli"
-          chmod +x "$GITHUB_WORKSPACE/binaries/whisper-cli"
-          
-          echo "✅ Copied binary to whisper-cli"
+      - name: Build whisper.cpp (via script)
+        run: npm run build:whisper
+        shell: bash
 
       # Download tiny model
       - name: Download tiny model
@@ -591,49 +470,9 @@ jobs:
             echo "⚠️ Renderer directory not found, skipping"
           fi
 
-      # Build whisper.cpp for Linux
-      - name: Build whisper.cpp for Linux
-        run: |
-          echo "🔨 Building whisper.cpp for Linux..."
-          
-          # Clone whisper.cpp
-          git clone https://github.com/ggerganov/whisper.cpp.git /tmp/whisper-build
-          cd /tmp/whisper-build
-          
-          cmake -B build \
-            -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
-            -DWHISPER_BUILD_TESTS=OFF \
-            -DWHISPER_BUILD_EXAMPLES=ON
-          
-          cmake --build build --config ${{ matrix.build_type }} --parallel $(nproc)
-          
-          echo "✅ Built whisper.cpp"
-          
-          # Find binary
-          if [ -f "build/bin/whisper-cli" ]; then
-            WHISPER_BINARY="build/bin/whisper-cli"
-          elif [ -f "build/bin/main" ]; then
-            WHISPER_BINARY="build/bin/main"
-          else
-            echo "❌ No suitable binary found"
-            ls -la build/bin/
-            exit 1
-          fi
-          
-          # Verify and copy
-          SIZE=$(stat -c%s "$WHISPER_BINARY")
-          echo "📊 Found binary: $WHISPER_BINARY ($SIZE bytes)"
-          
-          if [ "$SIZE" -lt 50000 ]; then
-            echo "❌ Binary too small"
-            exit 1
-          fi
-          
-          mkdir -p "$GITHUB_WORKSPACE/binaries"
-          cp "$WHISPER_BINARY" "$GITHUB_WORKSPACE/binaries/whisper-cli"
-          chmod +x "$GITHUB_WORKSPACE/binaries/whisper-cli"
-          
-          echo "✅ Copied binary to whisper-cli"
+      - name: Build whisper.cpp (via script)
+        run: npm run build:whisper
+        shell: bash
 
       # Download tiny model
       - name: Download tiny model
