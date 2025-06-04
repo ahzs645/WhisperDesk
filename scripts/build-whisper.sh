@@ -86,13 +86,51 @@ cd "$TEMP_DIR"
 
 # Build with cmake (modern approach)
 print_status "Configuring build with cmake..."
-cmake -B build -DCMAKE_BUILD_TYPE=Release \
-    -DBUILD_SHARED_LIBS=OFF \
-    -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0 \
-    -DCMAKE_OSX_ARCHITECTURES=arm64
+# Base CMake arguments applicable to all platforms
+CMAKE_ARGS=("-S" "." "-B" "build" "-DCMAKE_BUILD_TYPE=Release" "-DBUILD_SHARED_LIBS=OFF" "-DWHISPER_BUILD_TESTS=OFF" "-DWHISPER_BUILD_EXAMPLES=ON")
+
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    print_status "Configuring for macOS..."
+    ARCH=$(uname -m)
+    if [[ "$ARCH" == "arm64" ]]; then
+        print_status "Detected Apple Silicon (arm64). Configuring specific architecture."
+        CMAKE_ARGS+=("-DCMAKE_OSX_ARCHITECTURES=arm64")
+    else
+        print_status "Detected Intel macOS (x86_64). Configuring specific architecture."
+        CMAKE_ARGS+=("-DCMAKE_OSX_ARCHITECTURES=x86_64")
+        # Consider adding -DGGML_NATIVE=OFF for broader compatibility on older x86_64 Macs if needed
+        # CMAKE_ARGS+=("-DGGML_NATIVE=OFF")
+    fi
+    CMAKE_ARGS+=("-DCMAKE_OSX_DEPLOYMENT_TARGET=11.0") # macOS specific
+elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
+    print_status "Configuring for Linux (x86_64 assumed)..."
+    # Explicitly enable common x86_64 features. This helps guide ggml.
+    # whisper.cpp's CMakeLists should pick these up.
+    CMAKE_ARGS+=("-DGGML_AVX=ON" "-DGGML_AVX2=ON" "-DGGML_FMA=ON" "-DGGML_F16C=ON")
+    # If issues with ARM detection persist on x64 runners, consider:
+    # CMAKE_ARGS+=("-DWHISPER_SUPPORT_NEON=OFF")
+    # CMAKE_ARGS+=("-DGGML_NATIVE=OFF")
+else
+    print_warning "Unsupported OS for specific CMake configuration: $OSTYPE. Using potentially generic config."
+    # No platform-specific args added here, relies on CMake defaults + base args
+fi
+
+print_status "Final CMake arguments: ${CMAKE_ARGS[@]}"
+cmake "${CMAKE_ARGS[@]}"
 
 if [ $? -ne 0 ]; then
-    print_error "CMake configuration failed"
+    print_error "CMake configuration failed."
+    # Attempt to show CMake logs if they exist for easier debugging
+    if [ -f "build/CMakeFiles/CMakeOutput.log" ]; then
+        print_error "--- CMake Output Log (build/CMakeFiles/CMakeOutput.log) ---"
+        cat "build/CMakeFiles/CMakeOutput.log"
+        print_error "--- End of CMake Output Log ---"
+    fi
+    if [ -f "build/CMakeFiles/CMakeError.log" ]; then
+        print_error "--- CMake Error Log (build/CMakeFiles/CMakeError.log) ---"
+        cat "build/CMakeFiles/CMakeError.log"
+        print_error "--- End of CMake Error Log ---"
+    fi
     exit 1
 fi
 
