@@ -102,13 +102,19 @@ try {
 # Configure CMake with static linking
 Write-Info "Configuring CMake build with static linking..."
 
+# Determine MSVC Runtime Library string
+$msvcRuntimeLib = "MultiThreaded"
+if ($BuildType -eq 'Debug') {
+    $msvcRuntimeLib += "Debug"
+}
+
 $cmakeArgs = @(
     "-S", ".",
     "-B", "build",
     "-A", $Architecture,
     "-DCMAKE_BUILD_TYPE=$BuildType",
     "-DBUILD_SHARED_LIBS=OFF",
-    "-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded$($BuildType -eq 'Debug' ? 'Debug' : '')",
+    "-DCMAKE_MSVC_RUNTIME_LIBRARY=$msvcRuntimeLib",
     "-DWHISPER_BUILD_TESTS=OFF",
     "-DWHISPER_BUILD_EXAMPLES=ON",
     "-DWHISPER_BUILD_SERVER=OFF",
@@ -152,18 +158,19 @@ try {
 }
 
 # Locate and validate the whisper-cli binary
-$sourceBuildDir = Join-Path $TempDir "build\bin\$BuildType"
+$sourceBuildDir = Join-Path $TempDir "build\bin\$BuildType" # Corrected path
 $whisperCliExe = Join-Path $sourceBuildDir "whisper-cli.exe"
 
 if (-not (Test-Path $whisperCliExe)) {
-    # Try alternative location
-    $whisperCliExe = Join-Path $TempDir "build\bin\whisper-cli.exe"
+    # Try alternative location (e.g. if build type is not in path)
+    $altSourceBuildDir = Join-Path $TempDir "build\bin"
+    $whisperCliExe = Join-Path $altSourceBuildDir "whisper-cli.exe"
 }
 
 if (-not (Test-Path $whisperCliExe)) {
-    Write-Error "whisper-cli.exe not found in expected locations"
+    Write-Error "whisper-cli.exe not found in expected locations: `"$sourceBuildDir`" or `"$altSourceBuildDir`""
     Write-Info "Available files in build directory:"
-    Get-ChildItem -Recurse $TempDir\build -Filter "*.exe" | ForEach-Object { Write-Host $_.FullName }
+    Get-ChildItem -Recurse "$TempDir\build" -Filter "*.exe" | ForEach-Object { Write-Host $_.FullName }
     exit 1
 }
 
@@ -172,18 +179,23 @@ Write-Success "Found whisper-cli binary: $whisperCliExe"
 # Validate static linking
 Write-Info "Validating static linking configuration..."
 try {
-    $dependencies = & dumpbin /dependents $whisperCliExe 2>$null
-    $hasDynamicRuntime = $dependencies | Select-String -Pattern "MSVCR|VCRUNTIME|MSVCP" -Quiet
+    # Check if dumpbin is available
+    if (Get-Command dumpbin -ErrorAction SilentlyContinue) {
+        $dependencies = & dumpbin /dependents $whisperCliExe 2>$null
+        $hasDynamicRuntime = $dependencies | Select-String -Pattern "MSVCR|VCRUNTIME|MSVCP" -Quiet
 
-    if ($hasDynamicRuntime) {
-        Write-Warning "Binary may still have dynamic runtime dependencies"
-        Write-Info "Dependencies found:"
-        $dependencies | Select-String -Pattern "\.dll" | ForEach-Object { Write-Host "  $($_.Line.Trim())" }
+        if ($hasDynamicRuntime) {
+            Write-Warning "Binary may still have dynamic runtime dependencies"
+            Write-Info "Dependencies found:"
+            $dependencies | Select-String -Pattern "\.dll" | ForEach-Object { Write-Host "  $($_.Line.Trim())" }
+        } else {
+            Write-Success "Binary appears to be statically linked"
+        }
     } else {
-        Write-Success "Binary appears to be statically linked"
+        Write-Warning "Could not validate dependencies (dumpbin not available)"
     }
 } catch {
-    Write-Warning "Could not validate dependencies (dumpbin not available)"
+    Write-Warning "Could not validate dependencies: $($_.Exception.Message)"
 }
 
 # Test binary execution
@@ -194,12 +206,13 @@ try {
 
     if ($testExitCode -eq 0) {
         Write-Success "Binary test passed - whisper-cli executed successfully"
-    } elseif ($testExitCode -eq 3221225501) {
-        Write-Error "Access violation error detected - static linking may have failed"
+    } elseif ($testExitCode -eq 3221225501) { # 0xC0000005 Access Violation
+        Write-Error "Access violation error detected during test execution - static linking may have failed or other runtime issues exist."
         exit 1
     } else {
         Write-Warning "Binary test returned exit code $testExitCode"
-        Write-Info "This may be normal for --help command"
+        Write-Info "This may be normal for --help command, or indicate an issue."
+        Write-Info "Output: $testOutput"
     }
 } catch {
     Write-Error "Failed to test binary execution: $($_.Exception.Message)"
@@ -222,10 +235,12 @@ try {
     exit 1
 }
 
-# Copy additional DLLs if they exist and are needed
+# Copy additional DLLs if they exist and are needed (though with static linking, this should be less common)
 $additionalFiles = @("ggml.dll", "whisper.dll")
 foreach ($file in $additionalFiles) {
-    $sourceFile = Join-Path $sourceBuildDir $file
+    # Determine the actual directory of whisperCliExe for sourcing additional files
+    $actualSourceDir = Split-Path $whisperCliExe
+    $sourceFile = Join-Path $actualSourceDir $file
     if (Test-Path $sourceFile) {
         $destFile = Join-Path $BinariesDir $file
         Copy-Item $sourceFile $destFile -Force
@@ -242,5 +257,5 @@ if (Test-Path $TempDir) {
 
 Write-Success "Static whisper.cpp build completed successfully!"
 Write-Info "Binary location: $destinationPath"
-Write-Info "The binary should now run without requiring Visual C++ runtime installation"
+Write-Info "The binary should now run without requiring Visual C++ runtime installation."
 ```
