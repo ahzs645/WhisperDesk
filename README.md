@@ -6,7 +6,7 @@ A powerful desktop transcription application powered by native whisper.cpp with 
 
 Download the latest version for your platform:
 
-**[📥 Download Latest Release](https://github.com/<PROJECT_OWNER>/whisperdesk-enhanced/releases/latest)**
+**[📥 Download Latest Release](https://github.com/ahzs645/WhisperDesk/releases/latest)**
 
 | Platform | Download | Notes |
 |----------|----------|-------|
