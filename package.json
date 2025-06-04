@@ -119,9 +119,10 @@
     }
   },
   "build": {
-    "appId": "com.whisperdesk.enhanced",
-    "productName": "WhisperDesk Enhanced",
+    "appId": "com.whisperdesk.app",
+    "productName": "WhisperDesk",
     "copyright": "Copyright © 2024 WhisperDesk Team",
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
     "directories": {
       "output": "dist",
       "buildResources": "resources"
@@ -159,10 +160,11 @@
       }
     ],
     "mac": {
-      "category": "public.app-category.productivity",
+      "category": "public.app-category.utilities",
       "icon": "resources/icons/icon.icns",
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
+      "darkModeSupport": true,
       "target": [
         {
           "target": "dmg",
@@ -179,7 +181,6 @@
           ]
         }
       ],
-      "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
       "extraFiles": [
         {
           "from": "binaries/whisper-cli",
@@ -200,14 +201,14 @@
           ]
         },
         {
-          "target": "zip",
+          "target": "portable",
           "arch": [
             "x64"
           ]
         }
       ],
+      "publisherName": "WhisperDesk",
       "verifyUpdateCodeSignature": false,
-      "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
       "extraFiles": [
         {
           "from": "binaries/",
@@ -247,7 +248,6 @@
           ]
         }
       ],
-      "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
       "extraFiles": [
         {
           "from": "binaries/whisper-cli",
@@ -263,16 +263,23 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
+      "shortcutName": "WhisperDesk",
       "installerIcon": "resources/icons/icon.ico",
-      "uninstallerIcon": "resources/icons/icon.ico"
+      "uninstallerIcon": "resources/icons/icon.ico",
+      "artifactName": "${productName}-Setup-${version}-${os}-${arch}.${ext}"
+    },
+    "portable": {
+      "artifactName": "${productName}-Portable-${version}-${os}-${arch}.${ext}"
     },
     "dmg": {
-      "title": "WhisperDesk Enhanced ${version}",
+      "title": "WhisperDesk ${version}",
       "icon": "resources/icons/icon.icns",
+      "iconSize": 100,
       "contents": [
         {
           "x": 130,
-          "y": 220
+          "y": 220,
+          "type": "file"
         },
         {
           "x": 410,
@@ -280,7 +287,23 @@
           "type": "link",
           "path": "/Applications"
         }
-      ]
+      ],
+      "window": {
+        "width": 540,
+        "height": 380
+      }
+    },
+    "appImage": {
+      "artifactName": "${productName}-${version}-${os}-${arch}.${ext}"
+    },
+    "deb": {
+      "artifactName": "${productName}-${version}-${os}-${arch}.${ext}"
+    },
+    "rpm": {
+      "artifactName": "${productName}-${version}-${os}-${arch}.${ext}"
+    },
+    "tar.gz": {
+      "artifactName": "${productName}-${version}-${os}-${arch}.${ext}"
     },
     "publish": {
       "provider": "github",

@@ -228,36 +228,9 @@ jobs:
       - name: Build Electron app
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
-        shell: pwsh # Ensure this step uses PowerShell
+        shell: pwsh
         run: |
-          # Create electron-builder config without background requirement
-          $electronBuilderConfig = @"
-          appId: com.whisperdesk.app
-          productName: WhisperDesk
-          mac:
-            target:
-              - dmg
-              - zip
-            category: public.app-category.utilities
-            darkModeSupport: true
-          # The 'contents' section under 'mac:' has been removed.
-          dmg:
-            iconSize: 100
-            contents:
-              - x: 130
-                y: 220
-                type: file # The 'path' key for this entry is removed
-              - x: 410
-                y: 220
-                type: link
-                path: /Applications
-            window:
-              width: 540
-              height: 380
-          "@
-          Set-Content -Path electron-builder.yml -Value $electronBuilderConfig -Encoding UTF8
-          
-          npx electron-builder --win --x64 --publish=never --config electron-builder.yml
+          npx electron-builder --win --x64 --publish=never
 
       # Upload artifacts
       - name: Upload Windows artifacts
@@ -373,36 +346,10 @@ jobs:
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
         run: |
-          # Create electron-builder config without background requirement
-          cat > electron-builder.yml << EOF
-          appId: com.whisperdesk.app
-          productName: WhisperDesk
-          mac:
-            target:
-              - dmg
-              - zip
-            category: public.app-category.utilities
-            darkModeSupport: true
-          # The 'contents' section under 'mac:' has been removed.
-          dmg:
-            iconSize: 100
-            contents:
-              - x: 130
-                y: 220
-                type: file # The 'path' key for this entry is removed
-              - x: 410
-                y: 220
-                type: link
-                path: /Applications
-            window:
-              width: 540
-              height: 380
-          EOF
-          
           if [ "${{ matrix.arch }}" = "arm64" ]; then
-            npx electron-builder --mac --arm64 --publish=never --config electron-builder.yml
+            npx electron-builder --mac --arm64 --publish=never
           else
-            npx electron-builder --mac --x64 --publish=never --config electron-builder.yml
+            npx electron-builder --mac --x64 --publish=never
           fi
 
       # Upload artifacts
@@ -547,29 +494,30 @@ jobs:
           draft: false
           prerelease: ${{ contains(needs.determine-version.outputs.version, 'build') }}
           generate_release_notes: true
-          name: "WhisperDesk Enhanced ${{ needs.determine-version.outputs.tag_name }}"
+          name: "WhisperDesk ${{ needs.determine-version.outputs.tag_name }}"
           tag_name: ${{ needs.determine-version.outputs.tag_name }}
           body: |
-            ## WhisperDesk Enhanced ${{ needs.determine-version.outputs.tag_name }}
+            ## WhisperDesk ${{ needs.determine-version.outputs.tag_name }}
             
             🎉 **New Release Available!**
             
             ### 📦 Download Options:
             
             **🖥️ Windows (64-bit)**:
-            - `.exe` - Installer (recommended)
-            - `.zip` - Portable version
+            - `WhisperDesk-Setup-${{ needs.determine-version.outputs.version }}-win-x64.exe` - Installer (recommended)
+            - `WhisperDesk-Portable-${{ needs.determine-version.outputs.version }}-win-x64.exe` - Portable version (no installation required)
             
             **🍎 macOS**:
-            - `.dmg` - Disk image (recommended)
-            - `.zip` - Portable version
-            - Available for both Intel (x64) and Apple Silicon (arm64)
+            - `WhisperDesk-${{ needs.determine-version.outputs.version }}-mac-x64.dmg` - Intel Mac disk image
+            - `WhisperDesk-${{ needs.determine-version.outputs.version }}-mac-arm64.dmg` - Apple Silicon disk image
+            - `WhisperDesk-${{ needs.determine-version.outputs.version }}-mac-x64.zip` - Intel Mac portable
+            - `WhisperDesk-${{ needs.determine-version.outputs.version }}-mac-arm64.zip` - Apple Silicon portable
             
-            **🐧 Linux**:
-            - `.AppImage` - Portable (recommended)
-            - `.deb` - Debian/Ubuntu package
-            - `.rpm` - Red Hat/Fedora package
-            - `.tar.gz` - Generic archive
+            **🐧 Linux (64-bit)**:
+            - `WhisperDesk-${{ needs.determine-version.outputs.version }}-linux-x64.AppImage` - Portable (recommended)
+            - `WhisperDesk-${{ needs.determine-version.outputs.version }}-linux-x64.deb` - Debian/Ubuntu package
+            - `WhisperDesk-${{ needs.determine-version.outputs.version }}-linux-x64.rpm` - Red Hat/Fedora package
+            - `WhisperDesk-${{ needs.determine-version.outputs.version }}-linux-x64.tar.gz` - Generic archive
             
             ### ✨ Features:
             - 🎵 Native whisper.cpp integration with whisper-cli binary
