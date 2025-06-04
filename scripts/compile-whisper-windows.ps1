@@ -25,7 +25,7 @@ function Write-Error($message) {
 
 function Write-Info($message) {
     Write-Host "ℹ️ $message" -ForegroundColor Cyan
-} # Ensure this closing brace is present and correct
+}
 
 # Validate prerequisites
 Write-Info "Validating build prerequisites..."
@@ -159,13 +159,12 @@ try {
 
 # Locate and validate the whisper-cli binary
 $whisperCliExe = $null
-$buildBinDir = Join-Path $TempDir "build\bin" # Corrected path variable name
+$buildBinDir = Join-Path $TempDir "build\bin"
 $buildBinTypeDir = Join-Path $buildBinDir $BuildType
 
-# Check common locations for the executable
 $possibleLocations = @(
-    Join-Path $buildBinTypeDir "whisper-cli.exe" # build/bin/Release/whisper-cli.exe
-    Join-Path $buildBinDir "whisper-cli.exe"     # build/bin/whisper-cli.exe
+    Join-Path $buildBinTypeDir "whisper-cli.exe",
+    Join-Path $buildBinDir "whisper-cli.exe"
 )
 
 foreach ($loc in $possibleLocations) {
@@ -215,7 +214,7 @@ try {
 
     if ($testExitCode -eq 0) {
         Write-Success "Binary test passed - whisper-cli executed successfully."
-    } elseif ($testExitCode -eq 3221225501) { # 0xC0000005 Access Violation
+    } elseif ($testExitCode -eq 3221225501) {
         Write-Error "Access violation error (0xC0000005) detected during test execution. Static linking may have failed or other runtime issues exist."
         exit 1
     } else {
@@ -243,7 +242,6 @@ try {
     exit 1
 }
 
-# Copy additional DLLs (though BUILD_SHARED_LIBS=OFF should make these less likely for whisper.cpp itself)
 $additionalFiles = @("ggml.dll", "whisper.dll")
 $cliDirectory = Split-Path $whisperCliExe
 foreach ($file in $additionalFiles) {
@@ -255,8 +253,7 @@ foreach ($file in $additionalFiles) {
     }
 }
 
-# Cleanup
-Set-Location $ProjectRoot # Return to original directory
+Set-Location $ProjectRoot
 if (Test-Path $TempDir) {
     Write-Info "Cleaning up temporary build directory: $TempDir"
     Remove-Item -Recurse -Force $TempDir
@@ -265,5 +262,6 @@ if (Test-Path $TempDir) {
 
 Write-Success "Static whisper.cpp build completed successfully!"
 Write-Info "Binary location: $destinationPath"
-Write-Info "The binary should now run without requiring Visual C++ runtime installation." # Final line, ensure quote is here.
+Write-Info "The binary should now run without requiring Visual C++ runtime installation."
+
 ```
