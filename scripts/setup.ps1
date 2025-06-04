@@ -25,7 +25,7 @@ npm install --legacy-peer-deps
 Set-Location "..\..\..\"
 
 # Check if whisper binary exists
-$binaryPath = "binaries\whisper.exe"
+$binaryPath = "binaries\whisper-cli.exe"
 if (Test-Path $binaryPath) {
     Write-Host "✅ Whisper binary found" -ForegroundColor Green
 } else {
@@ -36,46 +36,17 @@ if (Test-Path $binaryPath) {
     $choice = Read-Host "Enter choice (1 or 2)"
     
     if ($choice -eq "1") {
-        Write-Host "🔨 Building whisper.cpp from source..." -ForegroundColor Blue
-        
-        # Check for build dependencies
+        Write-Host "🔨 Building whisper.cpp from source using 'npm run build:whisper'..." -ForegroundColor Blue
         try {
-            cmake --version | Out-Null
-            Write-Host "✅ CMake found" -ForegroundColor Green
-        } catch {
-            Write-Host "Installing CMake..." -ForegroundColor Yellow
-            if (Get-Command choco -ErrorAction SilentlyContinue) {
-                choco install cmake -y
-            } elseif (Get-Command winget -ErrorAction SilentlyContinue) {
-                winget install Kitware.CMake
-            } else {
-                Write-Host "❌ Please install CMake manually from https://cmake.org" -ForegroundColor Red
-                exit 1
-            }
+            npm run build:whisper
+            Write-Host "✅ Whisper binary built successfully via npm script." -ForegroundColor Green
+            # The compile-whisper-windows.ps1 script should place it correctly in binaries/whisper-cli.exe
         }
-        
-        # Clone and build whisper.cpp
-        Write-Host "📥 Cloning whisper.cpp..." -ForegroundColor Blue
-        if (Test-Path "C:\temp\whisper.cpp") {
-            Remove-Item -Recurse -Force "C:\temp\whisper.cpp"
+        catch {
+            Write-Host "❌ Failed to build whisper.cpp using npm script." -ForegroundColor Red
+            Write-Host "Please check for errors and ensure all build dependencies (CMake, Visual Studio C++ Build Tools) are installed." -ForegroundColor Yellow
+            exit 1
         }
-        git clone https://github.com/ggerganov/whisper.cpp.git C:\temp\whisper.cpp
-        
-        Write-Host "🔨 Building whisper.cpp..." -ForegroundColor Blue
-        Set-Location "C:\temp\whisper.cpp"
-        
-        New-Item -ItemType Directory -Force -Path "build"
-        Set-Location "build"
-        cmake .. -DCMAKE_BUILD_TYPE=Release
-        cmake --build . --config Release
-        
-        Write-Host "📋 Installing binary..." -ForegroundColor Blue
-        $projectPath = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $PSScriptRoot))
-        New-Item -ItemType Directory -Force -Path "$projectPath\binaries"
-        Copy-Item "bin\Release\whisper-cli.exe" "$projectPath\binaries\whisper.exe"
-        Set-Location $projectPath
-        
-        Write-Host "✅ Whisper binary built and installed" -ForegroundColor Green
     } else {
         Write-Host "⏭️  Skipping binary setup" -ForegroundColor Yellow
     }
