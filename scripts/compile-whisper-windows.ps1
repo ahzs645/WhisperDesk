@@ -163,8 +163,8 @@ $buildBinDir = Join-Path $TempDir "build\bin"
 $buildBinTypeDir = Join-Path $buildBinDir $BuildType
 
 $possibleLocations = @(
-    Join-Path $buildBinTypeDir "whisper-cli.exe",
-    Join-Path $buildBinDir "whisper-cli.exe"
+    (Join-Path $buildBinTypeDir "whisper-cli.exe"),
+    (Join-Path $buildBinDir "whisper-cli.exe")
 )
 
 foreach ($loc in $possibleLocations) {
