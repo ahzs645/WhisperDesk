@@ -12,19 +12,19 @@ $ErrorActionPreference = "Stop"
 $VerbosePreference = "Continue"
 
 function Write-Success($message) {
-    Write-Host "✅ $message" -ForegroundColor Green
+    Write-Host "[SUCCESS] $message" -ForegroundColor Green
 }
 
 function Write-Warning($message) {
-    Write-Host "⚠️ $message" -ForegroundColor Yellow
+    Write-Host "[WARNING] $message" -ForegroundColor Yellow
 }
 
 function Write-Error($message) {
-    Write-Host "❌ $message" -ForegroundColor Red
+    Write-Host "[ERROR] $message" -ForegroundColor Red
 }
 
 function Write-Info($message) {
-    Write-Host "ℹ️ $message" -ForegroundColor Cyan
+    Write-Host "[INFO] $message" -ForegroundColor Cyan
 }
 
 # Validate prerequisites
