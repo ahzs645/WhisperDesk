@@ -294,9 +294,10 @@ jobs:
       - name: Build Electron app
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
+        shell: pwsh # Ensure this step uses PowerShell
         run: |
           # Create electron-builder config without background requirement
-          cat > electron-builder.yml << EOF
+          $electronBuilderConfig = @"
           appId: com.whisperdesk.app
           productName: WhisperDesk
           mac:
@@ -305,15 +306,7 @@ jobs:
               - zip
             category: public.app-category.utilities
             darkModeSupport: true
-            contents:
-              - x: 130
-                y: 220
-                type: file
-                path: dist/mac/WhisperDesk.app
-              - x: 410
-                y: 220
-                type: link
-                path: /Applications
+          # The 'contents' section under 'mac:' has been removed.
           dmg:
             iconSize: 100
             contents:
@@ -328,13 +321,10 @@ jobs:
             window:
               width: 540
               height: 380
-          EOF
+          "@
+          Set-Content -Path electron-builder.yml -Value $electronBuilderConfig -Encoding UTF8
           
-          if [ "${{ matrix.arch }}" = "arm64" ]; then
-            npx electron-builder --mac --arm64 --publish=never --config electron-builder.yml
-          else
-            npx electron-builder --mac --x64 --publish=never --config electron-builder.yml
-          fi
+          npx electron-builder --win --x64 --publish=never --config electron-builder.yml
 
       # Upload artifacts
       - name: Upload Windows artifacts
@@ -515,15 +505,7 @@ jobs:
               - zip
             category: public.app-category.utilities
             darkModeSupport: true
-            contents:
-              - x: 130
-                y: 220
-                type: file
-                path: dist/mac/WhisperDesk.app
-              - x: 410
-                y: 220
-                type: link
-                path: /Applications
+          # The 'contents' section under 'mac:' has been removed.
           dmg:
             iconSize: 100
             contents:
