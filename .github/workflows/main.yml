@@ -312,8 +312,7 @@ jobs:
             contents:
               - x: 130
                 y: 220
-                type: file
-                path: dist/mac/WhisperDesk.app
+                type: file # The 'path' key for this entry is removed
               - x: 410
                 y: 220
                 type: link
@@ -511,8 +510,7 @@ jobs:
             contents:
               - x: 130
                 y: 220
-                type: file
-                path: dist/mac/WhisperDesk.app
+                type: file # The 'path' key for this entry is removed
               - x: 410
                 y: 220
                 type: link
