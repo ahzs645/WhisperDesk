@@ -228,10 +228,10 @@ jobs:
       - name: Build Electron app
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
-        shell: pwsh # Ensure this step uses PowerShell
+        shell: pwsh
         run: |
-          # Create electron-builder config without background requirement
-          $electronBuilderConfig = @"
+          # Create electron-builder config
+          $electronBuilderConfig = @'
 appId: com.whisperdesk.app
 productName: WhisperDesk
 mac:
@@ -247,7 +247,7 @@ win:
     - target: zip
       arch: x64
   icon: resources/icons/icon.ico
-  artifactName: '`${productName}-`${version}-`${os}-`${arch}.`${ext}'
+  artifactName: "${productName}-${version}-${os}-${arch}.${ext}"
 dmg:
   iconSize: 100
   contents:
@@ -261,9 +261,9 @@ dmg:
   window:
     width: 540
     height: 380
-"@
-          Set-Content -Path electron-builder.yml -Value $electronBuilderConfig -Encoding UTF8
+'@
           
+          Set-Content -Path electron-builder.yml -Value $electronBuilderConfig -Encoding UTF8
           npx electron-builder --win --x64 --publish=never --config electron-builder.yml
 
       # Upload artifacts
@@ -380,8 +380,8 @@ dmg:
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
         run: |
-          # Create electron-builder config
-          cat > electron-builder.yml << 'EOF'
+          # Create electron-builder config without background requirement
+          cat > electron-builder.yml << EOF
           appId: com.whisperdesk.app
           productName: WhisperDesk
           mac:
@@ -390,15 +390,16 @@ dmg:
               - zip
             category: public.app-category.utilities
             darkModeSupport: true
-          win:
-            target:
-              - target: nsis
-                arch: x64
-              - target: zip
-                arch: x64
-            icon: resources/icons/icon.ico
           dmg:
             iconSize: 100
+            contents:
+              - x: 130
+                y: 220
+                type: file
+              - x: 410
+                y: 220
+                type: link
+                path: /Applications
             window:
               width: 540
               height: 380
