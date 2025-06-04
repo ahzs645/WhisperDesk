@@ -242,6 +242,7 @@ try {
     exit 1
 }
 
+# Copy additional files if they exist
 $additionalFiles = @("ggml.dll", "whisper.dll")
 $cliDirectory = Split-Path $whisperCliExe
 foreach ($file in $additionalFiles) {
@@ -253,6 +254,7 @@ foreach ($file in $additionalFiles) {
     }
 }
 
+# Clean up and finish
 Set-Location $ProjectRoot
 if (Test-Path $TempDir) {
     Write-Info "Cleaning up temporary build directory: $TempDir"
@@ -263,5 +265,3 @@ if (Test-Path $TempDir) {
 Write-Success "Static whisper.cpp build completed successfully!"
 Write-Info "Binary location: $destinationPath"
 Write-Info "The binary should now run without requiring Visual C++ runtime installation."
-
-```
