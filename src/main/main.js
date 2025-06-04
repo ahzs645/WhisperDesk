@@ -255,14 +255,14 @@ class WhisperDeskApp {
       height: 800,
       minWidth: 1000,
       minHeight: 700,
-      show: true,        // Critical for Windows
-      focus: true,       // Ensure window gets focus
-      center: true,      // Center on screen
+      show: true,
+      focus: true,
+      center: true,
       alwaysOnTop: false,
       skipTaskbar: false,
-      frame: process.platform === 'darwin',      // Use native frame on macOS
-      titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'hidden',  // Use hiddenInset for macOS
-      trafficLightPosition: { x: 20, y: 20 },  // Position the traffic lights for macOS
+      frame: false,      // No native frame on any platform
+      titleBarStyle: 'hidden',  // Hidden title bar on all platforms
+      trafficLightPosition: process.platform === 'darwin' ? { x: 20, y: 20 } : undefined,  // Position traffic lights on macOS only
       webPreferences: {
         nodeIntegration: false,
         contextIsolation: true,
@@ -522,6 +522,18 @@ class WhisperDeskApp {
 
     ipcMain.on('window:close', () => {
       this.mainWindow?.close();
+    });
+
+    // Add theme handler
+    ipcMain.handle('window:setTheme', (event, theme) => {
+      if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+        // Apply theme changes
+        this.updateTitleBarTheme(theme);
+        // Send theme change event to renderer
+        this.mainWindow.webContents.send('theme-changed', theme);
+        return true;
+      }
+      return false;
     });
 
     // Model management

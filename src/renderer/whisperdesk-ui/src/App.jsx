@@ -164,7 +164,7 @@ function AppContent() {
               <div className="header-controls">
                 <AppStateIndicator />
                 {/* Only show custom window controls on non-macOS platforms */}
-                {appState.isElectron && !isMacOS && <WindowControls />}
+                {appState.isElectron && <WindowControls />}
               </div>
             </div>
           </div>
@@ -250,12 +250,12 @@ function AppStateIndicator() {
         </span>
       )}
       {appState.isTranscribing && (
-        <span className="bg-orange-100 text-orange-600 px-2 py-1 rounded animate-pulse">
+        <span className="bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400 px-2 py-1 rounded animate-pulse">
           Transcribing...
         </span>
       )}
       {appState.transcription && !appState.isTranscribing && (
-        <span className="bg-green-100 text-green-600 px-2 py-1 rounded">
+        <span className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 px-2 py-1 rounded">
           ✓ Complete
         </span>
       )}
@@ -326,28 +326,8 @@ function HistoryTab() {
 }
 
 function WindowControls() {
-  const isElectron = typeof window !== 'undefined' && !!window.electronAPI;
-  
-  // Enhanced platform detection with debugging
-  const platformInfo = {
-    electronAPI: !!window.electronAPI,
-    platform: window.platform,
-    electronPlatform: window.electronAPI?.platform,
-    userAgent: navigator.userAgent,
-    // Multiple ways to detect macOS
-    isMacOS1: window.platform?.isMacOS,
-    isMacOS2: window.platform?.os === 'darwin',
-    isMacOS3: window.electronAPI?.platform === 'darwin',
-    isMacOS4: navigator.userAgent.includes('Mac'),
-    finalDetection: window.platform?.isMacOS || window.platform?.os === 'darwin' || window.electronAPI?.platform === 'darwin'
-  };
-  
-  // Log platform info for debugging
-  React.useEffect(() => {
-    console.log('WindowControls Platform Detection:', platformInfo);
-  }, []);
-  
-  const isMacOS = platformInfo.finalDetection;
+  const { isElectron } = useAppState();
+  const isMacOS = window.platform?.os === 'darwin';
   const [isMaximized, setIsMaximized] = React.useState(false);
 
   React.useEffect(() => {
@@ -364,14 +344,10 @@ function WindowControls() {
       // Check if the methods exist before calling them
       if (window.electronAPI?.window?.onMaximize) {
         window.electronAPI.window.onMaximize(handleMaximize);
-      } else {
-        console.warn('window.electronAPI.window.onMaximize not available');
       }
       
       if (window.electronAPI?.window?.onUnmaximize) {
         window.electronAPI.window.onUnmaximize(handleUnmaximize);
-      } else {
-        console.warn('window.electronAPI.window.onUnmaximize not available');
       }
 
       return () => {
@@ -385,26 +361,15 @@ function WindowControls() {
     }
   }, [isElectron]);
 
-  // Debug: Always show some info about platform detection
-  console.log('WindowControls render - isMacOS:', isMacOS, 'isElectron:', isElectron);
-
-  // Hide custom controls on macOS since we're using native traffic lights
-  if (isMacOS || !isElectron) {
-    console.log('WindowControls hidden because:', { isMacOS, isElectron });
-    return (
-      <div className="text-xs text-muted-foreground">
-        {/* Debug info - remove this in production */}
-        Platform: {window.platform?.os || 'unknown'} | Electron: {isElectron ? 'yes' : 'no'} | macOS: {isMacOS ? 'yes' : 'no'}
-      </div>
-    );
+  // We want to show custom controls on all platforms now
+  if (!isElectron) {
+    return null;
   }
 
   const handleMinimize = () => {
     console.log('Minimize clicked');
     if (window.electronAPI?.window?.minimize) {
       window.electronAPI.window.minimize();
-    } else {
-      console.error('window.electronAPI.window.minimize not available');
     }
   };
 
@@ -412,8 +377,6 @@ function WindowControls() {
     console.log('Maximize clicked');
     if (window.electronAPI?.window?.maximize) {
       window.electronAPI.window.maximize();
-    } else {
-      console.error('window.electronAPI.window.maximize not available');
     }
   };
 
@@ -421,49 +384,45 @@ function WindowControls() {
     console.log('Close clicked');
     if (window.electronAPI?.window?.close) {
       window.electronAPI.window.close();
-    } else {
-      console.error('window.electronAPI.window.close not available');
     }
   };
 
   return (
-    <div className="title-bar">
-      <div className="window-controls">
-        <button
-          onClick={handleMinimize}
-          className="window-control-button"
-          aria-label="Minimize window"
-          title="Minimize"
-        >
-          <svg viewBox="0 0 10 10">
-            <path d="M0,5h10" stroke="currentColor" strokeWidth="1" />
-          </svg>
-        </button>
-        <button
-          onClick={handleMaximize}
-          className="window-control-button"
-          aria-label={isMaximized ? "Restore window" : "Maximize window"}
-          title={isMaximized ? "Restore" : "Maximize"}
-        >
-          <svg viewBox="0 0 10 10">
-            {isMaximized ? (
-              <path d="M2.5,2.5v5h5v-5H2.5z M2,5l3-3" stroke="currentColor" strokeWidth="1" fill="none"/>
-            ) : (
-              <path d="M0,0v10h10v-10H0z" stroke="currentColor" strokeWidth="1" fill="none"/>
-            )}
-          </svg>
-        </button>
-        <button
-          onClick={handleClose}
-          className="window-control-button close"
-          aria-label="Close window"
-          title="Close"
-        >
-          <svg viewBox="0 0 10 10">
-            <path d="M0,0L10,10M10,0L0,10" stroke="currentColor" strokeWidth="1" />
-          </svg>
-        </button>
-      </div>
+    <div className="window-controls">
+      <button
+        onClick={handleMinimize}
+        className="window-control-button"
+        aria-label="Minimize window"
+        title="Minimize"
+      >
+        <svg viewBox="0 0 10 10">
+          <path d="M0,5h10" stroke="currentColor" strokeWidth="1" />
+        </svg>
+      </button>
+      <button
+        onClick={handleMaximize}
+        className="window-control-button"
+        aria-label={isMaximized ? "Restore window" : "Maximize window"}
+        title={isMaximized ? "Restore" : "Maximize"}
+      >
+        <svg viewBox="0 0 10 10">
+          {isMaximized ? (
+            <path d="M2.5,2.5v5h5v-5H2.5z M2,5l3-3" stroke="currentColor" strokeWidth="1" fill="none"/>
+          ) : (
+            <path d="M0,0v10h10v-10H0z" stroke="currentColor" strokeWidth="1" fill="none"/>
+          )}
+        </svg>
+      </button>
+      <button
+        onClick={handleClose}
+        className="window-control-button close"
+        aria-label="Close window"
+        title="Close"
+      >
+        <svg viewBox="0 0 10 10">
+          <path d="M0,0L10,10M10,0L0,10" stroke="currentColor" strokeWidth="1" />
+        </svg>
+      </button>
     </div>
   );
 }

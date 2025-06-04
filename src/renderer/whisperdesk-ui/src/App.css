@@ -43,6 +43,8 @@
 
 :root {
   --radius: 0.625rem;
+  --header-height: 64px;  /* Increased from 60px */
+  --header-margin: 24px;  /* Added new variable for header margin */
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
@@ -209,10 +211,49 @@
 
 .duration-300 {
   transition-duration: 300ms;
+}  /* Main container layout */
+body {
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow-y: scroll;
+  scrollbar-gutter: stable;
 }
 
-/* Glass header styles */
+/* Main content area */
+main {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  margin-top: calc(var(--header-height)); /* Account for header + tabs */
+  padding: var(--header-margin);
+  width: 100%;
+  box-sizing: border-box;
+  min-height: calc(100vh - var(--header-height));
+  isolation: isolate;
+  /* Prevent layout shift from dropdowns */
+  overflow-anchor: none;
+  contain: paint layout;
+}
+
+/* Container styles to prevent overlap */
+.container {
+  width: 100%;
+  max-width: 100%;
+  position: relative;
+  z-index: 1; /* Ensure content stays above header shadow */
+}
+
+/* Header styles */
 .glass-header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 50;
+  height: var(--header-height);
   background: rgba(255, 255, 255, 0.8);
   backdrop-filter: blur(20px) saturate(180%);
   -webkit-backdrop-filter: blur(20px) saturate(180%);
@@ -221,9 +262,9 @@
     0 4px 6px -1px rgba(0, 0, 0, 0.05),
     0 2px 4px -1px rgba(0, 0, 0, 0.03),
     inset 0 1px 0 rgba(255, 255, 255, 0.6);
-  position: relative;
   isolation: isolate;
   -webkit-app-region: drag;
+  padding: 0 var(--header-margin);
 }
 
 .dark .glass-header {
@@ -235,14 +276,18 @@
     inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
-/* macOS specific spacing for traffic lights */
+
+/* Header content layout */
 .header-content {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  width: 100%;
   height: 100%;
-  padding: 0 16px;
-  transition: padding-left 0.2s ease;
+  max-width: 100%;
+  margin: 0 auto;
+  padding: 0;
+  gap: var(--header-margin);
 }
 
 /* Add left padding on macOS to account for traffic lights */
@@ -254,8 +299,17 @@
 .header-logo-section {
   display: flex;
   align-items: center;
+  min-width: 200px; /* Ensure minimum width for logo section */
   gap: 12px;
   -webkit-app-region: no-drag;
+}
+
+/* Center section (if any) */
+.header-center {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 /* Right side controls */
@@ -263,7 +317,15 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  margin-left: auto;
   -webkit-app-region: no-drag;
+  min-width: 200px; /* Ensure minimum width for controls */
+  justify-content: flex-end;
+}
+
+/* Window controls position */
+.window-controls {
+  margin-left: var(--header-margin);
 }
 
 /* Non-draggable elements */
@@ -343,5 +405,188 @@
   justify-content: flex-end;
   padding: 0;
   background: transparent;
+}
+
+/* Ensure dropdowns appear above header and don't affect layout */
+[data-radix-popper-content-wrapper] {
+  z-index: 999 !important;
+  position: fixed;
+  isolation: isolate;
+  pointer-events: auto;
+  contain: content;
+  /* Prevent any influence on the page layout */
+  transform-style: preserve-3d;
+  backface-visibility: hidden;
+  -webkit-font-smoothing: subpixel-antialiased;
+}
+
+/* Scrollbar styles */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--background);
+  border-radius: 5px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--muted);
+  border-radius: 5px;
+  border: 2px solid var(--background);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--muted-foreground);
+}
+
+/* Toast notification styles */
+[data-sonner-toaster] {
+  --toast-min-height: 3.5rem; /* Add minimum height */
+}
+
+[data-sonner-toast] {
+  min-height: var(--toast-min-height);
+  height: max-content;
+  box-sizing: border-box;
+  padding: 0.875rem 1rem;
+  transition: all 0.2s ease-out;
+  will-change: transform, opacity;
+  transform-origin: center;
+  /* Prevent any unintended layout shifts */
+  contain: layout style;
+}
+
+[data-sonner-toast] [data-close-button] {
+  opacity: 0;
+  transform: translateX(-4px);
+  transition: all 0.2s ease-out;
+}
+
+[data-sonner-toast]:hover [data-close-button] {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+/* Preserve existing toast styles */
+[data-sonner-toaster][data-theme="light"] {
+  --toast-bg: oklch(0.98 0 0);
+  --toast-border: var(--border);
+  --toast-text: var(--foreground);
+  --success-bg: oklch(0.96 0.04 150);
+  --success-border: oklch(0.92 0.08 150);
+  --success-text: oklch(0.5 0.12 150);
+  --error-bg: oklch(0.96 0.04 30);
+  --error-border: oklch(0.92 0.08 30);
+  --error-text: oklch(0.5 0.12 30);
+}
+
+[data-sonner-toaster][data-theme="dark"] {
+  --toast-bg: var(--card);
+  --toast-border: var(--border);
+  --toast-text: var(--foreground);
+  --success-bg: oklch(0.3 0.1 150 / 0.3);
+  --success-border: oklch(0.4 0.1 150 / 0.3);
+  --success-text: oklch(0.7 0.1 150);
+  --error-bg: oklch(0.3 0.1 30 / 0.3);
+  --error-border: oklch(0.4 0.1 30 / 0.3);
+  --error-text: oklch(0.7 0.1 30);
+}
+
+[data-sonner-toast] {
+  border-radius: var(--radius);
+  border: 1px solid var(--toast-border);
+  background: var(--toast-bg);
+  color: var(--toast-text);
+  box-shadow: 
+    0 4px 6px -1px rgba(0, 0, 0, 0.05),
+    0 2px 4px -1px rgba(0, 0, 0, 0.03);
+}
+
+[data-sonner-toast][data-type="success"] {
+  background: var(--success-bg);
+  border-color: var(--success-border);
+  color: var(--success-text);
+}
+
+[data-sonner-toast][data-type="error"] {
+  background: var(--error-bg);
+  border-color: var(--error-border);
+  color: var(--error-text);
+}
+
+.dark [data-sonner-toast] {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+/* Add blur effect for glass morphism */
+[data-sonner-toast] {
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+/* Toast animations */
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes toast-out {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+}
+
+[data-sonner-toast][data-mounted="true"] {
+  animation: toast-in 0.2s ease-out;
+}
+
+[data-sonner-toast][data-removed="true"] {
+  animation: toast-out 0.2s ease-in forwards;
+}
+
+/* Create proper stacking contexts for various components */
+.dialog-overlay {
+  z-index: 100;
+}
+
+.dialog-content {
+  z-index: 101;
+}
+
+.dropdown-content {
+  z-index: 999;
+}
+
+/* Tab bar should appear above header but below dropdowns */
+.tabs-container {
+  position: fixed;
+  top: var(--header-height);
+  left: 0;
+  right: 0;
+  z-index: 51;
+  background: var(--background);
+  padding: 0 var(--header-margin);
+}
+
+.toast-container {
+  z-index: 1000;
+}
+
+/* Ensure tooltips are always on top */
+[role="tooltip"] {
+  z-index: 1001 !important;
 }
 

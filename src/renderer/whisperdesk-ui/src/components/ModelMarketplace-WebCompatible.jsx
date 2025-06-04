@@ -60,13 +60,13 @@ export function ModelMarketplace() {
     // Download Progress Handler - REAL-TIME UPDATES
     if (window.electronAPI.model.onDownloadProgress) {
       downloadProgressCleanup.current = window.electronAPI.model.onDownloadProgress((data) => {
-        console.log('Download progress:', data.modelId, data.progress + '%')
+        console.log('Download progress:', data.modelId, Math.round(data.progress) + '%')
         
         setDownloads(prev => {
           const updated = new Map(prev)
           updated.set(data.modelId, {
             ...updated.get(data.modelId),
-            progress: data.progress,
+            progress: Math.round(data.progress),
             downloadedBytes: data.downloadedBytes,
             totalBytes: data.totalBytes,
             speed: data.speed,
@@ -232,6 +232,10 @@ export function ModelMarketplace() {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
   }
 
+  const roundProgress = (progress) => {
+    return Math.round(progress)
+  }
+
   const formatSpeed = (bytesPerSecond) => {
     if (!bytesPerSecond) return ''
     return formatBytes(bytesPerSecond) + '/s'
@@ -306,38 +310,38 @@ export function ModelMarketplace() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Quick Stats */}
-      <div className="grid grid-cols-3 gap-4">
-        <Card>
-          <CardHeader className="pb-2">
+      <div className="grid grid-cols-3 gap-3">
+        <Card className="p-2">
+          <CardHeader className="pb-1 px-2">
             <CardTitle className="text-sm font-medium">Available Models</CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{availableModels.length}</div>
+          <CardContent className="px-2">
+            <div className="text-xl font-bold">{availableModels.length}</div>
           </CardContent>
         </Card>
-        <Card>
-          <CardHeader className="pb-2">
+        <Card className="p-2">
+          <CardHeader className="pb-1 px-2">
             <CardTitle className="text-sm font-medium">Installed Models</CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{installedModels.length}</div>
+          <CardContent className="px-2">
+            <div className="text-xl font-bold">{installedModels.length}</div>
           </CardContent>
         </Card>
-        <Card>
-          <CardHeader className="pb-2">
+        <Card className="p-2">
+          <CardHeader className="pb-1 px-2">
             <CardTitle className="text-sm font-medium">Active Downloads</CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{downloads.size}</div>
+          <CardContent className="px-2">
+            <div className="text-xl font-bold">{downloads.size}</div>
           </CardContent>
         </Card>
       </div>
 
       {/* Models Marketplace */}
       <Card>
-        <CardHeader>
+        <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2">
             <Package className="w-5 h-5" />
             Model Marketplace
@@ -347,84 +351,88 @@ export function ModelMarketplace() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid gap-4">
-            {availableModels.map((model) => {
-              const status = getModelStatus(model)
-              const isInstalled = installedModels.some(m => m.id === model.id)
-              
-              return (
-                <Card key={model.id} className="relative overflow-hidden">
-                  <CardContent className="p-4">
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="space-y-1 flex-1">
-                        <div className="flex items-center gap-2">
-                          <h3 className="font-medium">{model.name}</h3>
-                          {isInstalled && (
-                            <Badge variant="secondary" className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
-                              <Check className="w-3 h-3 mr-1" />
-                              Installed
-                            </Badge>
-                          )}
+          <ScrollArea className="h-[600px] pr-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              {availableModels.map((model) => {
+                const status = getModelStatus(model)
+                const isInstalled = installedModels.some(m => m.id === model.id)
+                
+                return (
+                  <Card key={model.id} className="relative overflow-hidden p-3">
+                    <div className="space-y-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex-1 min-w-0">
+                          <h3 className="font-medium truncate">{model.name}</h3>
+                          <p className="text-xs text-muted-foreground line-clamp-2 mt-0.5">{model.description}</p>
                         </div>
-                        <p className="text-sm text-muted-foreground">{model.description}</p>
+                        {isInstalled && (
+                          <Badge variant="secondary" className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 shrink-0">
+                            <Check className="w-3 h-3" />
+                          </Badge>
+                        )}
                       </div>
-                      <div className="flex flex-col items-end gap-2">
-                        <div className="flex items-center gap-2">
-                          {model.speed && (
-                            <Badge variant="secondary" className={getSpeedColor(model.speed)}>
-                              <Gauge className="w-3 h-3 mr-1" />
-                              {model.speed}
-                            </Badge>
-                          )}
-                          {model.accuracy && (
-                            <Badge variant="secondary" className={getAccuracyColor(model.accuracy)}>
-                              <Check className="w-3 h-3 mr-1" />
-                              {model.accuracy}
-                            </Badge>
-                          )}
-                          {model.size && (
-                            <Badge variant="secondary" className="bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400">
-                              <HardDrive className="w-3 h-3 mr-1" />
-                              {model.size}
-                            </Badge>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-2">
-                          {status.isDownloading ? (
-                            <div className="flex items-center gap-2">
-                              <Progress value={status.progress} className="w-24" />
-                              <span className="text-sm text-muted-foreground">
-                                {status.progress}%
-                              </span>
-                            </div>
-                          ) : isInstalled ? (
+
+                      <div className="flex flex-wrap items-center gap-1">
+                        {model.speed && (
+                          <Badge variant="secondary" className={`text-xs py-0 px-1.5 ${getSpeedColor(model.speed)}`}>
+                            <Gauge className="w-2.5 h-2.5 mr-0.5" />
+                            {model.speed}
+                          </Badge>
+                        )}
+                        {model.accuracy && (
+                          <Badge variant="secondary" className={`text-xs py-0 px-1.5 ${getAccuracyColor(model.accuracy)}`}>
+                            <Check className="w-2.5 h-2.5 mr-0.5" />
+                            {model.accuracy}
+                          </Badge>
+                        )}
+                        {model.size && (
+                          <Badge variant="secondary" className="text-xs py-0 px-1.5 bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400">
+                            <HardDrive className="w-2.5 h-2.5 mr-0.5" />
+                            {model.size}
+                          </Badge>
+                        )}
+                      </div>
+
+                      <div className="flex items-center justify-between gap-2 pt-1">
+                        {status.isDownloading ? (
+                          <div className="flex items-center gap-2 w-full">
+                            <Progress value={roundProgress(status.progress)} className="h-1.5 flex-1" />
+                            <span className="text-xs text-muted-foreground whitespace-nowrap">
+                              {roundProgress(status.progress)}%
+                            </span>
+                          </div>
+                        ) : isInstalled ? (
+                          <div className="flex justify-end w-full">
                             <Button
                               variant="ghost"
                               size="icon"
                               onClick={() => handleDeleteModel(model.id)}
-                              className="text-destructive hover:text-destructive/90"
+                              className="h-6 w-6 text-destructive hover:text-destructive/90"
                             >
-                              <Trash2 className="w-4 h-4" />
+                              <Trash2 className="w-3 h-3" />
                             </Button>
-                          ) : (
+                          </div>
+                        ) : (
+                          <div className="flex justify-end w-full">
                             <Button
                               variant="outline"
                               size="sm"
                               onClick={() => handleDownloadModel(model.id)}
                               disabled={!isElectron}
+                              className="h-6 text-xs px-2"
                             >
-                              <Download className="w-4 h-4 mr-2" />
+                              <Download className="w-3 h-3 mr-1" />
                               Download
                             </Button>
-                          )}
-                        </div>
+                          </div>
+                        )}
                       </div>
                     </div>
-                  </CardContent>
-                </Card>
-              )
-            })}
-          </div>
+                  </Card>
+                )
+              })}
+            </div>
+          </ScrollArea>
         </CardContent>
       </Card>
     </div>
