@@ -57,17 +57,25 @@ jobs:
             VERSION="${{ github.ref_name }}"
             VERSION="${VERSION#v}"  # Remove 'v' prefix if present
             TAG_NAME="${{ github.ref_name }}"
+            echo "🏷️ Release build from tag: $TAG_NAME"
           elif [ -n "${{ github.event.inputs.release_tag }}" ]; then
             # Use manual input
             TAG_NAME="${{ github.event.inputs.release_tag }}"
             VERSION="${TAG_NAME#v}"
+            echo "🏷️ Manual release build: $TAG_NAME"
           else
-            # Use package.json version with build number
+            # Use dev build with date and commit info
+            DATE=$(date +%Y%m%d)
+            TIME=$(date +%H%M)
             BUILD_NUMBER=$(git rev-list --count HEAD)
             SHORT_HASH=$(git rev-parse --short=7 HEAD)
-            PACKAGE_VERSION=$(node -p "require('./package.json').version")
-            VERSION="${PACKAGE_VERSION}-build.${BUILD_NUMBER}"
-            TAG_NAME="v${VERSION}"
+            BRANCH_NAME="${{ github.head_ref || github.ref_name }}"
+            BRANCH_NAME="${BRANCH_NAME//\//-}"  # Replace slashes with dashes
+            
+            # Create dev version
+            VERSION="dev-${DATE}-${TIME}-${BRANCH_NAME}-${SHORT_HASH}"
+            TAG_NAME="dev-${DATE}-${TIME}"
+            echo "🚧 Development build: $VERSION"
           fi
           
           echo "version=$VERSION" >> $GITHUB_OUTPUT

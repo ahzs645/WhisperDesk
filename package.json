@@ -293,18 +293,7 @@
         "height": 380
       }
     },
-    "appImage": {
-      "artifactName": "${productName}-${version}-${os}-${arch}.${ext}"
-    },
-    "deb": {
-      "artifactName": "${productName}-${version}-${os}-${arch}.${ext}"
-    },
-    "rpm": {
-      "artifactName": "${productName}-${version}-${os}-${arch}.${ext}"
-    },
-    "tar.gz": {
-      "artifactName": "${productName}-${version}-${os}-${arch}.${ext}"
-    },
+
     "publish": {
       "provider": "github",
       "owner": "whisperdesk",
