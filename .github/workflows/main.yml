@@ -230,8 +230,8 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: false
         shell: pwsh
         run: |
-          # Create electron-builder config
-          $electronBuilderConfig = @'
+          # Create electron-builder config file
+          $configContent = @"
 appId: com.whisperdesk.app
 productName: WhisperDesk
 mac:
@@ -247,7 +247,7 @@ win:
     - target: zip
       arch: x64
   icon: resources/icons/icon.ico
-  artifactName: "${productName}-${version}-${os}-${arch}.${ext}"
+  artifactName: `"`${productName}-`${version}-`${os}-`${arch}.`${ext}`"
 dmg:
   iconSize: 100
   contents:
@@ -261,9 +261,9 @@ dmg:
   window:
     width: 540
     height: 380
-'@
+"@
           
-          Set-Content -Path electron-builder.yml -Value $electronBuilderConfig -Encoding UTF8
+          $configContent | Out-File -FilePath "electron-builder.yml" -Encoding UTF8
           npx electron-builder --win --x64 --publish=never --config electron-builder.yml
 
       # Upload artifacts
