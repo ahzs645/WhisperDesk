@@ -25,7 +25,7 @@ function Write-Error($message) {
 
 function Write-Info($message) {
     Write-Host "ℹ️ $message" -ForegroundColor Cyan
-}
+} # Ensure this closing brace is present and correct
 
 # Validate prerequisites
 Write-Info "Validating build prerequisites..."
@@ -45,7 +45,7 @@ try {
 
 # Check for Visual Studio Build Tools
 try {
-    $vsWhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+    $vsWhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
     if (Test-Path $vsWhere) {
         $vsInstallations = & $vsWhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
         if ($vsInstallations) {
@@ -54,11 +54,12 @@ try {
             throw "No suitable Visual Studio installation found"
         }
     } else {
-        throw "Visual Studio Installer not found"
+        throw "Visual Studio Installer (vswhere.exe) not found at $vsWhere"
     }
 } catch {
-    Write-Error "Visual Studio Build Tools with C++ support are required"
-    Write-Info "Please install Visual Studio 2019 or later with C++ development tools"
+    Write-Error "Visual Studio Build Tools with C++ support are required."
+    Write-Info "Details: $($_.Exception.Message)"
+    Write-Info "Please install Visual Studio 2019 or later with C++ development tools."
     exit 1
 }
 
@@ -102,7 +103,6 @@ try {
 # Configure CMake with static linking
 Write-Info "Configuring CMake build with static linking..."
 
-# Determine MSVC Runtime Library string
 $msvcRuntimeLib = "MultiThreaded"
 if ($BuildType -eq 'Debug') {
     $msvcRuntimeLib += "Debug"
@@ -121,7 +121,6 @@ $cmakeArgs = @(
     "-DCMAKE_POSITION_INDEPENDENT_CODE=OFF"
 )
 
-# Add optimization flags for release builds
 if ($BuildType -eq "Release") {
     $cmakeArgs += @(
         "-DCMAKE_CXX_FLAGS_RELEASE=/MT /O2 /Ob2 /DNDEBUG /GL",
@@ -130,6 +129,7 @@ if ($BuildType -eq "Release") {
 }
 
 try {
+    Write-Info "Running CMake with arguments: $($cmakeArgs -join ' ')"
     & cmake @cmakeArgs
     if ($LASTEXITCODE -ne 0) {
         throw "CMake configuration failed with exit code $LASTEXITCODE"
@@ -158,41 +158,50 @@ try {
 }
 
 # Locate and validate the whisper-cli binary
-$sourceBuildDir = Join-Path $TempDir "build\bin\$BuildType" # Corrected path
-$whisperCliExe = Join-Path $sourceBuildDir "whisper-cli.exe"
+$whisperCliExe = $null
+$buildBinDir = Join-Path $TempDir "build\bin" # Corrected path variable name
+$buildBinTypeDir = Join-Path $buildBinDir $BuildType
 
-if (-not (Test-Path $whisperCliExe)) {
-    # Try alternative location (e.g. if build type is not in path)
-    $altSourceBuildDir = Join-Path $TempDir "build\bin"
-    $whisperCliExe = Join-Path $altSourceBuildDir "whisper-cli.exe"
+# Check common locations for the executable
+$possibleLocations = @(
+    Join-Path $buildBinTypeDir "whisper-cli.exe" # build/bin/Release/whisper-cli.exe
+    Join-Path $buildBinDir "whisper-cli.exe"     # build/bin/whisper-cli.exe
+)
+
+foreach ($loc in $possibleLocations) {
+    if (Test-Path $loc -PathType Leaf) {
+        $whisperCliExe = $loc
+        Write-Success "Found whisper-cli binary: $whisperCliExe"
+        break
+    }
 }
 
-if (-not (Test-Path $whisperCliExe)) {
-    Write-Error "whisper-cli.exe not found in expected locations: `"$sourceBuildDir`" or `"$altSourceBuildDir`""
-    Write-Info "Available files in build directory:"
-    Get-ChildItem -Recurse "$TempDir\build" -Filter "*.exe" | ForEach-Object { Write-Host $_.FullName }
+if (-not $whisperCliExe) {
+    Write-Error "whisper-cli.exe not found in expected locations."
+    Write-Info "Searched in: $($possibleLocations -join ', ')"
+    if (Test-Path (Join-Path $TempDir "build")) {
+        Write-Info "Available files in build directory structure:"
+        Get-ChildItem -Recurse (Join-Path $TempDir "build") -Filter "*.exe" | ForEach-Object { Write-Host $_.FullName }
+    }
     exit 1
 }
-
-Write-Success "Found whisper-cli binary: $whisperCliExe"
 
 # Validate static linking
 Write-Info "Validating static linking configuration..."
 try {
-    # Check if dumpbin is available
     if (Get-Command dumpbin -ErrorAction SilentlyContinue) {
         $dependencies = & dumpbin /dependents $whisperCliExe 2>$null
         $hasDynamicRuntime = $dependencies | Select-String -Pattern "MSVCR|VCRUNTIME|MSVCP" -Quiet
 
         if ($hasDynamicRuntime) {
-            Write-Warning "Binary may still have dynamic runtime dependencies"
+            Write-Warning "Binary may still have dynamic runtime dependencies."
             Write-Info "Dependencies found:"
-            $dependencies | Select-String -Pattern "\.dll" | ForEach-Object { Write-Host "  $($_.Line.Trim())" }
+            $dependencies | Select-String -Pattern "\.dll" | ForEach-Object { Write-Host ("  " + $_.Line.Trim()) }
         } else {
-            Write-Success "Binary appears to be statically linked"
+            Write-Success "Binary appears to be statically linked."
         }
     } else {
-        Write-Warning "Could not validate dependencies (dumpbin not available)"
+        Write-Warning "Could not validate dependencies (dumpbin.exe not found in PATH)."
     }
 } catch {
     Write-Warning "Could not validate dependencies: $($_.Exception.Message)"
@@ -205,12 +214,12 @@ try {
     $testExitCode = $LASTEXITCODE
 
     if ($testExitCode -eq 0) {
-        Write-Success "Binary test passed - whisper-cli executed successfully"
+        Write-Success "Binary test passed - whisper-cli executed successfully."
     } elseif ($testExitCode -eq 3221225501) { # 0xC0000005 Access Violation
-        Write-Error "Access violation error detected during test execution - static linking may have failed or other runtime issues exist."
+        Write-Error "Access violation error (0xC0000005) detected during test execution. Static linking may have failed or other runtime issues exist."
         exit 1
     } else {
-        Write-Warning "Binary test returned exit code $testExitCode"
+        Write-Warning "Binary test with --help returned exit code $testExitCode."
         Write-Info "This may be normal for --help command, or indicate an issue."
         Write-Info "Output: $testOutput"
     }
@@ -225,7 +234,6 @@ try {
     Copy-Item $whisperCliExe $destinationPath -Force
     Write-Success "Binary copied to: $destinationPath"
 
-    # Verify copied binary
     $binarySize = (Get-Item $destinationPath).Length
     $binarySizeMB = [math]::Round($binarySize / 1MB, 2)
     Write-Info "Binary size: $binarySizeMB MB"
@@ -235,12 +243,11 @@ try {
     exit 1
 }
 
-# Copy additional DLLs if they exist and are needed (though with static linking, this should be less common)
+# Copy additional DLLs (though BUILD_SHARED_LIBS=OFF should make these less likely for whisper.cpp itself)
 $additionalFiles = @("ggml.dll", "whisper.dll")
+$cliDirectory = Split-Path $whisperCliExe
 foreach ($file in $additionalFiles) {
-    # Determine the actual directory of whisperCliExe for sourcing additional files
-    $actualSourceDir = Split-Path $whisperCliExe
-    $sourceFile = Join-Path $actualSourceDir $file
+    $sourceFile = Join-Path $cliDirectory $file
     if (Test-Path $sourceFile) {
         $destFile = Join-Path $BinariesDir $file
         Copy-Item $sourceFile $destFile -Force
@@ -249,13 +256,14 @@ foreach ($file in $additionalFiles) {
 }
 
 # Cleanup
-Set-Location $ProjectRoot
+Set-Location $ProjectRoot # Return to original directory
 if (Test-Path $TempDir) {
+    Write-Info "Cleaning up temporary build directory: $TempDir"
     Remove-Item -Recurse -Force $TempDir
-    Write-Success "Cleaned up temporary build directory"
+    Write-Success "Cleaned up temporary build directory."
 }
 
 Write-Success "Static whisper.cpp build completed successfully!"
 Write-Info "Binary location: $destinationPath"
-Write-Info "The binary should now run without requiring Visual C++ runtime installation."
+Write-Info "The binary should now run without requiring Visual C++ runtime installation." # Final line, ensure quote is here.
 ```
