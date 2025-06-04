@@ -103,13 +103,10 @@ if [[ "$OSTYPE" == "darwin"* ]]; then
     fi
     CMAKE_ARGS+=("-DCMAKE_OSX_DEPLOYMENT_TARGET=11.0") # macOS specific
 elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
-    print_status "Configuring for Linux (x86_64 assumed)..."
-    # Explicitly enable common x86_64 features. This helps guide ggml.
-    # whisper.cpp's CMakeLists should pick these up.
-    CMAKE_ARGS+=("-DGGML_AVX=ON" "-DGGML_AVX2=ON" "-DGGML_FMA=ON" "-DGGML_F16C=ON")
-    # If issues with ARM detection persist on x64 runners, consider:
-    # CMAKE_ARGS+=("-DWHISPER_SUPPORT_NEON=OFF")
-    # CMAKE_ARGS+=("-DGGML_NATIVE=OFF")
+    print_status "Configuring for Linux (forcing generic x86_64 build to avoid arch detection issues)..."
+    CMAKE_ARGS+=("-DCMAKE_SYSTEM_PROCESSOR=x86_64")
+    CMAKE_ARGS+=("-DGGML_NATIVE=OFF")
+    CMAKE_ARGS+=("-DGGML_CPU_TARGET=generic") # Aim for broad compatibility, prevent ARM misdetection
 else
     print_warning "Unsupported OS for specific CMake configuration: $OSTYPE. Using potentially generic config."
     # No platform-specific args added here, relies on CMake defaults + base args

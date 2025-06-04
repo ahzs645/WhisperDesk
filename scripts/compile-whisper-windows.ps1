@@ -149,4 +149,4 @@ Remove-Item -Recurse -Force $TempDir
 Write-Host "✅ Cleanup complete."
 
 Write-Host "🎉 Successfully compiled whisper.cpp for Windows!"
-Write-Host "Binary and DLLs are in: $BinariesDir"
+Write-Host ("Binary and DLLs are in: " + $BinariesDir)
