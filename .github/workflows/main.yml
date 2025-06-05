@@ -123,8 +123,18 @@ jobs:
           if (Test-Path "package.json") {
             $packageJson = Get-Content package.json -Raw | ConvertFrom-Json
             $packageJson.version = $version
+            
+            # Remove DMG target from mac builds to prevent conflicts
+            if ($packageJson.build.mac.target) {
+              $packageJson.build.mac.target = @(@{
+                target = "zip"
+                arch = @("x64", "arm64")
+              })
+            }
+            
             $packageJson | ConvertTo-Json -Depth 100 | Set-Content package.json -Encoding UTF8
             Write-Host "✅ Updated main package.json version to: $version"
+            Write-Host "✅ Ensured mac target is ZIP only"
             
             # Verify the update
             $verifyPackage = Get-Content package.json -Raw | ConvertFrom-Json
@@ -425,8 +435,12 @@ jobs:
           echo "🏷️ Setting main package.json version to: $VERSION"
           
           if [ -f "package.json" ]; then
-            cat package.json | jq --arg version "$VERSION" '.version = $version' > package.json.tmp && mv package.json.tmp package.json
+            cat package.json | jq --arg version "$VERSION" '
+              .version = $version |
+              .build.mac.target = [{"target": "zip", "arch": ["x64", "arm64"]}]
+            ' > package.json.tmp && mv package.json.tmp package.json
             echo "✅ Updated main package.json version to: $VERSION"
+            echo "✅ Ensured mac target is ZIP only"
             echo "📋 Package.json version field: $(cat package.json | jq -r '.version')"
           else
             echo "❌ package.json not found"

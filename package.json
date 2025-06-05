@@ -167,13 +167,6 @@
       "darkModeSupport": true,
       "target": [
         {
-          "target": "dmg",
-          "arch": [
-            "x64",
-            "arm64"
-          ]
-        },
-        {
           "target": "zip",
           "arch": [
             "x64",
@@ -273,7 +266,27 @@
     },
     "dmg": {
       "title": "WhisperDesk ${version}",
-      "icon": "resources/icons/icon.icns"
+      "icon": "resources/icons/icon.icns",
+      "background": null,
+      "backgroundColor": "#ffffff",
+      "iconSize": 80,
+      "contents": [
+        {
+          "x": 130,
+          "y": 220,
+          "type": "file"
+        },
+        {
+          "x": 410,
+          "y": 220,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ],
+      "window": {
+        "width": 540,
+        "height": 380
+      }
     },
 
     "publish": {
