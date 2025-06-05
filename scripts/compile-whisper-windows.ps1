@@ -188,22 +188,30 @@ if (-not $whisperCliExe) {
 # Validate static linking
 Write-Info "Validating static linking configuration..."
 try {
-    if (Get-Command dumpbin -ErrorAction SilentlyContinue) {
-        $dependencies = & dumpbin /dependents $whisperCliExe 2>$null
-        $hasDynamicRuntime = $dependencies | Select-String -Pattern "MSVCR|VCRUNTIME|MSVCP" -Quiet
+    # Ensure dumpbin is available, otherwise this step is critical
+    Get-Command dumpbin -ErrorAction Stop | Out-Null
+    Write-Info "dumpbin.exe found. Proceeding with dependency check."
 
-        if ($hasDynamicRuntime) {
-            Write-Warning "Binary may still have dynamic runtime dependencies."
-            Write-Info "Dependencies found:"
-            $dependencies | Select-String -Pattern "\.dll" | ForEach-Object { Write-Host ("  " + $_.Line.Trim()) }
-        } else {
-            Write-Success "Binary appears to be statically linked."
-        }
+    $dependencies = & dumpbin /dependents $whisperCliExe 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        Write-Warning "dumpbin execution failed. Cannot accurately verify dependencies."
+        # Consider if this should be a hard fail depending on strictness
+    }
+
+    $hasDynamicRuntime = $dependencies | Select-String -Pattern "MSVCR|VCRUNTIME|MSVCP" -Quiet
+
+    if ($hasDynamicRuntime) {
+        Write-Error "Build Error: whisper-cli.exe is dynamically linked to MSVC runtime. Static linking is required."
+        Write-Info "Failing dependencies found:"
+        $dependencies | Select-String -Pattern "\.dll" | ForEach-Object { Write-Host ("  " + $_.Line.Trim()) }
+        exit 1
     } else {
-        Write-Warning "Could not validate dependencies (dumpbin.exe not found in PATH)."
+        Write-Success "Binary is correctly statically linked. No dynamic MSVC runtime dependencies found."
     }
 } catch {
-    Write-Warning "Could not validate dependencies: $($_.Exception.Message)"
+    Write-Error "Failed to validate dependencies: $($_.Exception.Message)"
+    Write-Info "This usually means dumpbin.exe was not found in PATH or encountered an error."
+    exit 1
 }
 
 # Test binary execution
@@ -243,18 +251,6 @@ try {
 } catch {
     Write-Error "Failed to copy binary: $($_.Exception.Message)"
     exit 1
-}
-
-# Copy additional files if they exist
-$additionalFiles = @("ggml.dll", "whisper.dll")
-$cliDirectory = Split-Path $whisperCliExe
-foreach ($file in $additionalFiles) {
-    $sourceFile = Join-Path $cliDirectory $file
-    if (Test-Path $sourceFile) {
-        $destFile = Join-Path $BinariesDir $file
-        Copy-Item $sourceFile $destFile -Force
-        Write-Info "Copied additional file: $file"
-    }
 }
 
 # Clean up and finish
