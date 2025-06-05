@@ -114,7 +114,7 @@
 
 @layer base {
   * {
-    @apply border-border outline-ring/50;
+    @apply border-border;
   }
   body {
     @apply bg-background text-foreground;
@@ -365,8 +365,13 @@ main {
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.macos-controls button:focus {
-  outline: none !important;
+.macos-controls button:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.macos-controls button:focus:not(:focus-visible) {
+  outline: none;
 }
 
 /* Hide symbols until hover on macOS */
