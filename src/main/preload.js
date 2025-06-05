@@ -44,6 +44,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
       console.log('[Preload] Window close called');
       ipcRenderer.send('window:close');
     },
+    
+    // State queries
+    isMaximized: () => ipcRenderer.invoke('window:isMaximized'),
+    isMinimized: () => ipcRenderer.invoke('window:isMinimized'),
+    getPlatform: () => ipcRenderer.invoke('window:getPlatform'),
+    
+    // Theme handling
     setTheme: (theme) => ipcRenderer.invoke('window:setTheme', theme),
     onThemeChanged: (callback) => {
       const handler = (_, theme) => {
@@ -56,6 +63,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     removeThemeListener: (callback) => {
       ipcRenderer.removeListener('theme-changed', callback);
     },
+    
+    // Window state events
     onMaximize: (callback) => {
       const handler = () => {
         console.log('[Preload] Window maximized');

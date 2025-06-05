@@ -255,14 +255,23 @@ class WhisperDeskApp {
       height: 800,
       minWidth: 1000,
       minHeight: 700,
-      show: true,
+      show: false,
       focus: true,
       center: true,
-      alwaysOnTop: false,
-      skipTaskbar: false,
-      frame: false,      // No native frame on any platform
-      titleBarStyle: 'hidden',  // Hidden title bar on all platforms
-      trafficLightPosition: process.platform === 'darwin' ? { x: 20, y: 20 } : undefined,  // Position traffic lights on macOS only
+      
+      // CRITICAL: Complete custom frame - more aggressive for macOS
+      frame: false,                    // Remove ALL native decorations
+      titleBarStyle: process.platform === 'darwin' ? 'customButtonsOnHover' : 'hidden',
+      transparent: false,              // Keep opaque for better performance
+      
+      // macOS-specific: Completely disable traffic lights
+      ...(process.platform === 'darwin' && {
+        titleBarStyle: 'hidden',        // Force hidden on macOS
+        trafficLightPosition: { x: -100, y: -100 }, // Move traffic lights off-screen
+        fullscreenWindowTitle: false,   // Don't show title in fullscreen
+        thickFrame: false,             // Remove thick frame
+      }),
+      
       webPreferences: {
         nodeIntegration: false,
         contextIsolation: true,
@@ -272,6 +281,15 @@ class WhisperDeskApp {
       },
       icon: path.join(__dirname, '../../resources/icon.png')
     });
+
+    // Additional macOS-specific setup
+    if (process.platform === 'darwin') {
+      // Force remove all window decorations
+      this.mainWindow.setWindowButtonVisibility(false);
+      
+      // Ensure no title bar
+      this.mainWindow.setMenuBarVisibility(false);
+    }
 
     // Load the app
     if (process.env.NODE_ENV === 'development') {
@@ -283,20 +301,17 @@ class WhisperDeskApp {
     }
 
     // Platform-specific focus handling
-    if (process.platform === 'win32') {
-      this.mainWindow.once('ready-to-show', () => {
-        this.mainWindow.show();
+    this.mainWindow.once('ready-to-show', () => {
+      // Additional macOS setup after window is ready
+      if (process.platform === 'darwin') {
+        this.mainWindow.setWindowButtonVisibility(false);
+      }
+      
+      this.mainWindow.show();
+      if (process.platform === 'darwin') {
         this.mainWindow.focus();
-      });
-    } else {
-      // For other platforms (macOS, Linux)
-      this.mainWindow.once('ready-to-show', () => {
-        this.mainWindow.show();
-        if (process.platform === 'darwin') {
-          this.mainWindow.focus();
-        }
-      });
-    }
+      }
+    });
 
     // Handle window maximize/unmaximize
     this.mainWindow.on('maximize', () => {
@@ -522,6 +537,19 @@ class WhisperDeskApp {
 
     ipcMain.on('window:close', () => {
       this.mainWindow?.close();
+    });
+
+    // Window state queries
+    ipcMain.handle('window:isMaximized', () => {
+      return this.mainWindow?.isMaximized() || false;
+    });
+
+    ipcMain.handle('window:isMinimized', () => {
+      return this.mainWindow?.isMinimized() || false;
+    });
+
+    ipcMain.handle('window:getPlatform', () => {
+      return process.platform;
     });
 
     // Add theme handler

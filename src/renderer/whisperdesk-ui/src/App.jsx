@@ -9,6 +9,7 @@ import { TranscriptionTab } from './components/TranscriptionTab-WebCompatible'
 import { TranscriptionTabElectron } from './components/TranscriptionTabElectron'
 import { ScreenRecorder } from './components/ScreenRecorder'
 import { SettingsTab } from './components/SettingsTab'
+import { UnifiedWindowControls } from './components/UnifiedWindowControls'
 import { Toaster } from 'sonner'
 import './App.css'
 import { Label } from './components/ui/label'
@@ -128,51 +129,58 @@ function AppStateProvider({ children }) {
   )
 }
 
+// App content component
 function AppContent() {
-  const { appState } = useAppState()
-  const [activeTab, setActiveTab] = useState('transcribe')
+  const { appState } = useAppState();
+  const [platform, setPlatform] = useState('unknown');
 
-  // Platform detection
-  const isElectron = typeof window !== 'undefined' && !!window.electronAPI
-  const isMacOS = window.platform?.isMacOS || window.platform?.os === 'darwin'
+  useEffect(() => {
+    // Detect platform
+    window.electronAPI?.window?.getPlatform?.().then(platformInfo => {
+      setPlatform(platformInfo);
+    });
+  }, []);
+
+  const isMacOS = platform === 'darwin';
 
   // Choose the appropriate transcription component
   const TranscriptionComponent = appState.isElectron ? TranscriptionTabElectron : TranscriptionTab
 
   return (
-    <div className={`min-h-screen bg-background flex flex-col ${isMacOS ? 'platform-macos' : ''}`}>
-      <Toaster />
-      
-      <header className="sticky top-0 w-full backdrop-blur-[20px] z-50 mb-4">
-        <div className="glass-header relative">
-          <div className="h-[64px] px-4">
-            <div className={`header-content ${isMacOS ? 'macos' : ''}`}>
-              <div className="header-logo-section">
-                <div className="frosted-glass p-2 rounded-lg shadow-lg">
-                  <Mic className="w-6 h-6 text-primary" />
-                </div>
-                <div>
-                  <h1 className="text-xl font-bold tracking-tight">WhisperDesk Enhanced</h1>
-                  {appState.isElectron && (
-                    <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded inline-block mt-1">
-                      Electron
-                    </span>
-                  )}
-                </div>
+    <div className="min-h-screen bg-background flex flex-col">
+      <header className="unified-header">
+        <div className="unified-header-content">
+          {/* macOS: Controls on the left */}
+          {isMacOS && appState.isElectron && (
+            <div className="header-section header-left">
+              <UnifiedWindowControls />
+            </div>
+          )}
+          
+          {/* Center content */}
+          <div className={`header-section header-center ${isMacOS ? 'macos-center' : ''}`}>
+            <div className="flex items-center space-x-3">
+              <div className="frosted-glass p-2 rounded-lg shadow-lg">
+                <Mic className="w-6 h-6 text-primary" />
               </div>
-              
-              <div className="header-controls">
-                <AppStateIndicator />
-                {/* Only show custom window controls on non-macOS platforms */}
-                {appState.isElectron && <WindowControls />}
+              <div>
+                <h1 className="text-xl font-bold tracking-tight">WhisperDesk Enhanced</h1>
               </div>
             </div>
           </div>
+          
+          {/* Windows/Linux: Controls on the right */}
+          {!isMacOS && appState.isElectron && (
+            <div className="header-section header-right">
+              <UnifiedWindowControls />
+            </div>
+          )}
         </div>
       </header>
-
-      <main className="container mx-auto px-4 py-6 flex-1">
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+      
+      {/* Main content */}
+      <main className="flex-1 container mx-auto py-6">
+        <Tabs defaultValue="transcribe" className="w-full">
           <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="transcribe" className="flex items-center space-x-2">
               <Mic className="w-4 h-4" />
@@ -323,186 +331,4 @@ function HistoryTab() {
       </CardContent>
     </Card>
   )
-}
-
-function WindowControls() {
-  const { isElectron } = useAppState();
-  const isMacOS = window.platform?.os === 'darwin';
-  const [isMaximized, setIsMaximized] = React.useState(false);
-
-  React.useEffect(() => {
-    if (isElectron) {
-      const handleMaximize = () => {
-        console.log('Window maximized event received');
-        setIsMaximized(true);
-      };
-      const handleUnmaximize = () => {
-        console.log('Window unmaximized event received');
-        setIsMaximized(false);
-      };
-
-      // Check if the methods exist before calling them
-      if (window.electronAPI?.window?.onMaximize) {
-        window.electronAPI.window.onMaximize(handleMaximize);
-      }
-      
-      if (window.electronAPI?.window?.onUnmaximize) {
-        window.electronAPI.window.onUnmaximize(handleUnmaximize);
-      }
-
-      return () => {
-        if (window.electronAPI?.window?.removeMaximizeListener) {
-          window.electronAPI.window.removeMaximizeListener(handleMaximize);
-        }
-        if (window.electronAPI?.window?.removeUnmaximizeListener) {
-          window.electronAPI.window.removeUnmaximizeListener(handleUnmaximize);
-        }
-      };
-    }
-  }, [isElectron]);
-
-  // We want to show custom controls on all platforms now
-  if (!isElectron) {
-    return null;
-  }
-
-  const handleMinimize = () => {
-    console.log('Minimize clicked');
-    if (window.electronAPI?.window?.minimize) {
-      window.electronAPI.window.minimize();
-    }
-  };
-
-  const handleMaximize = () => {
-    console.log('Maximize clicked');
-    if (window.electronAPI?.window?.maximize) {
-      window.electronAPI.window.maximize();
-    }
-  };
-
-  const handleClose = () => {
-    console.log('Close clicked');
-    if (window.electronAPI?.window?.close) {
-      window.electronAPI.window.close();
-    }
-  };
-
-  return (
-    <div className="window-controls">
-      <button
-        onClick={handleMinimize}
-        className="window-control-button"
-        aria-label="Minimize window"
-        title="Minimize"
-      >
-        <svg viewBox="0 0 10 10">
-          <path d="M0,5h10" stroke="currentColor" strokeWidth="1" />
-        </svg>
-      </button>
-      <button
-        onClick={handleMaximize}
-        className="window-control-button"
-        aria-label={isMaximized ? "Restore window" : "Maximize window"}
-        title={isMaximized ? "Restore" : "Maximize"}
-      >
-        <svg viewBox="0 0 10 10">
-          {isMaximized ? (
-            <path d="M2.5,2.5v5h5v-5H2.5z M2,5l3-3" stroke="currentColor" strokeWidth="1" fill="none"/>
-          ) : (
-            <path d="M0,0v10h10v-10H0z" stroke="currentColor" strokeWidth="1" fill="none"/>
-          )}
-        </svg>
-      </button>
-      <button
-        onClick={handleClose}
-        className="window-control-button close"
-        aria-label="Close window"
-        title="Close"
-      >
-        <svg viewBox="0 0 10 10">
-          <path d="M0,0L10,10M10,0L0,10" stroke="currentColor" strokeWidth="1" />
-        </svg>
-      </button>
-    </div>
-  );
-}
-
-// Add this component temporarily to your App.jsx to debug platform detection
-function PlatformDebugInfo() {
-  const [debugInfo, setDebugInfo] = React.useState(null);
-  
-  React.useEffect(() => {
-    const info = {
-      // Electron detection
-      hasElectronAPI: !!window.electronAPI,
-      electronAPIKeys: window.electronAPI ? Object.keys(window.electronAPI) : [],
-      
-      // Platform detection methods
-      platform: {
-        exists: !!window.platform,
-        data: window.platform,
-        os: window.platform?.os,
-        isMacOS: window.platform?.isMacOS,
-        isWindows: window.platform?.isWindows,
-        isLinux: window.platform?.isLinux
-      },
-      
-      // Alternative platform detection
-      electronPlatform: window.electronAPI?.platform,
-      userAgent: navigator.userAgent,
-      
-      // Navigator platform (less reliable)
-      navigatorPlatform: navigator.platform,
-      
-      // Final decision logic
-      finalIsMacOS: window.platform?.isMacOS || window.platform?.os === 'darwin' || window.electronAPI?.platform === 'darwin',
-      
-      // Window controls availability
-      windowControls: {
-        minimize: !!window.electronAPI?.window?.minimize,
-        maximize: !!window.electronAPI?.window?.maximize,
-        close: !!window.electronAPI?.window?.close,
-        onMaximize: !!window.electronAPI?.window?.onMaximize,
-        onUnmaximize: !!window.electronAPI?.window?.onUnmaximize
-      }
-    };
-    
-    setDebugInfo(info);
-    console.log('Platform Debug Info:', info);
-  }, []);
-  
-  if (!debugInfo) return <div>Loading debug info...</div>;
-  
-  return (
-    <div className="fixed bottom-4 right-4 bg-black/80 text-white p-4 rounded-lg text-xs max-w-md z-50">
-      <h3 className="font-bold mb-2">Platform Debug Info</h3>
-      <div className="space-y-1">
-        <div>Electron: {debugInfo.hasElectronAPI ? '✅' : '❌'}</div>
-        <div>Platform object: {debugInfo.platform.exists ? '✅' : '❌'}</div>
-        <div>OS: {debugInfo.platform.os || 'unknown'}</div>
-        <div>Is macOS: {debugInfo.finalIsMacOS ? '✅' : '❌'}</div>
-        <div>Window controls: {Object.values(debugInfo.windowControls).every(Boolean) ? '✅' : '❌'}</div>
-        <div>User Agent: {debugInfo.userAgent.substring(0, 50)}...</div>
-        
-        <button 
-          onClick={() => {
-            if (window.electronAPI?.debug?.testIPC) {
-              window.electronAPI.debug.testIPC().then(result => {
-                console.log('IPC Test Result:', result);
-                alert('IPC Test: ' + JSON.stringify(result, null, 2));
-              }).catch(error => {
-                console.error('IPC Test Error:', error);
-                alert('IPC Test Error: ' + error.message);
-              });
-            } else {
-              alert('IPC test not available');
-            }
-          }}
-          className="mt-2 bg-blue-600 px-2 py-1 rounded text-white"
-        >
-          Test IPC
-        </button>
-      </div>
-    </div>
-  );
 }

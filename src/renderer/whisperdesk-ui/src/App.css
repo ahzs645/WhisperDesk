@@ -246,34 +246,25 @@ main {
   z-index: 1; /* Ensure content stays above header shadow */
 }
 
-/* Header styles */
-.glass-header {
+/* Base header styles */
+.unified-header {
   position: fixed;
   top: 0;
   left: 0;
   right: 0;
-  z-index: 50;
-  height: var(--header-height);
+  height: 64px;
   background: rgba(255, 255, 255, 0.8);
   backdrop-filter: blur(20px) saturate(180%);
   -webkit-backdrop-filter: blur(20px) saturate(180%);
   border-bottom: 1px solid rgba(255, 255, 255, 0.3);
-  box-shadow: 
-    0 4px 6px -1px rgba(0, 0, 0, 0.05),
-    0 2px 4px -1px rgba(0, 0, 0, 0.03),
-    inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  z-index: 50;
+  -webkit-app-region: drag; /* Make entire header draggable */
   isolation: isolate;
-  -webkit-app-region: drag;
-  padding: 0 var(--header-margin);
 }
 
-.dark .glass-header {
+.dark .unified-header {
   background: rgba(23, 23, 23, 0.8);
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow: 
-    0 4px 6px -1px rgba(0, 0, 0, 0.2),
-    0 2px 4px -1px rgba(0, 0, 0, 0.1),
-    inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
 
@@ -333,67 +324,118 @@ main {
   -webkit-app-region: no-drag;
 }
 
-/* Window controls for non-macOS platforms */
-.window-controls {
-  -webkit-app-region: no-drag;
+/* Header content layout */
+.unified-header-content {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-right: 12px;
+  height: 100%;
+  padding: 0 16px;
+  max-width: 100%;
+}
+
+/* Header sections */
+.header-section {
+  display: flex;
+  align-items: center;
+  -webkit-app-region: no-drag; /* Make controls clickable */
+}
+
+.header-left {
+  margin-right: 16px;
+}
+
+.header-center {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  -webkit-app-region: drag; /* Keep center draggable */
+}
+
+.header-center.macos-center {
+  justify-content: flex-start;
+  margin-left: 0; /* Remove margin since controls are on left */
+}
+
+.header-right {
+  margin-left: auto;
+}
+
+/* macOS Traffic Light Style Controls */
+.macos-controls {
+  padding: 8px 12px;
+}
+
+.macos-controls button {
+  position: relative;
+  border: none;
+  cursor: pointer;
+  outline: none;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.macos-controls button:focus {
+  outline: 2px solid rgba(59, 130, 246, 0.5);
+  outline-offset: 2px;
+}
+
+/* Hide symbols until hover on macOS */
+.macos-controls button svg {
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.macos-controls:hover button svg {
+  opacity: 1;
+}
+
+/* Individual button hover states for macOS */
+.macos-controls button:hover {
+  transform: scale(1.1);
+}
+
+/* Windows/Linux Style Controls */
+.windows-controls {
   height: 100%;
 }
 
-/* Hide custom controls on macOS */
-.platform-macos .title-bar,
-.platform-macos .window-controls {
-  display: none;
-}
-
-/* Window controls styles */
-.window-controls {
-  -webkit-app-region: no-drag;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-right: 12px;
-  height: 100%;
-}
-
-.window-control-button {
+.windows-controls button {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  outline: none;
+  color: inherit;
+  transition: all 0.15s ease;
   width: 30px;
   height: 30px;
   border-radius: 4px;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--foreground);
-  background: transparent;
-  border: none;
-  outline: none;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  position: relative;
-  -webkit-app-region: no-drag;
 }
 
-.window-control-button:hover {
+.windows-controls button:focus {
+  outline: 2px solid rgba(59, 130, 246, 0.5);
+  outline-offset: -2px;
+}
+
+.windows-controls button:hover:not(:last-child) {
   background-color: var(--accent);
 }
 
-.window-control-button.close:hover {
-  background-color: rgb(255, 96, 92);
-  color: white;
+.windows-controls button:last-child:hover {
+  background-color: #ef4444 !important;
+  color: white !important;
 }
 
-.window-control-button svg {
-  width: 10px;
-  height: 10px;
-  opacity: 0.7;
-  transition: opacity 0.2s ease;
+/* Platform-specific adjustments */
+.platform-darwin .unified-header-content {
+  padding-left: 12px; /* Reduce padding since we have our own controls */
 }
 
-.window-control-button:hover svg {
-  opacity: 1;
+.platform-win32 .unified-header-content,
+.platform-linux .unified-header-content {
+  padding-right: 12px; /* Reduce padding for right-aligned controls */
 }
 
 /* Make the title bar draggable */
@@ -588,5 +630,195 @@ main {
 /* Ensure tooltips are always on top */
 [role="tooltip"] {
   z-index: 1001 !important;
+}
+
+/* Unified Header Styles */
+.unified-header {
+  -webkit-app-region: drag;
+  height: 48px;
+  background: var(--background);
+  border-bottom: 1px solid var(--border);
+  position: relative;
+  z-index: 100;
+}
+
+.unified-header-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 100%;
+  padding: 0 16px;
+}
+
+.header-section {
+  -webkit-app-region: no-drag;
+  display: flex;
+  align-items: center;
+}
+
+.header-left {
+  min-width: 70px;
+}
+
+.header-center {
+  flex: 1;
+  justify-content: center;
+}
+
+.header-right {
+  min-width: 138px;
+  justify-content: flex-end;
+}
+
+.macos-center {
+  margin-left: -70px; /* Offset for macOS traffic lights */
+}
+
+.frosted-glass {
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Dark mode adjustments */
+:root[class~="dark"] .frosted-glass {
+  background: rgba(0, 0, 0, 0.2);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+/* Window Controls Styles */
+.window-controls {
+  display: flex;
+  gap: 8px;
+}
+
+.window-control {
+  -webkit-app-region: no-drag;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--foreground);
+  transition: all 0.2s;
+}
+
+.window-control:hover {
+  background: var(--accent);
+}
+
+.window-control.close:hover {
+  background: var(--destructive);
+  color: white;
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+  .unified-header-content {
+    padding: 0 12px;
+  }
+  
+  .header-left {
+    margin-right: 12px;
+  }
+  
+  .macos-controls {
+    padding: 6px 8px;
+  }
+  
+  .macos-controls button {
+    width: 12px;
+    height: 12px;
+  }
+  
+  .windows-controls button {
+    width: 32px;
+    height: 32px;
+  }
+}
+
+/* Accessibility improvements */
+@media (prefers-reduced-motion: reduce) {
+  .macos-controls button,
+  .windows-controls button {
+    transition: none;
+  }
+  
+  .macos-controls button:hover {
+    transform: none;
+  }
+}
+
+/* Focus management for keyboard navigation */
+.unified-header:focus-within {
+  outline: 2px solid rgba(59, 130, 246, 0.5);
+  outline-offset: -2px;
+}
+
+/* Animation for window state changes */
+@keyframes window-maximize {
+  from {
+    transform: scale(0.95);
+    opacity: 0.8;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.window-state-change {
+  animation: window-maximize 0.2s ease-out;
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  .unified-header {
+    background: white;
+    border-bottom: 2px solid black;
+  }
+  
+  .dark .unified-header {
+    background: black;
+    border-bottom: 2px solid white;
+  }
+  
+  .macos-controls button {
+    border: 1px solid currentColor;
+  }
+  
+  .windows-controls button {
+    border: 1px solid currentColor;
+  }
+}
+
+/* Main content spacing */
+.main-content {
+  margin-top: 64px; /* Account for fixed header */
+  min-height: calc(100vh - 64px);
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+
+/* Custom scrollbar for main content */
+.main-content::-webkit-scrollbar {
+  width: 8px;
+}
+
+.main-content::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.main-content::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+}
+
+.dark .main-content::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
 }
 
