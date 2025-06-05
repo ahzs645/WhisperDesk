@@ -148,6 +148,8 @@ function AppContent() {
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
+      <Toaster position="bottom-right" />
+      
       <header className="unified-header">
         <div className="unified-header-content">
           {/* macOS: Controls on the left */}
@@ -165,16 +167,27 @@ function AppContent() {
               </div>
               <div>
                 <h1 className="text-xl font-bold tracking-tight">WhisperDesk Enhanced</h1>
+                {appState.isElectron && (
+                  <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded inline-block mt-1">
+                    Electron
+                  </span>
+                )}
               </div>
             </div>
           </div>
           
-          {/* Windows/Linux: Controls on the right */}
-          {!isMacOS && appState.isElectron && (
-            <div className="header-section header-right">
-              <UnifiedWindowControls />
+          {/* Right side: Status indicator and controls */}
+          <div className="header-section header-right">
+            <div className="flex items-center space-x-3">
+              {/* Add back the status indicator */}
+              <AppStateIndicator />
+              
+              {/* Windows/Linux: Controls on the right */}
+              {!isMacOS && appState.isElectron && (
+                <UnifiedWindowControls />
+              )}
             </div>
-          )}
+          </div>
         </div>
       </header>
       

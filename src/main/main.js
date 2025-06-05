@@ -555,10 +555,13 @@ class WhisperDeskApp {
     // Add theme handler
     ipcMain.handle('window:setTheme', (event, theme) => {
       if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-        // Apply theme changes
-        this.updateTitleBarTheme(theme);
+        // Store theme preference
+        store?.set('theme', theme);
+        
         // Send theme change event to renderer
         this.mainWindow.webContents.send('theme-changed', theme);
+        
+        console.log('Theme changed to:', theme);
         return true;
       }
       return false;

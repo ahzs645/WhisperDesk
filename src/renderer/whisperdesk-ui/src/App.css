@@ -43,8 +43,8 @@
 
 :root {
   --radius: 0.625rem;
-  --header-height: 64px;  /* Increased from 60px */
-  --header-margin: 24px;  /* Added new variable for header margin */
+  --header-height: 64px;
+  --header-margin: 24px;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
@@ -120,7 +120,6 @@
     @apply bg-background text-foreground;
   }
 }
-
 
 /* Spinner animations for model marketplace */
 .spinner {
@@ -211,7 +210,9 @@
 
 .duration-300 {
   transition-duration: 300ms;
-}  /* Main container layout */
+}
+
+/* Main container layout */
 body {
   margin: 0;
   padding: 0;
@@ -227,13 +228,12 @@ main {
   position: relative;
   z-index: 1;
   flex: 1;
-  margin-top: calc(var(--header-height)); /* Account for header + tabs */
+  margin-top: calc(var(--header-height));
   padding: var(--header-margin);
   width: 100%;
   box-sizing: border-box;
   min-height: calc(100vh - var(--header-height));
   isolation: isolate;
-  /* Prevent layout shift from dropdowns */
   overflow-anchor: none;
   contain: paint layout;
 }
@@ -243,122 +243,107 @@ main {
   width: 100%;
   max-width: 100%;
   position: relative;
-  z-index: 1; /* Ensure content stays above header shadow */
+  z-index: 1;
 }
 
-/* Base header styles */
+/* UNIFIED HEADER STYLES */
 .unified-header {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 64px;
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  height: 64px !important;
+  width: 100% !important;
+  z-index: 50 !important;
+  
+  /* Make entire header draggable */
+  -webkit-app-region: drag !important;
+  
+  /* Clean glass effect */
   background: rgba(255, 255, 255, 0.8);
   backdrop-filter: blur(20px) saturate(180%);
   -webkit-backdrop-filter: blur(20px) saturate(180%);
   border-bottom: 1px solid rgba(255, 255, 255, 0.3);
-  z-index: 50;
-  -webkit-app-region: drag; /* Make entire header draggable */
+  box-shadow: 
+    0 4px 6px -1px rgba(0, 0, 0, 0.05),
+    0 2px 4px -1px rgba(0, 0, 0, 0.03),
+    inset 0 1px 0 rgba(255, 255, 255, 0.6);
   isolation: isolate;
 }
 
 .dark .unified-header {
   background: rgba(23, 23, 23, 0.8);
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 
+    0 4px 6px -1px rgba(0, 0, 0, 0.2),
+    0 2px 4px -1px rgba(0, 0, 0, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
-
-/* Header content layout */
-.header-content {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  width: 100%;
-  height: 100%;
-  max-width: 100%;
-  margin: 0 auto;
-  padding: 0;
-  gap: var(--header-margin);
-}
-
-/* Add left padding on macOS to account for traffic lights */
-.header-content.macos {
-  padding-left: 88px; /* Space for traffic lights */
-}
-
-/* Logo and title section */
-.header-logo-section {
-  display: flex;
-  align-items: center;
-  min-width: 200px; /* Ensure minimum width for logo section */
-  gap: 12px;
-  -webkit-app-region: no-drag;
-}
-
-/* Center section (if any) */
-.header-center {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-/* Right side controls */
-.header-controls {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-left: auto;
-  -webkit-app-region: no-drag;
-  min-width: 200px; /* Ensure minimum width for controls */
-  justify-content: flex-end;
-}
-
-/* Window controls position */
-.window-controls {
-  margin-left: var(--header-margin);
-}
-
-/* Non-draggable elements */
-.no-drag {
-  -webkit-app-region: no-drag;
-}
-
-/* Header content layout */
+/* Header content - keep draggable */
 .unified-header-content {
   display: flex;
   align-items: center;
   height: 100%;
   padding: 0 16px;
   max-width: 100%;
+  -webkit-app-region: drag !important;
 }
 
-/* Header sections */
+/* Header sections - keep draggable by default */
 .header-section {
   display: flex;
   align-items: center;
-  -webkit-app-region: no-drag; /* Make controls clickable */
+  -webkit-app-region: drag !important;
 }
 
-.header-left {
-  margin-right: 16px;
-}
-
+/* Center section - main dragging area */
 .header-center {
   flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
-  -webkit-app-region: drag; /* Keep center draggable */
+  -webkit-app-region: drag !important;
+  min-height: 64px;
+  padding: 0 20px;
 }
 
 .header-center.macos-center {
   justify-content: flex-start;
-  margin-left: 0; /* Remove margin since controls are on left */
+  margin-left: 0;
+  -webkit-app-region: drag !important;
 }
 
+/* Left and right sections - keep draggable, only buttons are non-draggable */
+.header-left,
 .header-right {
-  margin-left: auto;
+  -webkit-app-region: drag !important;
+  padding: 8px;
+}
+
+/* ONLY make the actual clickable elements non-draggable */
+.header-left button,
+.header-right button,
+.macos-controls button,
+.windows-controls button,
+.window-control,
+.window-control-button {
+  -webkit-app-region: no-drag !important;
+}
+
+/* Make sure the control containers have minimal non-drag area */
+.macos-controls,
+.windows-controls {
+  -webkit-app-region: no-drag !important;
+  display: inline-flex;
+  padding: 4px;
+}
+
+/* Logo area should be draggable */
+.frosted-glass,
+.header-center h1,
+.header-center div {
+  -webkit-app-region: drag !important;
 }
 
 /* macOS Traffic Light Style Controls */
@@ -430,23 +415,25 @@ main {
 
 /* Platform-specific adjustments */
 .platform-darwin .unified-header-content {
-  padding-left: 12px; /* Reduce padding since we have our own controls */
+  padding-left: 12px;
 }
 
 .platform-win32 .unified-header-content,
 .platform-linux .unified-header-content {
-  padding-right: 12px; /* Reduce padding for right-aligned controls */
+  padding-right: 12px;
 }
 
-/* Make the title bar draggable */
-.title-bar {
-  -webkit-app-region: drag;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  padding: 0;
-  background: transparent;
+/* Frosted glass effect for logo */
+.frosted-glass {
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Dark mode adjustments */
+:root[class~="dark"] .frosted-glass {
+  background: rgba(0, 0, 0, 0.2);
+  border-color: rgba(255, 255, 255, 0.1);
 }
 
 /* Ensure dropdowns appear above header and don't affect layout */
@@ -456,7 +443,6 @@ main {
   isolation: isolate;
   pointer-events: auto;
   contain: content;
-  /* Prevent any influence on the page layout */
   transform-style: preserve-3d;
   backface-visibility: hidden;
   -webkit-font-smoothing: subpixel-antialiased;
@@ -485,7 +471,7 @@ main {
 
 /* Toast notification styles */
 [data-sonner-toaster] {
-  --toast-min-height: 3.5rem; /* Add minimum height */
+  --toast-min-height: 3.5rem;
 }
 
 [data-sonner-toast] {
@@ -496,7 +482,6 @@ main {
   transition: all 0.2s ease-out;
   will-change: transform, opacity;
   transform-origin: center;
-  /* Prevent any unintended layout shifts */
   contain: layout style;
 }
 
@@ -632,90 +617,6 @@ main {
   z-index: 1001 !important;
 }
 
-/* Unified Header Styles */
-.unified-header {
-  -webkit-app-region: drag;
-  height: 48px;
-  background: var(--background);
-  border-bottom: 1px solid var(--border);
-  position: relative;
-  z-index: 100;
-}
-
-.unified-header-content {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  height: 100%;
-  padding: 0 16px;
-}
-
-.header-section {
-  -webkit-app-region: no-drag;
-  display: flex;
-  align-items: center;
-}
-
-.header-left {
-  min-width: 70px;
-}
-
-.header-center {
-  flex: 1;
-  justify-content: center;
-}
-
-.header-right {
-  min-width: 138px;
-  justify-content: flex-end;
-}
-
-.macos-center {
-  margin-left: -70px; /* Offset for macOS traffic lights */
-}
-
-.frosted-glass {
-  background: rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-/* Dark mode adjustments */
-:root[class~="dark"] .frosted-glass {
-  background: rgba(0, 0, 0, 0.2);
-  border-color: rgba(255, 255, 255, 0.1);
-}
-
-/* Window Controls Styles */
-.window-controls {
-  display: flex;
-  gap: 8px;
-}
-
-.window-control {
-  -webkit-app-region: no-drag;
-  width: 30px;
-  height: 30px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 4px;
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  color: var(--foreground);
-  transition: all 0.2s;
-}
-
-.window-control:hover {
-  background: var(--accent);
-}
-
-.window-control.close:hover {
-  background: var(--destructive);
-  color: white;
-}
-
 /* Responsive design */
 @media (max-width: 768px) {
   .unified-header-content {
@@ -759,22 +660,6 @@ main {
   outline-offset: -2px;
 }
 
-/* Animation for window state changes */
-@keyframes window-maximize {
-  from {
-    transform: scale(0.95);
-    opacity: 0.8;
-  }
-  to {
-    transform: scale(1);
-    opacity: 1;
-  }
-}
-
-.window-state-change {
-  animation: window-maximize 0.2s ease-out;
-}
-
 /* High contrast mode support */
 @media (prefers-contrast: high) {
   .unified-header {
@@ -795,30 +680,3 @@ main {
     border: 1px solid currentColor;
   }
 }
-
-/* Main content spacing */
-.main-content {
-  margin-top: 64px; /* Account for fixed header */
-  min-height: calc(100vh - 64px);
-  overflow-y: auto;
-  scrollbar-gutter: stable;
-}
-
-/* Custom scrollbar for main content */
-.main-content::-webkit-scrollbar {
-  width: 8px;
-}
-
-.main-content::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.main-content::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.2);
-  border-radius: 4px;
-}
-
-.dark .main-content::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.2);
-}
-
