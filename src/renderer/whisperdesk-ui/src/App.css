@@ -259,6 +259,12 @@ main {
   /* Make entire header draggable */
   -webkit-app-region: drag !important;
   
+  /* Prevent text selection and highlighting */
+  user-select: none !important;
+  -webkit-user-select: none !important;
+  -moz-user-select: none !important;
+  -ms-user-select: none !important;
+  
   /* Clean glass effect */
   background: rgba(255, 255, 255, 0.8);
   backdrop-filter: blur(20px) saturate(180%);
@@ -360,8 +366,7 @@ main {
 }
 
 .macos-controls button:focus {
-  outline: 2px solid rgba(59, 130, 246, 0.5);
-  outline-offset: 2px;
+  outline: none !important;
 }
 
 /* Hide symbols until hover on macOS */
@@ -400,8 +405,7 @@ main {
 }
 
 .windows-controls button:focus {
-  outline: 2px solid rgba(59, 130, 246, 0.5);
-  outline-offset: -2px;
+  outline: none !important;
 }
 
 .windows-controls button:hover:not(:last-child) {
@@ -656,8 +660,7 @@ main {
 
 /* Focus management for keyboard navigation */
 .unified-header:focus-within {
-  outline: 2px solid rgba(59, 130, 246, 0.5);
-  outline-offset: -2px;
+  outline: none !important;
 }
 
 /* High contrast mode support */
