@@ -179,47 +179,30 @@ jobs:
             Write-Host "⚠️ Renderer directory not found, skipping"
           }
 
+      - name: Add dumpbin to PATH
+        shell: pwsh
+        run: |
+          $vsPath = & "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
+          if (-not $vsPath) {
+            Write-Error "Visual Studio installation path not found."
+            exit 1
+          }
+          $dumpbinPath = Get-ChildItem -Path "$vsPath\VC\Tools\MSVC" -Recurse -Filter "dumpbin.exe" | Select-Object -First 1 -ExpandProperty FullName
+          if ($dumpbinPath) {
+            $dumpbinDir = Split-Path $dumpbinPath
+            Write-Host "Adding to GITHUB_PATH: $dumpbinDir"
+            Add-Content -Path $env:GITHUB_PATH -Value $dumpbinDir
+            # Verify it's available
+            $env:Path = "$dumpbinDir;" + $env:Path
+            Get-Command dumpbin
+          } else {
+            Write-Error "dumpbin.exe not found in $vsPath\VC\Tools\MSVC"
+            exit 1
+          }
+
       - name: Build whisper.cpp (via script)
         run: npm run build:whisper
         shell: bash # npm commands run fine in bash on Windows too
-
-      # Package Visual C++ Runtime
-      - name: Package VC++ Runtime
-        shell: pwsh
-        run: |
-          Write-Host "📦 Packaging Visual C++ Runtime..." -ForegroundColor Green
-          
-          $targetDir = "$env:GITHUB_WORKSPACE\binaries"
-          
-          # Download VC++ Redistributable
-          $vcredistUrl = "https://aka.ms/vs/17/release/vc_redist.x64.exe"
-          $vcredistPath = "$targetDir\vc_redist.x64.exe"
-          
-          try {
-            Invoke-WebRequest -Uri $vcredistUrl -OutFile $vcredistPath -UseBasicParsing
-            Write-Host "✅ Downloaded VC++ Redistributable"
-          } catch {
-            Write-Host "⚠️ Failed to download VC++ Redistributable: $($_.Exception.Message)"
-          }
-          
-          # Copy system runtime DLLs if available
-          $systemDlls = @(
-            "C:\Windows\System32\msvcp140.dll",
-            "C:\Windows\System32\vcruntime140.dll",
-            "C:\Windows\System32\vcruntime140_1.dll"
-          )
-          
-          foreach ($dll in $systemDlls) {
-            if (Test-Path $dll) {
-              $dllName = Split-Path $dll -Leaf
-              try {
-                Copy-Item $dll "$targetDir\$dllName" -Force
-                Write-Host "✅ Copied runtime: $dllName"
-              } catch {
-                Write-Host "⚠️ Could not copy $dllName"
-              }
-            }
-          }
 
       # Test the binary
       - name: Test whisper binary
