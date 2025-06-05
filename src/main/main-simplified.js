@@ -1,4 +1,4 @@
-// src/main/main-enhanced.js - Adding real services with proper error handling
+// src/main/main-simplified.js - Fixed version without glass header and traffic lights
 const { app, BrowserWindow, ipcMain, dialog, Menu } = require('electron');
 const path = require('path');
 const fs = require('fs');
@@ -298,24 +298,36 @@ function createWindow() {
     minHeight: 700,
     show: false,
     center: true,
-    frame: false,
-    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'hidden',
+    // FIXED: Proper window configuration for custom header
+    frame: false,  // No native frame at all
+    titleBarStyle: 'hidden',  // Hide title bar but keep window controls on macOS
+    titleBarOverlay: false,   // Disable overlay
+    transparent: false,       // Not transparent - causes glass effect
+    vibrancy: null,          // No vibrancy effect
+    visualEffectState: 'inactive', // No visual effects
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
       enableRemoteModule: false,
       webSecurity: true,
+      backgroundThrottling: false,
       ...(preloadExists && { preload: preloadPath })
     },
     icon: path.join(__dirname, '../../resources/icons/icon.png')
   });
+
+  // FIXED: Explicitly disable native window controls on macOS
+  if (process.platform === 'darwin') {
+    // This completely removes the traffic light buttons
+    mainWindow.setWindowButtonVisibility(false);
+  }
 
   // Load renderer
   const isDev = process.env.NODE_ENV === 'development';
   
   if (isDev) {
     console.log('🔧 Loading development URL...');
-    mainWindow.loadURL('http://localhost:5173')
+    mainWindow.loadURL('http://localhost:3000')
       .then(() => {
         console.log('✅ Dev URL loaded');
         mainWindow.webContents.openDevTools();
