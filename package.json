@@ -66,7 +66,6 @@
     "nodemon": "^3.1.10",
     "rimraf": "^5.0.5"
   },
-  "// Configuration": "// Enhanced configuration for binary management",
   "whisperdesk": {
     "binaryManagement": {
       "autoFix": true,
@@ -79,24 +78,17 @@
       "platforms": {
         "darwin": {
           "staticLinking": true,
-          "architectures": [
-            "x64",
-            "arm64"
-          ],
+          "architectures": ["x64", "arm64"],
           "dependencyCheck": "otool"
         },
         "win32": {
           "staticLinking": false,
-          "architectures": [
-            "x64"
-          ],
+          "architectures": ["x64"],
           "bundleRuntime": true
         },
         "linux": {
           "staticLinking": true,
-          "architectures": [
-            "x64"
-          ],
+          "architectures": ["x64"],
           "dependencyCheck": "ldd"
         }
       }
@@ -105,12 +97,7 @@
       "defaultModel": "tiny",
       "downloadOnSetup": true,
       "supportedModels": [
-        "tiny",
-        "base",
-        "small",
-        "medium",
-        "large-v2",
-        "large-v3"
+        "tiny", "base", "small", "medium", "large-v2", "large-v3"
       ]
     }
   },
@@ -171,12 +158,13 @@
           "arch": ["x64"]
         },
         {
-          "target": "portable",
+          "target": "zip",
           "arch": ["x64"]
         }
       ],
       "publisherName": "WhisperDesk",
-      "verifyUpdateCodeSignature": false
+      "verifyUpdateCodeSignature": false,
+      "requestedExecutionLevel": "asInvoker"
     },
     
     "nsis": {
@@ -187,11 +175,53 @@
       "shortcutName": "WhisperDesk",
       "installerIcon": "resources/icons/icon.ico",
       "uninstallerIcon": "resources/icons/icon.ico",
-      "artifactName": "${productName}-Setup-${version}-${os}-${arch}.${ext}"
+      "artifactName": "${productName}-Setup-${version}-${os}-${arch}.${ext}",
+      "include": "resources/installer.nsh"
     },
     
-    "portable": {
+    "zip": {
       "artifactName": "${productName}-Portable-${version}-${os}-${arch}.${ext}"
+    },
+    
+    "mac": {
+      "icon": "resources/icons/icon.icns",
+      "target": [
+        {
+          "target": "zip",
+          "arch": ["x64", "arm64"]
+        }
+      ],
+      "category": "public.app-category.productivity",
+      "entitlements": "resources/entitlements.mac.plist",
+      "entitlementsInherit": "resources/entitlements.mac.plist",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false
+    },
+    
+    "linux": {
+      "icon": "resources/icons/icon.png",
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": ["x64"]
+        },
+        {
+          "target": "deb",
+          "arch": ["x64"]
+        },
+        {
+          "target": "rpm",
+          "arch": ["x64"]
+        },
+        {
+          "target": "tar.gz",
+          "arch": ["x64"]
+        }
+      ],
+      "category": "AudioVideo",
+      "desktop": {
+        "StartupNotify": "true"
+      }
     }
   },
   "keywords": [

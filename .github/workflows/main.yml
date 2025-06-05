@@ -124,17 +124,23 @@ jobs:
             $packageJson = Get-Content package.json -Raw | ConvertFrom-Json
             $packageJson.version = $version
             
-            # Remove DMG target from mac builds to prevent conflicts
-            if ($packageJson.build.mac.target) {
-              $packageJson.build.mac.target = @(@{
-                target = "zip"
-                arch = @("x64", "arm64")
-              })
+            # Ensure Windows builds use zip instead of portable for true portability
+            if ($packageJson.build.win.target) {
+              $packageJson.build.win.target = @(
+                @{
+                  target = "nsis"
+                  arch = @("x64")
+                },
+                @{
+                  target = "zip"
+                  arch = @("x64")
+                }
+              )
             }
             
             $packageJson | ConvertTo-Json -Depth 100 | Set-Content package.json -Encoding UTF8
             Write-Host "✅ Updated main package.json version to: $version"
-            Write-Host "✅ Ensured mac target is ZIP only"
+            Write-Host "✅ Ensured Windows target uses ZIP for portable version"
             
             # Verify the update
             $verifyPackage = Get-Content package.json -Raw | ConvertFrom-Json
@@ -234,7 +240,15 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path "models" | Out-Null
-          Invoke-WebRequest -Uri "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin" -OutFile "models/ggml-tiny.bin"
+          try {
+            Invoke-WebRequest -Uri "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin" -OutFile "models/ggml-tiny.bin" -TimeoutSec 300
+            Write-Host "✅ Model downloaded successfully"
+            $modelSize = (Get-Item "models/ggml-tiny.bin").Length / 1MB
+            Write-Host "📊 Model size: $([math]::Round($modelSize, 1)) MB"
+          } catch {
+            Write-Host "❌ Failed to download model: $($_.Exception.Message)"
+            exit 1
+          }
 
       # Build renderer
       - name: Build renderer
@@ -242,24 +256,84 @@ jobs:
         run: |
           if (Test-Path "src/renderer/whisperdesk-ui") {
             Set-Location "src/renderer/whisperdesk-ui"
-            pnpm run build
+            try {
+              pnpm run build
+              Write-Host "✅ Renderer build completed"
+            } catch {
+              Write-Host "❌ Renderer build failed: $($_.Exception.Message)"
+              exit 1
+            }
             Set-Location "$env:GITHUB_WORKSPACE"
           } else {
             Write-Host "⚠️ Renderer directory not found, skipping"
           }
 
+      # Verify all required files before building
+      - name: Verify build prerequisites
+        shell: pwsh
+        run: |
+          Write-Host "📋 Verifying build prerequisites..."
+          
+          # Check binaries
+          if (Test-Path "binaries/whisper-cli.exe") {
+            Write-Host "✅ whisper-cli.exe found"
+          } else {
+            Write-Host "❌ whisper-cli.exe missing"
+            exit 1
+          }
+          
+          # Check models
+          if (Test-Path "models/ggml-tiny.bin") {
+            Write-Host "✅ tiny model found"
+          } else {
+            Write-Host "❌ tiny model missing"
+            exit 1
+          }
+          
+          # Check renderer build
+          if (Test-Path "src/renderer/whisperdesk-ui/dist") {
+            Write-Host "✅ Renderer build found"
+          } else {
+            Write-Host "❌ Renderer build missing"
+            exit 1
+          }
+          
+          Write-Host "📋 Files in dist after build:"
+          Get-ChildItem -Recurse -Path binaries, models -ErrorAction SilentlyContinue
+
       # Build Electron app
       - name: Build Electron app
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
+          DEBUG: electron-builder
         shell: pwsh
         run: |
-          # Ensure all required files are present before building
-          echo "📋 Files before build:"
-          Get-ChildItem -Recurse -Path binaries, models -ErrorAction SilentlyContinue
+          Write-Host "🔧 Starting Electron build..."
           
-          # Build with verbose output
-          npx electron-builder --win --x64 --publish=never --config.compression=normal
+          try {
+            # Build with more verbose output and error handling
+            npx electron-builder --win --x64 --publish=never --config.compression=normal
+            
+            Write-Host "✅ Electron build completed"
+            
+            # Verify outputs
+            Write-Host "📋 Build outputs:"
+            if (Test-Path "dist") {
+              Get-ChildItem -Path "dist" -Filter "*.exe" | ForEach-Object {
+                $size = [math]::Round($_.Length / 1MB, 1)
+                Write-Host "  $($_.Name) - $size MB"
+              }
+              Get-ChildItem -Path "dist" -Filter "*.zip" | ForEach-Object {
+                $size = [math]::Round($_.Length / 1MB, 1)
+                Write-Host "  $($_.Name) - $size MB"
+              }
+            }
+          } catch {
+            Write-Host "❌ Electron build failed: $($_.Exception.Message)"
+            Write-Host "📋 Error details:"
+            $Error[0] | Format-List * -Force
+            exit 1
+          }
 
       # Upload artifacts
       - name: Upload Windows artifacts
@@ -270,6 +344,7 @@ jobs:
             dist/*.exe
             dist/*.zip
           retention-days: 30
+          if-no-files-found: error
 
   # macOS build
   build-macos:
@@ -424,11 +499,9 @@ jobs:
           
           if [ -f "package.json" ]; then
             cat package.json | jq --arg version "$VERSION" '
-              .version = $version |
-              .build.mac.target = [{"target": "zip", "arch": ["x64", "arm64"]}]
+              .version = $version
             ' > package.json.tmp && mv package.json.tmp package.json
             echo "✅ Updated main package.json version to: $VERSION"
-            echo "✅ Ensured mac target is ZIP only"
             echo "📋 Package.json version field: $(cat package.json | jq -r '.version')"
           else
             echo "❌ package.json not found"
@@ -535,7 +608,7 @@ jobs:
         with:
           files: release-files/*
           draft: false
-          prerelease: ${{ contains(needs.determine-version.outputs.version, 'build') }}
+          prerelease: ${{ contains(needs.determine-version.outputs.version, 'dev') }}
           generate_release_notes: true
           name: "WhisperDesk ${{ needs.determine-version.outputs.tag_name }}"
           tag_name: ${{ needs.determine-version.outputs.tag_name }}
@@ -548,11 +621,9 @@ jobs:
             
             **🖥️ Windows (64-bit)**:
             - `WhisperDesk-Setup-${{ needs.determine-version.outputs.version }}-win-x64.exe` - Installer (recommended)
-            - `WhisperDesk-Portable-${{ needs.determine-version.outputs.version }}-win-x64.exe` - Portable version (no installation required)
+            - `WhisperDesk-Portable-${{ needs.determine-version.outputs.version }}-win-x64.zip` - **True Portable** (extract and run)
             
             **🍎 macOS**:
-            - `WhisperDesk-${{ needs.determine-version.outputs.version }}-mac-x64.dmg` - Intel Mac disk image
-            - `WhisperDesk-${{ needs.determine-version.outputs.version }}-mac-arm64.dmg` - Apple Silicon disk image
             - `WhisperDesk-${{ needs.determine-version.outputs.version }}-mac-x64.zip` - Intel Mac portable
             - `WhisperDesk-${{ needs.determine-version.outputs.version }}-mac-arm64.zip` - Apple Silicon portable
             
@@ -573,12 +644,13 @@ jobs:
             
             ### 🚀 Quick Start:
             1. **Download** the appropriate file for your platform
-            2. **Install** and launch WhisperDesk
-            3. **Download a model** in the Models tab (start with Tiny)
-            4. **Start transcribing** your audio files!
+            2. **Windows Portable**: Extract the ZIP file and run `WhisperDesk.exe`
+            3. **Installer**: Run the setup file and follow instructions
+            4. **Download a model** in the Models tab (start with Tiny)
+            5. **Start transcribing** your audio files!
             
             ### 🔧 Troubleshooting:
-            - **Windows**: If you get DLL errors, the installer includes `vc_redist.x64.exe`
+            - **Windows**: For portable version, extract ZIP and run directly - no installation needed
             - **macOS**: Right-click → Open if blocked by Gatekeeper
             - **Linux**: `chmod +x *.AppImage` to make executable
             
