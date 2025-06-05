@@ -2,7 +2,7 @@
   "name": "whisperdesk-enhanced",
   "version": "2.1.0",
   "description": "Advanced cross-platform transcription application with AI-powered speech recognition",
-  "main": "src/main/main.js",
+  "main": "src/main/main-simplified.js",
   "homepage": "https://whisperdesk.com",
   "author": {
     "name": "WhisperDesk Team",
