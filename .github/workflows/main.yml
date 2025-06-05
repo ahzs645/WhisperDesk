@@ -271,7 +271,12 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: false
         shell: pwsh
         run: |
-          npx electron-builder --win --x64 --publish=never
+          # Ensure all required files are present before building
+          echo "📋 Files before build:"
+          Get-ChildItem -Recurse -Path binaries, models -ErrorAction SilentlyContinue
+          
+          # Build with verbose output
+          npx electron-builder --win --x64 --publish=never --config.compression=normal
 
       # Upload artifacts
       - name: Upload Windows artifacts

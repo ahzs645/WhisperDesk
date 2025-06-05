@@ -17,17 +17,13 @@
     "dev:renderer": "cd src/renderer/whisperdesk-ui && pnpm run dev",
     "dev:clean": "npm run clean && npm run dev",
     "install:all": "npm install && cd src/renderer/whisperdesk-ui && pnpm install && cd ../../..",
-    "prebuild": "npm run build:whisper",
     "build": "npm run build:renderer && npm run build:main",
-    "build:skip-whisper": "npm run build:renderer && npm run build:main",
-    "build:renderer": "cd src/renderer/whisperdesk-ui && pnpm run build",
-    "build:main": "echo 'Main process build complete'",
+    "build:renderer": "cd src/renderer/whisperdesk-ui && npm run build",
+    "build:main": "echo 'Main process ready'",
     "build:whisper": "node scripts/build-whisper-cross-platform.js",
-    "build:whisper:bash": "chmod +x scripts/build-whisper.sh && ./scripts/build-whisper.sh",
-    "build:whisper:ps1": "powershell -ExecutionPolicy Bypass -File scripts/build-whisper.ps1",
-    "build:whisper:force": "rm -rf binaries && npm run build:whisper",
-    "pack": "npm run build && electron-builder --dir",
-    "dist": "npm run build && electron-builder",
+    "electron:build": "npm run build && electron-builder",
+    "electron:build:win": "npm run build && electron-builder --win",
+    "dist": "npm run build:whisper && npm run electron:build",
     "dist:win": "npm run build && electron-builder --win",
     "dist:mac": "npm run build && electron-builder --mac",
     "dist:linux": "npm run build && electron-builder --linux",
@@ -123,134 +119,66 @@
     "productName": "WhisperDesk",
     "copyright": "Copyright © 2024 WhisperDesk Team",
     "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
+    
     "directories": {
       "output": "dist",
       "buildResources": "resources"
     },
+    
+    "asar": true,
+    "asarUnpack": [
+      "binaries/**/*",
+      "models/**/*"
+    ],
+    
     "files": [
       "src/main/**/*",
       "src/renderer/whisperdesk-ui/dist/**/*",
-      "src/shared/**/*",
-      "node_modules/**/*",
+      "src/shared/**/*", 
       "package.json",
       "!src/renderer/whisperdesk-ui/src/**/*",
-      "!src/renderer/whisperdesk-ui/node_modules/**/*"
+      "!src/renderer/whisperdesk-ui/public/**/*",
+      "!src/renderer/whisperdesk-ui/node_modules/**/*",
+      "!src/renderer/whisperdesk-ui/package*.json",
+      "!**/node_modules/.cache/**/*",
+      "!**/*.{iml,o,hprof,orig,pyc,pyo,rbc,swp,csproj,sln,xproj}",
+      "!.editorconfig",
+      "!**/._*",
+      "!**/{.DS_Store,.git,.hg,.svn,CVS,RCS,SCCS,.gitignore,.gitattributes}",
+      "!**/{__pycache__,thumbs.db,.flowconfig,.idea,.vs,.nyc_output}",
+      "!**/{appveyor.yml,.travis.yml,circle.yml}",
+      "!**/{npm-debug.log,yarn.lock,.yarn-integrity,.yarn-metadata.json}"
     ],
+    
     "extraResources": [
-      {
-        "from": "resources/",
-        "to": "resources/",
-        "filter": [
-          "**/*"
-        ]
-      },
       {
         "from": "binaries/",
         "to": "binaries/",
-        "filter": [
-          "**/*"
-        ]
+        "filter": ["**/*"]
       },
       {
         "from": "models/",
-        "to": "models/",
-        "filter": [
-          "**/*"
-        ]
+        "to": "models/", 
+        "filter": ["**/*"]
       }
     ],
-    "mac": {
-      "category": "public.app-category.utilities",
-      "icon": "resources/icons/icon.icns",
-      "hardenedRuntime": true,
-      "gatekeeperAssess": false,
-      "darkModeSupport": true,
-      "target": [
-        {
-          "target": "zip",
-          "arch": [
-            "x64",
-            "arm64"
-          ]
-        }
-      ],
-      "extraFiles": [
-        {
-          "from": "binaries/whisper-cli",
-          "to": "MacOS/",
-          "filter": [
-            "**/*"
-          ]
-        }
-      ]
-    },
+    
     "win": {
       "icon": "resources/icons/icon.ico",
       "target": [
         {
           "target": "nsis",
-          "arch": [
-            "x64"
-          ]
+          "arch": ["x64"]
         },
         {
           "target": "portable",
-          "arch": [
-            "x64"
-          ]
+          "arch": ["x64"]
         }
       ],
       "publisherName": "WhisperDesk",
-      "verifyUpdateCodeSignature": false,
-      "extraFiles": [
-        {
-          "from": "binaries/",
-          "to": "binaries/",
-          "filter": [
-            "**/*"
-          ]
-        }
-      ]
+      "verifyUpdateCodeSignature": false
     },
-    "linux": {
-      "icon": "resources/icons/",
-      "category": "AudioVideo",
-      "target": [
-        {
-          "target": "AppImage",
-          "arch": [
-            "x64"
-          ]
-        },
-        {
-          "target": "deb",
-          "arch": [
-            "x64"
-          ]
-        },
-        {
-          "target": "rpm",
-          "arch": [
-            "x64"
-          ]
-        },
-        {
-          "target": "tar.gz",
-          "arch": [
-            "x64"
-          ]
-        }
-      ],
-      "extraFiles": [
-        {
-          "from": "binaries/whisper-cli",
-          "to": "./",
-          "filter": [
-            "**/*"
-          ]
-        }
-      ]
-    },
+    
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
@@ -261,38 +189,9 @@
       "uninstallerIcon": "resources/icons/icon.ico",
       "artifactName": "${productName}-Setup-${version}-${os}-${arch}.${ext}"
     },
+    
     "portable": {
       "artifactName": "${productName}-Portable-${version}-${os}-${arch}.${ext}"
-    },
-    "dmg": {
-      "title": "WhisperDesk ${version}",
-      "icon": "resources/icons/icon.icns",
-      "background": null,
-      "backgroundColor": "#ffffff",
-      "iconSize": 80,
-      "contents": [
-        {
-          "x": 130,
-          "y": 220,
-          "type": "file"
-        },
-        {
-          "x": 410,
-          "y": 220,
-          "type": "link",
-          "path": "/Applications"
-        }
-      ],
-      "window": {
-        "width": 540,
-        "height": 380
-      }
-    },
-
-    "publish": {
-      "provider": "github",
-      "owner": "whisperdesk",
-      "repo": "whisperdesk-enhanced"
     }
   },
   "keywords": [

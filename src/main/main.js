@@ -259,17 +259,17 @@ class WhisperDeskApp {
       focus: true,
       center: true,
       
-      // CRITICAL: Complete custom frame - more aggressive for macOS
-      frame: false,                    // Remove ALL native decorations
+      // Frame settings 
+      frame: false,
       titleBarStyle: process.platform === 'darwin' ? 'customButtonsOnHover' : 'hidden',
-      transparent: false,              // Keep opaque for better performance
+      transparent: false,
       
-      // macOS-specific: Completely disable traffic lights
+      // macOS-specific settings
       ...(process.platform === 'darwin' && {
-        titleBarStyle: 'hidden',        // Force hidden on macOS
-        trafficLightPosition: { x: -100, y: -100 }, // Move traffic lights off-screen
-        fullscreenWindowTitle: false,   // Don't show title in fullscreen
-        thickFrame: false,             // Remove thick frame
+        titleBarStyle: 'hidden',
+        trafficLightPosition: { x: -100, y: -100 },
+        fullscreenWindowTitle: false,
+        thickFrame: false,
       }),
       
       webPreferences: {
@@ -284,25 +284,44 @@ class WhisperDeskApp {
 
     // Additional macOS-specific setup
     if (process.platform === 'darwin') {
-      // Force remove all window decorations
       this.mainWindow.setWindowButtonVisibility(false);
-      
-      // Ensure no title bar
       this.mainWindow.setMenuBarVisibility(false);
     }
 
-    // Load the app
+    // ✅ FIXED: Proper path resolution for packaged apps
     if (process.env.NODE_ENV === 'development') {
       await this.mainWindow.loadURL('http://localhost:3000');
       this.mainWindow.webContents.openDevTools();
     } else {
-      const indexPath = path.join(__dirname, '../renderer/whisperdesk-ui/dist/index.html');
+      // Use proper path resolution for packaged apps
+      let indexPath;
+      
+      if (app.isPackaged) {
+        // In packaged app, renderer files are in resources/app.asar or resources/app
+        indexPath = path.join(process.resourcesPath, 'app.asar', 'src/renderer/whisperdesk-ui/dist/index.html');
+        
+        // Fallback: try without asar
+        if (!fs.existsSync(indexPath)) {
+          indexPath = path.join(process.resourcesPath, 'app', 'src/renderer/whisperdesk-ui/dist/index.html');
+        }
+        
+        // Fallback: try direct path
+        if (!fs.existsSync(indexPath)) {
+          indexPath = path.join(__dirname, '../../src/renderer/whisperdesk-ui/dist/index.html');
+        }
+      } else {
+        // Development or unpackaged
+        indexPath = path.join(__dirname, '../renderer/whisperdesk-ui/dist/index.html');
+      }
+      
+      console.log('Loading renderer from:', indexPath);
+      console.log('File exists:', fs.existsSync(indexPath));
+      
       await this.mainWindow.loadFile(indexPath);
     }
 
     // Platform-specific focus handling
     this.mainWindow.once('ready-to-show', () => {
-      // Additional macOS setup after window is ready
       if (process.platform === 'darwin') {
         this.mainWindow.setWindowButtonVisibility(false);
       }
