@@ -386,7 +386,6 @@ jobs:
         with:
           name: WhisperDesk-macos-${{ matrix.arch }}
           path: |
-            dist/*.dmg
             dist/*.zip
           retention-days: 30
 
@@ -524,7 +523,7 @@ jobs:
           mkdir -p release-files
           
           # Copy all artifacts to release directory with organized naming
-          find artifacts/ -type f \( -name "*.exe" -o -name "*.dmg" -o -name "*.zip" -o -name "*.AppImage" -o -name "*.deb" -o -name "*.rpm" -o -name "*.tar.gz" \) -exec cp {} release-files/ \;
+          find artifacts/ -type f \( -name "*.exe" -o -name "*.zip" -o -name "*.AppImage" -o -name "*.deb" -o -name "*.rpm" -o -name "*.tar.gz" \) -exec cp {} release-files/ \;
           
           echo "📋 Release files:"
           ls -la release-files/
