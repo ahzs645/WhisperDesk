@@ -53,31 +53,31 @@ jobs:
         shell: bash
         run: |
           if [ "${{ github.ref_type }}" = "tag" ]; then
-            # Extract version from git tag
+            # Extract version from git tag for official release
             VERSION="${{ github.ref_name }}"
             VERSION="${VERSION#v}"  # Remove 'v' prefix if present
             TAG_NAME="${{ github.ref_name }}"
-            echo "🏷️ Release build from tag: $TAG_NAME"
+            echo "🏷️ Official release: $TAG_NAME"
+            
+            # Update package.json version for official releases
+            cat package.json | jq --arg version "$VERSION" '.version = $version' > package.json.tmp && mv package.json.tmp package.json
+            echo "📦 Updated package.json to version: $VERSION"
+            
           elif [ -n "${{ github.event.inputs.release_tag }}" ]; then
-            # Use manual input
+            # Manual release input
             TAG_NAME="${{ github.event.inputs.release_tag }}"
             VERSION="${TAG_NAME#v}"
-            echo "🏷️ Manual release build: $TAG_NAME"
+            echo "🏷️ Manual release: $TAG_NAME"
+            
+            # Update package.json for manual releases too
+            cat package.json | jq --arg version "$VERSION" '.version = $version' > package.json.tmp && mv package.json.tmp package.json
+            echo "📦 Updated package.json to version: $VERSION"
+            
           else
-            # Use semver-compatible dev build format
-            DATE=$(date +%Y%m%d)
-            TIME=$(date +%H%M)
-            BUILD_NUMBER=$(git rev-list --count HEAD)
-            SHORT_HASH=$(git rev-parse --short=7 HEAD)
-            BRANCH_NAME="${{ github.head_ref || github.ref_name }}"
-            BRANCH_NAME="${BRANCH_NAME//\//-}"  # Replace slashes with dashes
-            
-            # Get base version from package.json
+            # Development build - use current package.json version + "-dev"
             PACKAGE_VERSION=$(node -p "require('./package.json').version")
-            
-            # Create semver-compatible dev version: 2.1.0-dev.20250604.1430.e974e7a
-            VERSION="${PACKAGE_VERSION}-dev.${DATE}.${TIME}.${SHORT_HASH}"
-            TAG_NAME="dev-${DATE}-${TIME}"
+            VERSION="${PACKAGE_VERSION}-dev"
+            TAG_NAME="dev"
             echo "🚧 Development build: $VERSION"
           fi
           
