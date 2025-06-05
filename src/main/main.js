@@ -288,37 +288,96 @@ class WhisperDeskApp {
       this.mainWindow.setMenuBarVisibility(false);
     }
 
-    // ✅ FIXED: Proper path resolution for packaged apps
-    if (process.env.NODE_ENV === 'development') {
-      await this.mainWindow.loadURL('http://localhost:3000');
-      this.mainWindow.webContents.openDevTools();
-    } else {
-      // Use proper path resolution for packaged apps
-      let indexPath;
+    // ✅ FIXED: Proper URL/file loading with error handling
+    try {
+      const isDev = process.env.NODE_ENV === 'development';
       
-      if (app.isPackaged) {
-        // In packaged app, renderer files are in resources/app.asar or resources/app
-        indexPath = path.join(process.resourcesPath, 'app.asar', 'src/renderer/whisperdesk-ui/dist/index.html');
-        
-        // Fallback: try without asar
-        if (!fs.existsSync(indexPath)) {
-          indexPath = path.join(process.resourcesPath, 'app', 'src/renderer/whisperdesk-ui/dist/index.html');
-        }
-        
-        // Fallback: try direct path
-        if (!fs.existsSync(indexPath)) {
-          indexPath = path.join(__dirname, '../../src/renderer/whisperdesk-ui/dist/index.html');
-        }
+      if (isDev) {
+        // ✅ FIXED: Correct Vite development port
+        const devUrl = 'http://localhost:5173';
+        console.log('Loading development URL:', devUrl);
+        await this.mainWindow.loadURL(devUrl);
+        this.mainWindow.webContents.openDevTools();
       } else {
-        // Development or unpackaged
-        indexPath = path.join(__dirname, '../renderer/whisperdesk-ui/dist/index.html');
+        // ✅ FIXED: Simplified path resolution for production
+        let indexPath;
+        
+        // Try different possible locations for the renderer files
+        const possiblePaths = [
+          // Packaged app paths
+          path.join(process.resourcesPath, 'app.asar', 'src/renderer/whisperdesk-ui/dist/index.html'),
+          path.join(process.resourcesPath, 'app', 'src/renderer/whisperdesk-ui/dist/index.html'),
+          // Development/unpackaged paths
+          path.join(__dirname, '../renderer/whisperdesk-ui/dist/index.html'),
+          path.join(__dirname, '../../src/renderer/whisperdesk-ui/dist/index.html'),
+          // Fallback paths
+          path.join(process.cwd(), 'src/renderer/whisperdesk-ui/dist/index.html'),
+          path.join(app.getAppPath(), 'src/renderer/whisperdesk-ui/dist/index.html')
+        ];
+        
+        // Find the first existing path
+        for (const testPath of possiblePaths) {
+          console.log('Checking path:', testPath);
+          if (fs.existsSync(testPath)) {
+            indexPath = testPath;
+            console.log('✅ Found renderer at:', indexPath);
+            break;
+          }
+        }
+        
+        if (!indexPath) {
+          throw new Error(`Renderer files not found. Searched paths:\n${possiblePaths.join('\n')}`);
+        }
+        
+        console.log('Loading renderer from:', indexPath);
+        await this.mainWindow.loadFile(indexPath);
       }
+    } catch (error) {
+      console.error('❌ Failed to load renderer:', error);
       
-      console.log('Loading renderer from:', indexPath);
-      console.log('File exists:', fs.existsSync(indexPath));
+      // Show error dialog to user
+      const { dialog } = require('electron');
+      dialog.showErrorBox(
+        'Failed to Load Application', 
+        `WhisperDesk failed to load the user interface.\n\nError: ${error.message}\n\nPlease try reinstalling the application.`
+      );
       
-      await this.mainWindow.loadFile(indexPath);
+      // Don't quit immediately - let user see the error
+      setTimeout(() => {
+        app.quit();
+      }, 5000);
+      
+      return;
     }
+
+    // ✅ FIXED: Better error handling for renderer process
+    this.mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL) => {
+      console.error('❌ Renderer failed to load:', {
+        errorCode,
+        errorDescription,
+        url: validatedURL
+      });
+      
+      // Show user-friendly error
+      const { dialog } = require('electron');
+      dialog.showErrorBox(
+        'Application Error', 
+        `Failed to load the application interface.\n\nError: ${errorDescription}\nURL: ${validatedURL}`
+      );
+    });
+
+    this.mainWindow.webContents.on('did-finish-load', () => {
+      console.log('✅ Renderer loaded successfully');
+    });
+
+    this.mainWindow.webContents.on('crashed', () => {
+      console.error('❌ Renderer process crashed');
+      
+      // Try to reload
+      if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+        this.mainWindow.reload();
+      }
+    });
 
     // Platform-specific focus handling
     this.mainWindow.once('ready-to-show', () => {
