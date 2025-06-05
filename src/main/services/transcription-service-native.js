@@ -1,4 +1,4 @@
-// src/main/services/transcription-service-native.js - FIXED PROVIDER NAMING
+// src/main/services/transcription-service-native.js - GRACEFUL BINARY HANDLING
 const { EventEmitter } = require('events');
 const fs = require('fs').promises;
 const path = require('path');
@@ -20,6 +20,7 @@ class NativeTranscriptionService extends EventEmitter {
     this.modelManager = modelManager;
     this.binaryManager = new BinaryManager();
     this.isInitialized = false;
+    this.binaryStatus = null;
   }
 
   async initialize() {
@@ -32,15 +33,23 @@ class NativeTranscriptionService extends EventEmitter {
       // Create temp directory
       await fs.mkdir(this.tempDir, { recursive: true });
       
-      // Initialize binary manager
-      await this.binaryManager.initialize();
+      // Initialize binary manager (NO AUTO-FIXING)
+      const binaryAvailable = await this.binaryManager.initialize();
+      this.binaryStatus = await this.binaryManager.getStatus();
       
-      // Initialize providers
-      await this.initializeProviders();
+      // Initialize providers with graceful handling
+      await this.initializeProviders(binaryAvailable);
       
       this.isInitialized = true;
       console.log('Native transcription service initialized');
       console.log(`Available providers: ${Array.from(this.providers.keys()).join(', ')}`);
+      
+      // Log binary status for debugging
+      if (!binaryAvailable) {
+        console.warn('⚠️ Native Whisper provider is disabled due to missing binary');
+        console.warn('💡 Run "npm run build:whisper" to enable native transcription');
+      }
+      
     } catch (error) {
       console.error('Error initializing native transcription service:', error);
       this.isInitialized = false;
@@ -48,39 +57,70 @@ class NativeTranscriptionService extends EventEmitter {
     }
   }
 
-  async initializeProviders() {
-    // Initialize Native Whisper provider
+  async initializeProviders(binaryAvailable) {
+    // Initialize Native Whisper provider with graceful handling
     try {
       const nativeWhisperProvider = new NativeWhisperProvider(this.modelManager, this.binaryManager);
-      await nativeWhisperProvider.initialize();
       
-      // Forward events with better logging
-      nativeWhisperProvider.on('progress', (data) => {
-        console.log('📊 Provider progress event:', data.progress);
-        this.emit('progress', data);
+      // Only initialize if binary is available
+      if (binaryAvailable) {
+        await nativeWhisperProvider.initialize();
+        
+        // Forward events with better logging
+        nativeWhisperProvider.on('progress', (data) => {
+          console.log('📊 Provider progress event:', data.progress);
+          this.emit('progress', data);
+        });
+        
+        nativeWhisperProvider.on('error', (data) => {
+          console.log('❌ Provider error event:', data.error);
+          this.emit('error', data);
+        });
+        
+        nativeWhisperProvider.on('complete', (data) => {
+          console.log('✅ Provider complete event');
+          this.emit('complete', data);
+        });
+        
+        console.log('✅ Native Whisper provider initialized');
+      } else {
+        console.warn('⚠️ Skipping Native Whisper provider initialization - binary not available');
+      }
+      
+      // Create provider object with availability info
+      this.providers.set('whisper-native', {
+        getName: () => 'whisper-native',
+        getDescription: () => binaryAvailable 
+          ? 'Local whisper.cpp transcription' 
+          : 'Local whisper.cpp transcription (binary not available)',
+        isAvailable: () => binaryAvailable,
+        getCapabilities: () => binaryAvailable 
+          ? nativeWhisperProvider.getCapabilities() 
+          : { error: 'Binary not available. Run: npm run build:whisper' },
+        processFile: binaryAvailable 
+          ? (...args) => nativeWhisperProvider.processFile(...args)
+          : () => {
+              throw new Error('Native Whisper is not available. The whisper.cpp binary was not found.\n\nTo fix this:\n1. Run "npm run build:whisper"\n2. Restart the application\n\nTechnical details: ' + JSON.stringify(this.binaryStatus.recommendation || 'Binary not found'));
+            },
+        // Include the actual provider if available
+        _actualProvider: binaryAvailable ? nativeWhisperProvider : null,
+        _binaryStatus: this.binaryStatus
       });
       
-      nativeWhisperProvider.on('error', (data) => {
-        console.log('❌ Provider error event:', data.error);
-        this.emit('error', data);
-      });
-      
-      nativeWhisperProvider.on('complete', (data) => {
-        console.log('✅ Provider complete event');
-        this.emit('complete', data);
-      });
-      
-      this.providers.set('whisper-native', nativeWhisperProvider);
-      console.log('✅ Native Whisper provider initialized');
     } catch (error) {
       console.warn('⚠️ Failed to initialize Native Whisper provider:', error.message);
       
       // Create a disabled provider for UI display
       this.providers.set('whisper-native', {
         getName: () => 'whisper-native',
-        getDescription: () => 'Local whisper.cpp transcription (unavailable)',
+        getDescription: () => 'Local whisper.cpp transcription (initialization failed)',
         isAvailable: () => false,
-        getCapabilities: () => ({ error: error.message })
+        getCapabilities: () => ({ error: error.message }),
+        processFile: () => {
+          throw new Error('Native Whisper failed to initialize: ' + error.message);
+        },
+        _actualProvider: null,
+        _binaryStatus: this.binaryStatus
       });
     }
 
@@ -94,7 +134,15 @@ class NativeTranscriptionService extends EventEmitter {
       deepgramProvider.on('error', (data) => this.emit('error', data));
       deepgramProvider.on('complete', (data) => this.emit('complete', data));
       
-      this.providers.set('deepgram', deepgramProvider);
+      this.providers.set('deepgram', {
+        getName: () => 'deepgram',
+        getDescription: () => 'Deepgram Nova API (cloud transcription)',
+        isAvailable: () => deepgramProvider.isAvailable(),
+        getCapabilities: () => deepgramProvider.getCapabilities(),
+        processFile: (...args) => deepgramProvider.processFile(...args),
+        _actualProvider: deepgramProvider
+      });
+      
       console.log('✅ Deepgram provider initialized');
     } catch (error) {
       console.warn('⚠️ Failed to initialize Deepgram provider:', error.message);
@@ -104,7 +152,11 @@ class NativeTranscriptionService extends EventEmitter {
         getName: () => 'deepgram',
         getDescription: () => 'Deepgram Nova API (unavailable - check dependencies)',
         isAvailable: () => false,
-        getCapabilities: () => ({ error: error.message })
+        getCapabilities: () => ({ error: error.message }),
+        processFile: () => {
+          throw new Error('Deepgram provider failed to initialize: ' + error.message);
+        },
+        _actualProvider: null
       });
     }
 
@@ -119,39 +171,56 @@ class NativeTranscriptionService extends EventEmitter {
       this.defaultProvider = 'deepgram';
       console.log('⚠️ Native Whisper not available, falling back to: deepgram');
     } else {
-      // Even if all providers failed to initialize, don't crash - let the UI show them as disabled
-      this.defaultProvider = 'whisper-native'; // Default to native for UI purposes
-      console.warn('⚠️ All providers failed to initialize - they will show as unavailable in UI');
+      // No providers available - still set default for UI purposes
+      this.defaultProvider = 'whisper-native';
+      console.warn('⚠️ No transcription providers are available');
     }
   }
 
-// FIXED: Return properly formatted provider info for UI
+  // Return properly formatted provider info for UI with helpful error messages
   getProviders() {
     return Array.from(this.providers.values()).map(provider => {
-      // Handle both real providers and fallback stub providers
-      if (typeof provider.getName === 'function') {
-        // Real provider
-        return {
-          id: provider.getName(),
-          name: this.getProviderDisplayName(provider.getName()),
-          description: provider.getDescription ? provider.getDescription() : 'No description',
-          isAvailable: provider.isAvailable ? provider.isAvailable() : false,
-          capabilities: provider.getCapabilities ? provider.getCapabilities() : {}
-        };
-      } else {
-        // Fallback stub provider (shouldn't happen now, but safety check)
-        return {
-          id: 'unknown',
-          name: 'Unknown Provider',
-          description: 'Provider not properly initialized',
-          isAvailable: false,
-          capabilities: {}
-        };
+      const isAvailable = provider.isAvailable();
+      const capabilities = provider.getCapabilities();
+      
+      let description = provider.getDescription();
+      let errorInfo = null;
+      
+      // Add helpful error information for disabled providers
+      if (!isAvailable) {
+        if (provider.getName() === 'whisper-native' && provider._binaryStatus) {
+          errorInfo = {
+            reason: 'Binary not available',
+            recommendation: provider._binaryStatus.recommendation,
+            technicalDetails: {
+              binaryPath: provider._binaryStatus.whisperBinaryPath,
+              binaryExists: provider._binaryStatus.binaryExists,
+              platform: provider._binaryStatus.platform
+            }
+          };
+          
+          if (!provider._binaryStatus.binaryExists) {
+            description = 'Local whisper.cpp (binary not found - run "npm run build:whisper")';
+          } else if (!provider._binaryStatus.binaryExecutable) {
+            description = 'Local whisper.cpp (binary not executable)';
+          } else {
+            description = 'Local whisper.cpp (binary has issues)';
+          }
+        }
       }
+      
+      return {
+        id: provider.getName(),
+        name: this.getProviderDisplayName(provider.getName()),
+        description,
+        isAvailable,
+        capabilities,
+        errorInfo
+      };
     });
   }
 
-  // FIXED: Convert internal provider names to user-friendly display names
+  // Convert internal provider names to user-friendly display names
   getProviderDisplayName(providerName) {
     const displayNames = {
       'whisper-native': 'Native Whisper',
@@ -181,9 +250,22 @@ class NativeTranscriptionService extends EventEmitter {
       throw new Error(`Provider '${provider}' not available`);
     }
 
-    // FIXED: Don't check isAvailable() here - let the provider handle runtime availability
-    // This allows for graceful runtime error handling instead of blocking all attempts
-    console.log(`✅ Using provider: ${provider} (availability will be checked at runtime)`);
+    // Check if provider is available and give helpful error message
+    if (!selectedProvider.isAvailable()) {
+      const errorInfo = selectedProvider._binaryStatus;
+      
+      let errorMessage = `The ${this.getProviderDisplayName(provider)} provider is not available.`;
+      
+      if (provider === 'whisper-native' && errorInfo) {
+        errorMessage += `\n\nReason: ${errorInfo.recommendation || 'Binary not found'}`;
+        errorMessage += `\n\nTo fix this:`;
+        errorMessage += `\n1. Run "npm run build:whisper" in your terminal`;
+        errorMessage += `\n2. Restart WhisperDesk`;
+        errorMessage += `\n\nBinary should be located at: ${errorInfo.whisperBinaryPath}`;
+      }
+      
+      throw new Error(errorMessage);
+    }
 
     try {
       // Validate file exists
@@ -235,21 +317,24 @@ class NativeTranscriptionService extends EventEmitter {
     } catch (error) {
       console.error(`❌ Transcription failed with ${provider}:`, error.message);
       
-      // FIXED: Intelligent fallback logic
+      // Intelligent fallback logic
       if (provider === 'whisper-native' && this.providers.has('deepgram')) {
-        console.log('🔄 Attempting fallback to Deepgram provider...');
-        try {
-          const fallbackResult = await this.processFile(filePath, {
-            ...options,
-            provider: 'deepgram',
-            transcriptionId
-          });
-          
-          console.log('✅ Fallback to Deepgram successful');
-          return fallbackResult;
-        } catch (fallbackError) {
-          console.error('❌ Fallback to Deepgram also failed:', fallbackError.message);
-          // Continue with original error handling
+        const deepgramProvider = this.providers.get('deepgram');
+        if (deepgramProvider.isAvailable()) {
+          console.log('🔄 Attempting fallback to Deepgram provider...');
+          try {
+            const fallbackResult = await this.processFile(filePath, {
+              ...options,
+              provider: 'deepgram',
+              transcriptionId
+            });
+            
+            console.log('✅ Fallback to Deepgram successful');
+            return fallbackResult;
+          } catch (fallbackError) {
+            console.error('❌ Fallback to Deepgram also failed:', fallbackError.message);
+            // Continue with original error handling
+          }
         }
       }
       
@@ -268,15 +353,16 @@ class NativeTranscriptionService extends EventEmitter {
         provider
       });
 
-      // FIXED: Provide more helpful error messages to user
+      // Provide helpful error messages to user
       let userFriendlyError = error.message;
       
-      if (error.message.includes('not available') && provider === 'whisper-native') {
-        userFriendlyError = 'Local transcription is not available. This may be due to missing dependencies or binary issues. Please try updating the app or contact support.';
+      if (error.message.includes('Binary not available') || error.message.includes('whisper.cpp binary was not found')) {
+        // Already has helpful message from provider
+        userFriendlyError = error.message;
       } else if (error.message.includes('model')) {
         userFriendlyError = 'Transcription model error. Please check if the selected model is downloaded and try again.';
       } else if (error.message.includes('ENOENT') || error.message.includes('not found')) {
-        userFriendlyError = 'Transcription binary not found. Please reinstall the application.';
+        userFriendlyError = 'Transcription binary not found. Please run "npm run build:whisper" and restart the application.';
       }
       
       throw new Error(userFriendlyError);
@@ -289,12 +375,50 @@ class NativeTranscriptionService extends EventEmitter {
     }
   }
 
+  /**
+   * Get helpful information about binary status for UI
+   */
+  getBinaryStatus() {
+    return this.binaryStatus;
+  }
+
+  /**
+   * Get helpful guidance for users when binary is not available
+   */
+  getSetupGuidance() {
+    if (!this.binaryStatus) {
+      return {
+        isSetupNeeded: true,
+        guidance: 'Initializing...'
+      };
+    }
+
+    if (this.binaryStatus.binaryExists && this.binaryStatus.binaryExecutable && 
+        this.binaryStatus.dependencyCheck?.success && this.binaryStatus.testResult?.success) {
+      return {
+        isSetupNeeded: false,
+        guidance: 'Everything is ready!'
+      };
+    }
+
+    return {
+      isSetupNeeded: true,
+      guidance: this.binaryStatus.recommendation || 'Unknown issue - check binary setup',
+      technicalDetails: this.binaryStatus
+    };
+  }
+
+  // Rest of the methods remain the same...
   async processRealtime(audioStream, options = {}) {
     const provider = options.provider || this.defaultProvider;
     const selectedProvider = this.providers.get(provider);
     
     if (!selectedProvider) {
       throw new Error(`Provider '${provider}' not available`);
+    }
+
+    if (!selectedProvider.isAvailable()) {
+      throw new Error(`Provider '${provider}' is not available`);
     }
 
     const capabilities = selectedProvider.getCapabilities();
@@ -319,8 +443,8 @@ class NativeTranscriptionService extends EventEmitter {
     }
 
     const provider = this.providers.get(transcription.provider);
-    if (provider && typeof provider.cancel === 'function') {
-      await provider.cancel(transcriptionId);
+    if (provider && provider._actualProvider && typeof provider._actualProvider.cancel === 'function') {
+      await provider._actualProvider.cancel(transcriptionId);
     }
 
     this.activeTranscriptions.delete(transcriptionId);
@@ -375,16 +499,17 @@ class NativeTranscriptionService extends EventEmitter {
       totalDuration,
       providers,
       activeTranscriptions: this.activeTranscriptions.size,
-      availableProviders: Array.from(this.providers.keys())
+      availableProviders: Array.from(this.providers.keys()),
+      binaryStatus: this.binaryStatus
     };
   }
 
   async cleanup() {
     // Clean up all providers
     for (const provider of this.providers.values()) {
-      if (typeof provider.cleanup === 'function') {
+      if (provider._actualProvider && typeof provider._actualProvider.cleanup === 'function') {
         try {
-          await provider.cleanup();
+          await provider._actualProvider.cleanup();
         } catch (error) {
           console.warn(`Failed to cleanup provider ${provider.getName()}:`, error.message);
         }

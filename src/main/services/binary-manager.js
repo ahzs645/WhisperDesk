@@ -1,4 +1,4 @@
-// src/main/services/binary-manager.js - Enhanced with dependency fixing
+// src/main/services/binary-manager.js - PRODUCTION VERSION (No runtime compilation)
 const path = require('path');
 const fs = require('fs').promises;
 const os = require('os');
@@ -32,7 +32,7 @@ class BinaryManager {
   }
 
   /**
-   * Get the path to the whisper binary with automatic fallback
+   * Get the path to the whisper binary
    */
   getWhisperBinaryPath() {
     const binaryName = this.platform === 'win32' ? 'whisper-cli.exe' : 'whisper-cli';
@@ -40,7 +40,7 @@ class BinaryManager {
   }
 
   /**
-   * Enhanced binary availability check with dependency resolution
+   * Check if whisper binary exists and is executable (NO AUTO-FIXING)
    */
   async ensureWhisperBinary() {
     const binaryPath = this.getWhisperBinaryPath();
@@ -49,38 +49,27 @@ class BinaryManager {
       await fs.access(binaryPath, fs.constants.F_OK | fs.constants.X_OK);
       console.log(`✅ Whisper binary found: ${binaryPath}`);
       
-      // Check dependencies on macOS/Linux
+      // Check dependencies on macOS/Linux (but don't auto-fix)
       if (this.platform !== 'win32') {
-        const dependencyCheck = await this.checkAndFixDependencies(binaryPath);
+        const dependencyCheck = await this.checkDependencies(binaryPath);
         if (!dependencyCheck.success) {
           console.warn(`⚠️ Dependency issues detected: ${dependencyCheck.error}`);
-          
-          // Try to auto-fix
-          const fixResult = await this.autoFixBinary(binaryPath);
-          if (fixResult.success) {
-            console.log(`✅ Binary dependencies fixed: ${fixResult.method}`);
-            return true;
-          } else {
-            console.error(`❌ Could not fix binary dependencies: ${fixResult.error}`);
-            return false;
-          }
+          return false;
         }
       }
       
       return true;
     } catch (error) {
       console.error(`❌ Whisper binary not found or not executable: ${binaryPath}`);
-      
-      // Try to auto-download/build a working binary
-      const buildResult = await this.autoProvisionBinary();
-      return buildResult.success;
+      console.error(`💡 To fix this, run: npm run build:whisper`);
+      return false;
     }
   }
 
   /**
-   * Check and fix binary dependencies (macOS/Linux)
+   * Check binary dependencies (READ-ONLY, no auto-fixing)
    */
-  async checkAndFixDependencies(binaryPath) {
+  async checkDependencies(binaryPath) {
     const cacheKey = `${binaryPath}-${await this.getFileHash(binaryPath)}`;
     
     if (this.dependencyCheckCache.has(cacheKey)) {
@@ -103,7 +92,7 @@ class BinaryManager {
   }
 
   /**
-   * Check macOS binary dependencies using otool
+   * Check macOS binary dependencies using otool (READ-ONLY)
    */
   async checkMacOSDependencies(binaryPath) {
     try {
@@ -122,34 +111,25 @@ class BinaryManager {
         console.log(`🔍 Found problematic dependencies:`, problemDeps);
         return { 
           success: false, 
-          error: 'Dynamic linking with missing libraries',
+          error: 'Dynamic linking with missing libraries. Rebuild with: npm run build:whisper',
           problematicDeps: problemDeps,
           linkingType: 'dynamic'
         };
       }
 
-      // Check if it's statically linked (good)
-      const hasSystemLibsOnly = lines.every(line => 
-        line.trim() === '' ||
-        line.includes(binaryPath) ||
-        line.includes('/usr/lib/') ||
-        line.includes('/System/Library/') ||
-        line.includes('@rpath') === false
-      );
-
       return { 
         success: true, 
-        method: hasSystemLibsOnly ? 'static-linking' : 'dynamic-but-available',
-        linkingType: hasSystemLibsOnly ? 'static' : 'dynamic'
+        method: 'dependencies-ok',
+        linkingType: 'static'
       };
 
     } catch (error) {
-      return { success: false, error: `otool check failed: ${error.message}` };
+      return { success: false, error: `Dependency check failed: ${error.message}` };
     }
   }
 
   /**
-   * Check Linux binary dependencies using ldd
+   * Check Linux binary dependencies using ldd (READ-ONLY)
    */
   async checkLinuxDependencies(binaryPath) {
     try {
@@ -163,7 +143,7 @@ class BinaryManager {
       if (missingDeps.length > 0) {
         return { 
           success: false, 
-          error: 'Missing shared libraries',
+          error: 'Missing shared libraries. Rebuild with: npm run build:whisper',
           missingDeps: missingDeps
         };
       }
@@ -176,185 +156,12 @@ class BinaryManager {
         return { success: true, method: 'static-linking' };
       }
       
-      return { success: false, error: `ldd check failed: ${error.message}` };
+      return { success: false, error: `Dependency check failed: ${error.message}` };
     }
   }
 
   /**
-   * Auto-fix binary by rebuilding with static linking or finding alternatives
-   */
-  async autoFixBinary(problematicBinaryPath) {
-    console.log(`🔧 Attempting to auto-fix binary: ${problematicBinaryPath}`);
-
-    // Strategy 1: Try to find a pre-built static binary
-    const staticBinaryResult = await this.downloadStaticBinary();
-    if (staticBinaryResult.success) {
-      // Backup original and replace
-      await this.backupAndReplace(problematicBinaryPath, staticBinaryResult.path);
-      return { success: true, method: 'downloaded-static-binary' };
-    }
-
-    // Strategy 2: Build static binary from source
-    const buildResult = await this.buildStaticBinary();
-    if (buildResult.success) {
-      await this.backupAndReplace(problematicBinaryPath, buildResult.path);
-      return { success: true, method: 'built-static-binary' };
-    }
-
-    // Strategy 3: Try to bundle required libraries (macOS)
-    if (this.platform === 'darwin') {
-      const bundleResult = await this.bundleDynamicLibraries(problematicBinaryPath);
-      if (bundleResult.success) {
-        return { success: true, method: 'bundled-dynamic-libraries' };
-      }
-    }
-
-    return { 
-      success: false, 
-      error: 'All auto-fix strategies failed',
-      attempted: ['download-static', 'build-static', 'bundle-dynamic']
-    };
-  }
-
-  /**
-   * Download pre-built static binary
-   */
-  async downloadStaticBinary() {
-    console.log(`📥 Downloading pre-built static binary for ${this.platform}-${this.arch}...`);
-    
-    try {
-      // Determine the correct release asset
-      const releaseUrl = 'https://api.github.com/repos/ggerganov/whisper.cpp/releases/latest';
-      const response = await fetch(releaseUrl);
-      const release = await response.json();
-      
-      // Find the appropriate asset
-      let assetName;
-      if (this.platform === 'darwin') {
-        assetName = this.arch === 'arm64' ? 
-          'whisper-blas-bin-macos-arm64.zip' : 
-          'whisper-blas-bin-macos-x64.zip';
-      } else if (this.platform === 'linux') {
-        assetName = 'whisper-blas-bin-linux-x64.zip';
-      } else {
-        return { success: false, error: 'No pre-built binary available for platform' };
-      }
-
-      const asset = release.assets.find(a => a.name === assetName);
-      if (!asset) {
-        return { success: false, error: `Asset ${assetName} not found in release` };
-      }
-
-      // Download and extract
-      const tempDir = path.join(os.tmpdir(), `whisper-download-${Date.now()}`);
-      await fs.mkdir(tempDir, { recursive: true });
-      
-      const zipPath = path.join(tempDir, assetName);
-      const zipResponse = await fetch(asset.browser_download_url);
-      const zipBuffer = Buffer.from(await zipResponse.arrayBuffer());
-      await fs.writeFile(zipPath, zipBuffer);
-
-      // Extract (simplified - you'd use a proper zip library in production)
-      const { execAsync } = require('../utils/exec-utils');
-      await execAsync(`cd "${tempDir}" && unzip -o "${assetName}"`, { timeout: 30000 });
-
-      // Find the binary
-      const extractedFiles = await fs.readdir(tempDir);
-      const binaryFile = extractedFiles.find(f => f === 'main' || f === 'whisper-cli');
-      
-      if (!binaryFile) {
-        return { success: false, error: 'Binary not found in downloaded archive' };
-      }
-
-      const binaryPath = path.join(tempDir, binaryFile);
-      
-      // Test the binary
-      const testResult = await this.testBinary(binaryPath);
-      if (!testResult.success) {
-        return { success: false, error: `Downloaded binary test failed: ${testResult.error}` };
-      }
-
-      console.log(`✅ Downloaded working static binary`);
-      return { success: true, path: binaryPath };
-
-    } catch (error) {
-      console.error(`❌ Download failed: ${error.message}`);
-      return { success: false, error: error.message };
-    }
-  }
-
-  /**
-   * Build static binary from source
-   */
-  async buildStaticBinary() {
-    console.log(`🏗️ Building static whisper.cpp binary from source...`);
-    
-    try {
-      const buildDir = path.join(os.tmpdir(), `whisper-build-${Date.now()}`);
-      await fs.mkdir(buildDir, { recursive: true });
-
-      // Clone repository
-      await execAsync(`git clone --depth 1 https://github.com/ggerganov/whisper.cpp.git "${buildDir}"`, {
-        timeout: 60000
-      });
-
-      // Configure with static linking
-      const cmakeArgs = [
-        'cmake', '-B', 'build',
-        '-DCMAKE_BUILD_TYPE=Release',
-        '-DWHISPER_BUILD_TESTS=OFF',
-        '-DWHISPER_BUILD_EXAMPLES=ON',
-        '-DBUILD_SHARED_LIBS=OFF', // Force static linking
-      ];
-
-      if (this.platform === 'darwin') {
-        // macOS specific flags
-        cmakeArgs.push(`-DCMAKE_OSX_ARCHITECTURES=${this.arch}`);
-        if (this.arch === 'x86_64') {
-          cmakeArgs.push('-DGGML_NATIVE=OFF'); // Avoid CPU-specific optimizations for compatibility
-        }
-      }
-
-      await execAsync(cmakeArgs.join(' '), {
-        cwd: buildDir,
-        timeout: 120000
-      });
-
-      // Build
-      const parallelJobs = os.cpus().length;
-      await execAsync(`cmake --build build --config Release --parallel ${parallelJobs}`, {
-        cwd: buildDir,
-        timeout: 300000 // 5 minutes
-      });
-
-      // Find the binary
-      const binDir = path.join(buildDir, 'build', 'bin');
-      const files = await fs.readdir(binDir);
-      const binaryFile = files.find(f => f === 'main' || f === 'whisper-cli');
-      
-      if (!binaryFile) {
-        return { success: false, error: 'Built binary not found' };
-      }
-
-      const binaryPath = path.join(binDir, binaryFile);
-      
-      // Test the binary
-      const testResult = await this.testBinary(binaryPath);
-      if (!testResult.success) {
-        return { success: false, error: `Built binary test failed: ${testResult.error}` };
-      }
-
-      console.log(`✅ Built working static binary`);
-      return { success: true, path: binaryPath };
-
-    } catch (error) {
-      console.error(`❌ Build failed: ${error.message}`);
-      return { success: false, error: error.message };
-    }
-  }
-
-  /**
-   * Test binary functionality
+   * Test binary functionality (READ-ONLY)
    */
   async testBinary(binaryPath) {
     try {
@@ -374,13 +181,9 @@ class BinaryManager {
           output.includes('--model') ||
           output.includes('usage')) {
         
-        // Check dependencies one more time
-        const depCheck = await this.checkAndFixDependencies(binaryPath);
-        
         return {
-          success: depCheck.success,
-          error: depCheck.success ? null : depCheck.error,
-          linkingType: depCheck.linkingType || 'unknown'
+          success: true,
+          error: null
         };
       } else {
         return {
@@ -456,124 +259,6 @@ class BinaryManager {
   }
 
   /**
-   * Test if binary can process a sample file
-   */
-  async testBinaryWithSample() {
-    try {
-      const binaryPath = this.getWhisperBinaryPath();
-      const tempDir = path.join(os.tmpdir(), 'whisper-test');
-      
-      // Create a minimal test (just check if binary runs without crashing)
-      const testProcess = spawn(binaryPath, ['--help'], {
-        stdio: 'pipe',
-        timeout: 5000
-      });
-      
-      return new Promise((resolve) => {
-        let output = '';
-        
-        testProcess.stdout.on('data', (data) => output += data.toString());
-        testProcess.stderr.on('data', (data) => output += data.toString());
-        
-        testProcess.on('close', (code) => {
-          resolve({
-            success: code === 0,
-            output: output.substring(0, 500), // First 500 chars
-            exitCode: code
-          });
-        });
-        
-        testProcess.on('error', (error) => {
-          resolve({
-            success: false,
-            error: error.message
-          });
-        });
-        
-        setTimeout(() => {
-          testProcess.kill();
-          resolve({
-            success: false,
-            error: 'Test timeout'
-          });
-        }, 5000);
-      });
-      
-    } catch (error) {
-      return {
-        success: false,
-        error: error.message
-      };
-    }
-  }
-
-  /**
-   * Backup original binary and replace with working one
-   */
-  async backupAndReplace(originalPath, newPath) {
-    const backupPath = `${originalPath}.backup-${Date.now()}`;
-    
-    try {
-      // Backup original
-      await fs.copyFile(originalPath, backupPath);
-      console.log(`📦 Backed up original binary to: ${backupPath}`);
-      
-      // Replace with new binary
-      await fs.copyFile(newPath, originalPath);
-      await fs.chmod(originalPath, 0o755);
-      
-      console.log(`🔄 Replaced binary with working version`);
-      
-      // Clean up temp file
-      try {
-        await fs.unlink(newPath);
-      } catch (e) {
-        // Ignore cleanup errors
-      }
-      
-    } catch (error) {
-      throw new Error(`Failed to backup and replace binary: ${error.message}`);
-    }
-  }
-
-  /**
-   * Auto-provision binary when none exists
-   */
-  async autoProvisionBinary() {
-    console.log(`🔍 No whisper binary found, attempting to provision one...`);
-    
-    // Ensure binaries directory exists
-    await fs.mkdir(this.binariesDir, { recursive: true });
-    
-    // Try download first (faster)
-    const downloadResult = await this.downloadStaticBinary();
-    if (downloadResult.success) {
-      const targetPath = this.getWhisperBinaryPath();
-      await fs.copyFile(downloadResult.path, targetPath);
-      await fs.chmod(targetPath, 0o755);
-      
-      console.log(`✅ Provisioned binary via download`);
-      return { success: true, method: 'download' };
-    }
-    
-    // Fall back to building
-    const buildResult = await this.buildStaticBinary();
-    if (buildResult.success) {
-      const targetPath = this.getWhisperBinaryPath();
-      await fs.copyFile(buildResult.path, targetPath);
-      await fs.chmod(targetPath, 0o755);
-      
-      console.log(`✅ Provisioned binary via build`);
-      return { success: true, method: 'build' };
-    }
-    
-    return {
-      success: false,
-      error: 'Could not provision binary via download or build'
-    };
-  }
-
-  /**
    * Get file hash for caching
    */
   async getFileHash(filePath) {
@@ -587,7 +272,7 @@ class BinaryManager {
   }
 
   /**
-   * Enhanced binary status with dependency information
+   * Get binary status with helpful guidance (NO AUTO-FIXING)
    */
   async getStatus() {
     const status = {
@@ -600,8 +285,7 @@ class BinaryManager {
       binarySize: 0,
       testResult: null,
       dependencyCheck: null,
-      autoFixAttempted: false,
-      autoFixResult: null
+      recommendation: null
     };
 
     try {
@@ -617,57 +301,47 @@ class BinaryManager {
         status.binaryExecutable = true;
       } catch {
         status.binaryExecutable = false;
+        status.recommendation = 'Binary found but not executable. Run: chmod +x ' + binaryPath;
       }
 
       // Check dependencies
       if (status.binaryExecutable) {
-        status.dependencyCheck = await this.checkAndFixDependencies(binaryPath);
+        status.dependencyCheck = await this.checkDependencies(binaryPath);
         
-        // If dependencies failed, try auto-fix
         if (!status.dependencyCheck.success) {
-          status.autoFixAttempted = true;
-          status.autoFixResult = await this.autoFixBinary(binaryPath);
-          
-          // Re-check after auto-fix
-          if (status.autoFixResult.success) {
-            status.dependencyCheck = await this.checkAndFixDependencies(binaryPath);
-          }
+          status.recommendation = 'Binary has dependency issues. Rebuild with: npm run build:whisper';
         }
       }
 
       // Test binary functionality if it passes dependency checks
       if (status.dependencyCheck?.success) {
         status.testResult = await this.testBinary(binaryPath);
+        
+        if (!status.testResult.success) {
+          status.recommendation = 'Binary exists but fails tests. Rebuild with: npm run build:whisper';
+        }
+      }
+
+      // If everything is good
+      if (status.binaryExists && status.binaryExecutable && 
+          status.dependencyCheck?.success && status.testResult?.success) {
+        status.recommendation = 'Binary is ready to use!';
       }
 
     } catch (error) {
-      // Binary doesn't exist, try auto-provision
-      status.autoFixAttempted = true;
-      status.autoFixResult = await this.autoProvisionBinary();
-      
-      // Re-check status after provisioning
-      if (status.autoFixResult.success) {
-        try {
-          const stats = await fs.stat(this.getWhisperBinaryPath());
-          status.binaryExists = true;
-          status.binarySize = Math.round(stats.size / 1024);
-          status.binaryExecutable = true;
-          status.dependencyCheck = { success: true, method: 'auto-provisioned' };
-          status.testResult = await this.testBinary(this.getWhisperBinaryPath());
-        } catch (e) {
-          // Still failed
-        }
-      }
+      // Binary doesn't exist
+      status.binaryExists = false;
+      status.recommendation = 'Binary not found. Build it with: npm run build:whisper';
     }
 
     return status;
   }
 
   /**
-   * Initialize with auto-fixing
+   * Initialize with status reporting (NO AUTO-FIXING)
    */
   async initialize() {
-    console.log('🔧 Initializing Enhanced BinaryManager...');
+    console.log('🔧 Initializing Production BinaryManager...');
     console.log(`📍 Platform: ${this.platform} (${this.arch})`);
     console.log(`📁 Binaries directory: ${this.binariesDir}`);
 
@@ -680,16 +354,41 @@ class BinaryManager {
       await fs.mkdir(this.binariesDir, { recursive: true });
     }
 
-    // Check for whisper binary with auto-fixing
+    // Check for whisper binary (NO AUTO-FIXING)
     const binaryReady = await this.ensureWhisperBinary();
     
     if (binaryReady) {
-      console.log('✅ Enhanced BinaryManager initialized with working binary');
+      console.log('✅ Production BinaryManager initialized with working binary');
       return true;
     } else {
-      console.warn('⚠️ BinaryManager initialized but binary may have issues');
-      return false;
+      console.warn('⚠️ BinaryManager initialized but binary is not available');
+      console.warn('💡 To fix this, run: npm run build:whisper');
+      return false; // Return false but don't crash
     }
+  }
+
+  /**
+   * Get helpful error messages for the UI
+   */
+  getHelpfulErrorMessage() {
+    const binaryPath = this.getWhisperBinaryPath();
+    
+    return {
+      title: 'Whisper Binary Not Available',
+      message: `The whisper.cpp binary was not found at: ${binaryPath}`,
+      solutions: [
+        'Run "npm run build:whisper" to build the binary',
+        'Check that your development tools are installed (Xcode Command Line Tools on macOS)',
+        'Verify that the build completed successfully',
+        'Restart the application after building'
+      ],
+      technicalInfo: {
+        platform: this.platform,
+        architecture: this.arch,
+        expectedPath: binaryPath,
+        binariesDirectory: this.binariesDir
+      }
+    };
   }
 }
 
