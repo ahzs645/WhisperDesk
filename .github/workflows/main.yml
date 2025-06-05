@@ -316,6 +316,10 @@ jobs:
             
             Write-Host "✅ Electron build completed"
             
+            # Rename ZIP files to Portable versions
+            Write-Host "🔧 Renaming ZIP files to Portable versions..."
+            node scripts/rename-portable.js
+            
             # Verify outputs
             Write-Host "📋 Build outputs:"
             if (Test-Path "dist") {
@@ -452,6 +456,9 @@ jobs:
           else
             npx electron-builder --mac --x64 --publish=never
           fi
+          
+          # Rename ZIP files to Portable versions
+          node scripts/rename-portable.js
 
       # Upload artifacts
       - name: Upload macOS artifacts
@@ -557,6 +564,9 @@ jobs:
       - name: Build Electron app
         run: |
           npx electron-builder --linux --x64 --publish=never
+          
+          # Rename any ZIP files to Portable versions (though Linux typically doesn't use ZIP)
+          node scripts/rename-portable.js
 
       # Upload artifacts
       - name: Upload Linux artifacts

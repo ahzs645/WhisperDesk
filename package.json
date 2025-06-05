@@ -21,13 +21,13 @@
     "build:renderer": "cd src/renderer/whisperdesk-ui && npm run build",
     "build:main": "echo 'Main process ready'",
     "build:whisper": "node scripts/build-whisper-cross-platform.js",
-    "electron:build": "npm run build && electron-builder",
-    "electron:build:win": "npm run build && electron-builder --win",
+    "electron:build": "npm run build && electron-builder && node scripts/rename-portable.js",
+    "electron:build:win": "npm run build && electron-builder --win && node scripts/rename-portable.js",
     "dist": "npm run build:whisper && npm run electron:build",
-    "dist:win": "npm run build && electron-builder --win",
-    "dist:mac": "npm run build && electron-builder --mac",
-    "dist:linux": "npm run build && electron-builder --linux",
-    "dist:all": "npm run build && electron-builder --win --mac --linux",
+    "dist:win": "npm run build && electron-builder --win && node scripts/rename-portable.js",
+    "dist:mac": "npm run build && electron-builder --mac && node scripts/rename-portable.js",
+    "dist:linux": "npm run build && electron-builder --linux && node scripts/rename-portable.js",
+    "dist:all": "npm run build && electron-builder --win --mac --linux && node scripts/rename-portable.js",
     "postinstall": "electron-builder install-app-deps",
     "test": "jest",
     "test:native": "node test-native-services.js",
@@ -175,12 +175,7 @@
       "shortcutName": "WhisperDesk",
       "installerIcon": "resources/icons/icon.ico",
       "uninstallerIcon": "resources/icons/icon.ico",
-      "artifactName": "${productName}-Setup-${version}-${os}-${arch}.${ext}",
-      "include": "resources/installer.nsh"
-    },
-    
-    "zip": {
-      "artifactName": "${productName}-Portable-${version}-${os}-${arch}.${ext}"
+      "artifactName": "${productName}-Setup-${version}-${os}-${arch}.${ext}"
     },
     
     "mac": {
