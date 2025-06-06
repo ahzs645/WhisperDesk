@@ -399,6 +399,17 @@ export function ModelMarketplace() {
                             <Check className="w-3 h-3" />
                           </Badge>
                         )}
+                        {(status.isDownloading || status.status === 'queued') && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleCancelDownload(model.id)}
+                            className="h-6 w-6 absolute top-2 right-2"
+                            aria-label="Cancel download"
+                          >
+                            <X className="w-3 h-3" />
+                          </Button>
+                        )}
                       </div>
 
                       <div className="flex flex-wrap items-center gap-1">
@@ -429,14 +440,6 @@ export function ModelMarketplace() {
                             <span className="text-xs text-muted-foreground whitespace-nowrap">
                               {status.status === 'queued' ? 'Queued' : `${roundProgress(status.progress)}%`}
                             </span>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => handleCancelDownload(model.id)}
-                              className="h-6 w-6"
-                            >
-                              <X className="w-3 h-3" />
-                            </Button>
                           </div>
                         ) : isInstalled ? (
                           <div className="flex justify-end w-full">
