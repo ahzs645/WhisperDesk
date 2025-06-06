@@ -20,7 +20,7 @@
     "build": "npm run build:renderer && npm run build:main",
     "build:renderer": "cd src/renderer/whisperdesk-ui && npm run build",
     "build:main": "echo 'Main process ready'",
-    "build:whisper": "node tools/setup/build-whisper-official.js",
+    "build:whisper": "node scripts/build-whisper-official.js",
     "build:whisper:windows": "powershell -ExecutionPolicy Bypass -File tools/setup/compile-whisper-windows.ps1",
     "build:whisper:unix": "bash tools/setup/build-whisper.sh",
     "electron:build": "npm run build && electron-builder && node scripts/rename-portable.js",
@@ -215,7 +215,14 @@
       "entitlements": "resources/entitlements.mac.plist",
       "entitlementsInherit": "resources/entitlements.mac.plist",
       "hardenedRuntime": true,
-      "gatekeeperAssess": false
+      "gatekeeperAssess": false,
+      
+      "extraFiles": [
+        {
+          "from": "binaries/whisper-cli",
+          "to": "binaries/whisper-cli"
+        }
+      ]
     },
     
     "linux": {
@@ -241,7 +248,14 @@
       "category": "AudioVideo",
       "desktop": {
         "StartupNotify": "true"
-      }
+      },
+      
+      "extraFiles": [
+        {
+          "from": "binaries/whisper-cli",
+          "to": "binaries/whisper-cli"
+        }
+      ]
     }
   },
   "keywords": [
