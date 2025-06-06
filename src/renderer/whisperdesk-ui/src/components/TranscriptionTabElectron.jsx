@@ -32,6 +32,8 @@ export function TranscriptionTabElectron() {
   const errorCleanupRef = useRef(null)
   const startCleanupRef = useRef(null)
   const cancelledCleanupRef = useRef(null)
+  const modelUpdateCleanupRef = useRef(null)
+  const modelDeleteCleanupRef = useRef(null)
   const lastToastRef = useRef(null)
   const hasShownCompletionToast = useRef(false)
 
@@ -45,6 +47,8 @@ export function TranscriptionTabElectron() {
       if (errorCleanupRef.current) errorCleanupRef.current()
       if (startCleanupRef.current) startCleanupRef.current()
       if (cancelledCleanupRef.current) cancelledCleanupRef.current()
+      if (modelUpdateCleanupRef.current) modelUpdateCleanupRef.current()
+      if (modelDeleteCleanupRef.current) modelDeleteCleanupRef.current()
       
       // Dismiss any active toasts
       if (lastToastRef.current) {
@@ -211,6 +215,26 @@ export function TranscriptionTabElectron() {
           lastToastRef.current = null
         }
         toast.warning('⏹️ Transcription cancelled')
+      })
+    }
+
+    if (window.electronAPI.model.onDownloadComplete) {
+      modelUpdateCleanupRef.current = window.electronAPI.model.onDownloadComplete(async () => {
+        const installedModels = await window.electronAPI.model.getInstalled()
+        setModels(installedModels)
+        if (!installedModels.some(m => m.id === appState.selectedModel)) {
+          updateAppState({ selectedModel: installedModels[0]?.id || null })
+        }
+      })
+    }
+
+    if (window.electronAPI.model.onModelDeleted) {
+      modelDeleteCleanupRef.current = window.electronAPI.model.onModelDeleted(async () => {
+        const installedModels = await window.electronAPI.model.getInstalled()
+        setModels(installedModels)
+        if (!installedModels.some(m => m.id === appState.selectedModel)) {
+          updateAppState({ selectedModel: installedModels[0]?.id || null })
+        }
       })
     }
   }

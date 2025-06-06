@@ -247,6 +247,8 @@ This section assumes you have followed either the "Download & Install" or "Build
 - Right-click the app and select "Open" to bypass Gatekeeper
 - Check System Preferences → Security & Privacy for blocked apps
 - For M1/M2/M3/M4 Macs, ensure you downloaded the ARM64 version
+- If macOS reports the app is damaged, run:
+  `sudo xattr -rd com.apple.quarantine /Applications/WhisperDesk.app`
 
 **App won't start on Linux:**
 - Make AppImage executable: `chmod +x WhisperDesk-*.AppImage`
