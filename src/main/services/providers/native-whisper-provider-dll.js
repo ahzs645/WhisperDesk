@@ -1,17 +1,22 @@
-// src/main/services/providers/native-whisper-provider.js - FIXED VERSION
+// src/main/services/providers/native-whisper-provider-dll.js
+// Updated to support both DLL-based (Windows) and static (macOS/Linux) builds
+
 const { EventEmitter } = require('events');
 const path = require('path');
 const fs = require('fs').promises;
 const os = require('os');
 const { spawn } = require('child_process');
 
-class NativeWhisperProvider extends EventEmitter {
+class NativeWhisperProviderDLL extends EventEmitter {
   constructor(modelManager, binaryManager) {
     super();
     this.modelManager = modelManager;
     this.binaryManager = binaryManager;
     this.tempDir = path.join(os.tmpdir(), 'whisperdesk-native');
     this.available = false;
+    this.platform = os.platform();
+    this.buildType = this.platform === 'win32' ? 'dll-based' : 'static';
+    
     this.supportedLanguages = [
       'auto', 'en', 'zh', 'de', 'es', 'ru', 'ko', 'fr', 'ja', 'pt', 'tr', 'pl',
       'ca', 'nl', 'ar', 'sv', 'it', 'id', 'hi', 'fi', 'vi', 'he', 'uk', 'el',
@@ -26,7 +31,9 @@ class NativeWhisperProvider extends EventEmitter {
   }
 
   async initialize() {
-    console.log('🔧 Initializing NativeWhisperProvider...');
+    console.log('🔧 Initializing NativeWhisperProvider (DLL-compatible)...');
+    console.log(`🔧 Platform: ${this.platform}`);
+    console.log(`🔧 Build type: ${this.buildType}`);
 
     try {
       // Create temp directory
@@ -38,7 +45,7 @@ class NativeWhisperProvider extends EventEmitter {
 
       if (this.available) {
         console.log('✅ NativeWhisperProvider initialized successfully');
-        console.log(`🔧 Using FORCED legacy format to enable music transcription`);
+        console.log(`🔧 Using ${this.buildType} build method`);
       } else {
         console.warn('⚠️ NativeWhisperProvider not available');
       }
@@ -56,7 +63,7 @@ class NativeWhisperProvider extends EventEmitter {
     try {
       const binaryExists = await this.binaryManager.ensureWhisperBinary();
       if (!binaryExists) {
-        console.warn('❌ Whisper binary not available');
+        console.warn('❌ Whisper binary/binaries not available');
         return false;
       }
 
@@ -66,7 +73,16 @@ class NativeWhisperProvider extends EventEmitter {
         return false;
       }
 
+      // Test the binary
+      const testResult = await this.binaryManager.testBinaryWithResult();
+      if (!testResult.success) {
+        console.warn(`❌ Binary test failed: ${testResult.error}`);
+        return false;
+      }
+
       console.log('✅ Native whisper provider is available');
+      console.log(`📊 Binary format: ${testResult.argumentFormat}`);
+      console.log(`📊 Build type: ${testResult.buildType || this.buildType}`);
       return true;
 
     } catch (error) {
@@ -75,8 +91,8 @@ class NativeWhisperProvider extends EventEmitter {
     }
   }
 
-/**
-   * MUSIC-OPTIMIZED: Disable diarization to get actual lyrics
+  /**
+   * Build whisper arguments (compatible with both main.exe and whisper-cli)
    */
   buildWhisperArgs(options) {
     const {
@@ -89,14 +105,17 @@ class NativeWhisperProvider extends EventEmitter {
       bestOf,
       enableSpeakerDiarization,
       disableDiarization,
-      forceTranscription = false  // New option for music
+      forceTranscription = false
     } = options;
 
+    // Base arguments that work with both main.exe and whisper-cli
     const args = [
       '-m', modelPath,
-      '-f', filePath,
-      '--print-progress'
+      '-f', filePath
     ];
+
+    // Add progress reporting if supported
+    args.push('--print-progress');
 
     // Language settings
     if (language !== 'auto') {
@@ -117,43 +136,50 @@ class NativeWhisperProvider extends EventEmitter {
       args.push('--best-of', bestOf.toString());
     }
 
-    // 🎵 MUSIC MODE: Skip diarization to get actual lyrics
-    // The -di flag causes whisper to output "[Music]" instead of transcribing
-    // Comment out diarization for music transcription:
-    // if (enableSpeakerDiarization && !disableDiarization) {
-    //   args.push('-di'); 
-    // }
-    
-    console.log('🎵 MUSIC MODE: Diarization DISABLED to get actual lyrics instead of [Music] tokens');
+    // Speaker diarization (disable for music transcription)
+    if (enableSpeakerDiarization && !disableDiarization && !forceTranscription) {
+      args.push('-di');
+    }
 
-    // Output format - default VTT with timestamps
+    // Output format - default with timestamps
     if (!enableTimestamps) {
       args.push('--no-timestamps');
     }
 
-    console.log('🔧 Built MUSIC-OPTIMIZED whisper args:', args.join(' '));
+    console.log(`🔧 Built ${this.buildType} whisper args:`, args.join(' '));
     return args;
   }
 
   /**
-   * Execute whisper with stdout capture
+   * Execute whisper with proper DLL support on Windows
    */
   async executeWhisper(binaryPath, args, transcriptionId) {
     return new Promise((resolve, reject) => {
-      console.log(`🚀 Starting AGGRESSIVE whisper transcription: ${transcriptionId}`);
+      console.log(`🚀 Starting whisper transcription: ${transcriptionId}`);
       console.log(`📍 Binary: ${binaryPath}`);
+      console.log(`📍 Build type: ${this.buildType}`);
       console.log(`📋 Args: ${args.join(' ')}`);
 
-      const whisperProcess = spawn(binaryPath, args, {
+      // For Windows DLL builds, we need to run from the binaries directory
+      // so that all DLLs can be found
+      const spawnOptions = {
         stdio: ['pipe', 'pipe', 'pipe'],
         env: { ...process.env }
-      });
+      };
+
+      // On Windows with DLLs, set the working directory to binaries folder
+      if (this.platform === 'win32') {
+        spawnOptions.cwd = path.dirname(binaryPath);
+        console.log(`🔧 Windows: Running from directory: ${spawnOptions.cwd}`);
+      }
+
+      const whisperProcess = spawn(binaryPath, args, spawnOptions);
 
       let stdout = '';
       let stderr = '';
       let progress = 0;
 
-      // Capture stdout (primary output for legacy format)
+      // Capture stdout (primary output)
       whisperProcess.stdout.on('data', (data) => {
         const output = data.toString();
         stdout += output;
@@ -194,8 +220,8 @@ class NativeWhisperProvider extends EventEmitter {
 
         if (code === 0) {
           try {
-            // Parse stdout output (primary method for legacy format)
-            const result = await this.parseStdoutOutput(transcriptionId, stdout, stderr);
+            // Parse output
+            const result = await this.parseWhisperOutput(transcriptionId, stdout, stderr);
             this.emit('progress', { transcriptionId, progress: 100 });
             resolve(result);
           } catch (parseError) {
@@ -211,7 +237,13 @@ class NativeWhisperProvider extends EventEmitter {
 
       whisperProcess.on('error', (error) => {
         console.error('❌ Failed to start whisper process:', error.message);
-        reject(new Error(`Failed to start whisper process: ${error.message}`));
+        
+        // Provide specific error message for DLL issues on Windows
+        if (this.platform === 'win32' && error.code === 'ENOENT') {
+          reject(new Error(`Failed to start whisper process. Make sure all DLL files are present in ${path.dirname(binaryPath)}`));
+        } else {
+          reject(new Error(`Failed to start whisper process: ${error.message}`));
+        }
       });
 
       // Timeout
@@ -228,14 +260,14 @@ class NativeWhisperProvider extends EventEmitter {
   }
 
   /**
-   * Parse stdout output - primary method for legacy format
+   * Parse whisper output (works with both main.exe and whisper-cli output)
    */
-  async parseStdoutOutput(transcriptionId, stdout, stderr) {
+  async parseWhisperOutput(transcriptionId, stdout, stderr) {
     let transcriptionText = '';
     let transcriptionData = null;
     let outputSource = 'unknown';
 
-    // STRATEGY 1: Parse VTT format from stdout (PRIMARY)
+    // Strategy 1: Parse VTT format from stdout (primary)
     if (stdout) {
       console.log('📄 Parsing VTT from stdout...');
       const vttResult = this.parseVTTFromStdout(stdout);
@@ -247,7 +279,7 @@ class NativeWhisperProvider extends EventEmitter {
       }
     }
 
-    // STRATEGY 2: Extract plain text from stdout (fallback)
+    // Strategy 2: Extract plain text from stdout (fallback)
     if (!transcriptionText && stdout) {
       console.log('📄 Attempting to extract plain text from stdout...');
       transcriptionText = this.extractPlainTextFromStdout(stdout);
@@ -258,22 +290,15 @@ class NativeWhisperProvider extends EventEmitter {
     }
 
     if (!transcriptionText) {
-      console.error('❌ No transcription output found in any format');
+      console.error('❌ No transcription output found');
       console.log('📝 Stdout preview:', stdout.substring(0, 500));
+      console.log('📝 Stderr preview:', stderr.substring(0, 500));
       throw new Error('No transcription output found - Check whisper binary output');
     }
 
     transcriptionText = transcriptionText.trim();
 
-    // Check if we successfully avoided "Music playing" output
-    const stillGettingMusicPlaying = transcriptionText.toLowerCase().includes('music playing');
-    if (stillGettingMusicPlaying) {
-      console.warn('⚠️ Still getting "Music playing" - may need even more aggressive settings');
-    } else {
-      console.log('🎉 SUCCESS: No "Music playing" detected - got actual transcription attempts!');
-    }
-
-    // Music detection (but allow any transcription through)
+    // Music detection
     const containsMusic = this.detectMusicContent(transcriptionText);
     
     const result = {
@@ -286,11 +311,13 @@ class NativeWhisperProvider extends EventEmitter {
         containsMusic,
         suggestion: containsMusic ? 'Content contains music sections' : null,
         outputSource,
-        forcedTranscription: !stillGettingMusicPlaying
+        buildType: this.buildType,
+        platform: this.platform
       }
     };
 
-    console.log(`✅ Final transcription processed (${result.text.length} chars) via ${outputSource}`);
+    console.log(`✅ Transcription processed (${result.text.length} chars) via ${outputSource}`);
+    console.log(`📊 Build type: ${this.buildType}`);
     return result;
   }
 
@@ -368,9 +395,16 @@ class NativeWhisperProvider extends EventEmitter {
    * Build comprehensive error message
    */
   buildErrorMessage(code, stderr) {
-    if (code === 3221225501) {
-      return 'Access violation error - likely missing Visual C++ runtime or corrupted binary';
-    } else if (stderr.includes('model') && stderr.includes('not found')) {
+    if (this.platform === 'win32') {
+      // Windows-specific error handling
+      if (code === 3221225501 || code === -1073741515) {
+        return 'DLL loading error - ensure all required DLL files (whisper.dll, ggml.dll, etc.) are present';
+      } else if (stderr.includes('SDL2.dll')) {
+        return 'SDL2.dll not found or incompatible version';
+      }
+    }
+    
+    if (stderr.includes('model') && stderr.includes('not found')) {
       return 'Model file not found or corrupted';
     } else if (stderr.includes('audio') && stderr.includes('format')) {
       return 'Unsupported audio format';
@@ -404,13 +438,7 @@ class NativeWhisperProvider extends EventEmitter {
     );
     
     const musicPercentage = (musicLines.length / lines.length) * 100;
-    
-    // More lenient detection - we want to allow transcription attempts through
-    if (text.toLowerCase().includes('music playing')) {
-      return musicPercentage > 50; // Lower threshold for "music playing"
-    }
-    
-    return musicPercentage > 80;
+    return musicPercentage > 50;
   }
 
   /**
@@ -437,8 +465,9 @@ class NativeWhisperProvider extends EventEmitter {
       }
 
       console.log(`🔍 Using model: ${modelPath}`);
+      console.log(`🔧 Binary type: ${this.buildType}`);
 
-      // Build arguments with simplified options
+      // Build arguments
       const args = this.buildWhisperArgs({
         modelPath,
         filePath,
@@ -447,8 +476,8 @@ class NativeWhisperProvider extends EventEmitter {
         enableTimestamps: options.enableTimestamps !== false,
         temperature: options.temperature || 0,
         bestOf: options.bestOf || 1,
-        enableSpeakerDiarization: options.enableSpeakerDiarization, // 🎯 ADD THIS
-        disableDiarization: options.disableDiarization // 🎯 ADD THIS
+        enableSpeakerDiarization: options.enableSpeakerDiarization,
+        disableDiarization: options.disableDiarization
       });
 
       // Execute whisper
@@ -457,7 +486,7 @@ class NativeWhisperProvider extends EventEmitter {
 
       // Emit completion
       this.emit('complete', { transcriptionId, result });
-      console.log(`✅ Transcription completed successfully with whisper-native`);
+      console.log(`✅ Transcription completed successfully with ${this.buildType} whisper`);
       return result;
 
     } catch (error) {
@@ -473,14 +502,16 @@ class NativeWhisperProvider extends EventEmitter {
   }
 
   getDescription() {
-    return 'Local whisper.cpp transcription with FORCED music transcription';
+    return `Local whisper.cpp (${this.buildType}) with cross-platform support`;
   }
 
   getInfo() {
     return {
-      name: 'Native Whisper (Music Mode)',
-      description: 'Local whisper.cpp with aggressive settings to transcribe music',
+      name: `Native Whisper (${this.buildType})`,
+      description: `Local whisper.cpp with ${this.buildType} build`,
       available: this.available,
+      buildType: this.buildType,
+      platform: this.platform,
       binaryPath: this.binaryManager.getWhisperBinaryPath(),
       capabilities: {
         languages: 'auto-detect + 50+ languages',
@@ -504,7 +535,8 @@ class NativeWhisperProvider extends EventEmitter {
       supportedLanguages: this.supportedLanguages,
       maxFileSize: '2GB',
       offline: true,
-      musicTranscription: true  // Special capability
+      musicTranscription: true,
+      buildType: this.buildType
     };
   }
 
@@ -513,4 +545,4 @@ class NativeWhisperProvider extends EventEmitter {
   }
 }
 
-module.exports = NativeWhisperProvider;
+module.exports = NativeWhisperProviderDLL;

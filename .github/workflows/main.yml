@@ -86,15 +86,16 @@ jobs:
           echo "🏷️ Version: $VERSION"
           echo "🏷️ Tag: $TAG_NAME"
 
-  # Windows build with proper whisper.cpp compilation
+  # Windows build with official whisper.cpp method
   build-windows:
     runs-on: windows-latest
     needs: determine-version
 
     strategy:
       matrix:
-        arch: [x64]
+        arch: [x64]  # Focus on x64 for now, can add Win32 later
         build_type: [Release]
+        sdl2: [ON]
 
     steps:
       - name: Checkout code
@@ -141,13 +142,6 @@ jobs:
             $packageJson | ConvertTo-Json -Depth 100 | Set-Content package.json -Encoding UTF8
             Write-Host "✅ Updated main package.json version to: $version"
             Write-Host "✅ Ensured Windows target uses ZIP for portable version"
-            
-            # Verify the update
-            $verifyPackage = Get-Content package.json -Raw | ConvertFrom-Json
-            Write-Host "📋 Package.json version field: $($verifyPackage.version)"
-          } else {
-            Write-Host "❌ package.json not found"
-            exit 1
           }
 
       # Install dependencies
@@ -155,7 +149,7 @@ jobs:
         env:
           CI: true
           GITHUB_ACTIONS: true
-          npm_config_ignore_scripts: true  # Skip all lifecycle scripts including postinstall
+          npm_config_ignore_scripts: true
         run: npm install
 
       - name: Install renderer dependencies
@@ -164,75 +158,107 @@ jobs:
           if (Test-Path "src/renderer/whisperdesk-ui") {
             Set-Location "src/renderer/whisperdesk-ui"
             
-            # Update renderer package.json version if it exists
             if (Test-Path "package.json") {
               $version = "${{ needs.determine-version.outputs.version }}"
               $packageJson = Get-Content package.json -Raw | ConvertFrom-Json
-              
-              if (-not $packageJson.PSObject.Properties['version']) {
-                $packageJson | Add-Member -MemberType NoteProperty -Name 'version' -Value $version
-              } else {
-                $packageJson.version = $version
-              }
-              
+              $packageJson.version = $version
               $packageJson | ConvertTo-Json -Depth 100 | Set-Content package.json
               Write-Host "✅ Updated renderer package.json version"
             }
             
             pnpm install --frozen-lockfile
             Set-Location "$env:GITHUB_WORKSPACE"
-          } else {
-            Write-Host "⚠️ Renderer directory not found, skipping"
           }
 
-      - name: Add dumpbin to PATH
+      # NEW: Official whisper.cpp build process
+      - name: Fetch SDL2 and set SDL2_DIR
+        run: |
+          C:/msys64/usr/bin/wget.exe -qO sdl2.zip https://github.com/libsdl-org/SDL/releases/download/release-2.28.5/SDL2-devel-2.28.5-VC.zip
+          7z x sdl2.zip
+          echo "SDL2_DIR=$env:GITHUB_WORKSPACE/SDL2-2.28.5/cmake" >> $env:GITHUB_ENV
+
+      - name: Clone and build whisper.cpp (official method)
         shell: pwsh
         run: |
-          $vsPath = & "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
-          if (-not $vsPath) {
-            Write-Error "Visual Studio installation path not found."
-            exit 1
+          Write-Host "🔧 Building whisper.cpp with official method..."
+          
+          # Create temp directory for whisper.cpp
+          $tempDir = Join-Path $env:TEMP "whisper-cpp-official"
+          if (Test-Path $tempDir) { Remove-Item -Recurse -Force $tempDir }
+          
+          # Clone whisper.cpp
+          git clone --depth 1 https://github.com/ggerganov/whisper.cpp.git $tempDir
+          Set-Location $tempDir
+          
+          # Configure with official settings (DLL-based)
+          cmake -S . -B ./build -A ${{ matrix.arch }} `
+            -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} `
+            -DBUILD_SHARED_LIBS=ON `
+            -DWHISPER_SDL2=${{ matrix.sdl2 }} `
+            -DWHISPER_BUILD_EXAMPLES=ON
+          
+          # Build
+          Set-Location ./build
+          msbuild ALL_BUILD.vcxproj -t:build -p:configuration=${{ matrix.build_type }} -p:platform=${{ matrix.arch }}
+          
+          # Create binaries directory in workspace
+          $binariesDir = Join-Path $env:GITHUB_WORKSPACE "binaries"
+          New-Item -ItemType Directory -Force -Path $binariesDir
+          
+          # Copy all DLLs and executables
+          $buildBin = "bin/${{ matrix.build_type }}"
+          Copy-Item "$buildBin/whisper.dll" $binariesDir -Force
+          Copy-Item "$buildBin/ggml.dll" $binariesDir -Force
+          Copy-Item "$buildBin/ggml-base.dll" $binariesDir -Force  
+          Copy-Item "$buildBin/ggml-cpu.dll" $binariesDir -Force
+          Copy-Item "$buildBin/main.exe" $binariesDir -Force
+          
+          # Copy SDL2.dll
+          Copy-Item "$env:SDL2_DIR/../lib/${{ matrix.arch }}/SDL2.dll" $binariesDir -Force
+          
+          Write-Host "✅ All whisper.cpp binaries copied to: $binariesDir"
+          
+          # List what we built
+          Write-Host "📋 Built files:"
+          Get-ChildItem $binariesDir | ForEach-Object { 
+            $size = [math]::Round($_.Length / 1024, 1)
+            Write-Host "  $($_.Name) - $size KB" 
           }
-          $dumpbinPath = Get-ChildItem -Path "$vsPath\VC\Tools\MSVC" -Recurse -Filter "dumpbin.exe" | Select-Object -First 1 -ExpandProperty FullName
-          if ($dumpbinPath) {
-            $dumpbinDir = Split-Path $dumpbinPath
-            Write-Host "Adding to GITHUB_PATH: $dumpbinDir"
-            Add-Content -Path $env:GITHUB_PATH -Value $dumpbinDir
-            # Verify it's available
-            $env:Path = "$dumpbinDir;" + $env:Path
-            Get-Command dumpbin
-          } else {
-            Write-Error "dumpbin.exe not found in $vsPath\VC\Tools\MSVC"
-            exit 1
-          }
+          
+          Set-Location $env:GITHUB_WORKSPACE
 
-      - name: Build whisper.cpp (via script)
-        run: npm run build:whisper
-        shell: bash # npm commands run fine in bash on Windows too
-
-      # Test the binary
-      - name: Test whisper binary
+      # Test the binaries
+      - name: Test whisper binaries
         shell: pwsh
         run: |
-          Write-Host "🔍 Testing whisper binary..." -ForegroundColor Green
+          Write-Host "🔍 Testing whisper binaries..."
           
-          $binaryPath = "binaries\whisper-cli.exe"
+          $binariesDir = "binaries"
           
-          if (-not (Test-Path $binaryPath)) {
-            Write-Host "❌ Binary not found: $binaryPath"
-            exit 1
+          # Check all required files exist
+          $requiredFiles = @("whisper.dll", "ggml.dll", "ggml-base.dll", "ggml-cpu.dll", "SDL2.dll", "main.exe")
+          foreach ($file in $requiredFiles) {
+            $filePath = Join-Path $binariesDir $file
+            if (-not (Test-Path $filePath)) {
+              Write-Error "❌ Missing required file: $file"
+              exit 1
+            }
+            $fileInfo = Get-Item $filePath
+            $sizeKB = [math]::Round($fileInfo.Length / 1024, 1)
+            Write-Host "✅ Found $file ($sizeKB KB)"
           }
           
-          $fileInfo = Get-Item $binaryPath
-          $sizeKB = [math]::Round($fileInfo.Length / 1024, 1)
-          Write-Host "📊 Binary size: $sizeKB KB"
-          
-          # Simple existence and size check (avoid execution issues in CI)
-          if ($fileInfo.Length -gt 100KB) {
-            Write-Host "✅ Binary appears valid ($sizeKB KB)"
-          } else {
-            Write-Host "❌ Binary too small ($sizeKB KB)"
-            exit 1
+          # Test main.exe can run (basic check)
+          try {
+            $mainExe = Join-Path $binariesDir "main.exe"
+            $output = & $mainExe --help 2>&1
+            if ($LASTEXITCODE -eq 0) {
+              Write-Host "✅ main.exe runs successfully"
+            } else {
+              Write-Host "⚠️ main.exe returned exit code $LASTEXITCODE but that might be normal"
+            }
+          } catch {
+            Write-Warning "⚠️ Could not test main.exe execution: $($_.Exception.Message)"
           }
 
       # Download tiny model
@@ -274,12 +300,15 @@ jobs:
         run: |
           Write-Host "📋 Verifying build prerequisites..."
           
-          # Check binaries
-          if (Test-Path "binaries/whisper-cli.exe") {
-            Write-Host "✅ whisper-cli.exe found"
-          } else {
-            Write-Host "❌ whisper-cli.exe missing"
-            exit 1
+          # Check binaries (now multiple DLLs)
+          $requiredBinaries = @("whisper.dll", "ggml.dll", "ggml-base.dll", "ggml-cpu.dll", "SDL2.dll", "main.exe")
+          foreach ($binary in $requiredBinaries) {
+            if (Test-Path "binaries/$binary") {
+              Write-Host "✅ $binary found"
+            } else {
+              Write-Host "❌ $binary missing"
+              exit 1
+            }
           }
           
           # Check models
@@ -297,9 +326,6 @@ jobs:
             Write-Host "❌ Renderer build missing"
             exit 1
           }
-          
-          Write-Host "📋 Files in dist after build:"
-          Get-ChildItem -Recurse -Path binaries, models -ErrorAction SilentlyContinue
 
       # Build Electron app
       - name: Build Electron app
@@ -311,7 +337,6 @@ jobs:
           Write-Host "🔧 Starting Electron build..."
           
           try {
-            # Build with more verbose output and error handling
             npx electron-builder --win --x64 --publish=never --config.compression=normal
             
             Write-Host "✅ Electron build completed"

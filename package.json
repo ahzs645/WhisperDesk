@@ -20,7 +20,9 @@
     "build": "npm run build:renderer && npm run build:main",
     "build:renderer": "cd src/renderer/whisperdesk-ui && npm run build",
     "build:main": "echo 'Main process ready'",
-    "build:whisper": "node scripts/build-whisper-cross-platform.js",
+    "build:whisper": "node scripts/build-whisper-official.js",
+    "build:whisper:windows": "powershell -ExecutionPolicy Bypass -File scripts/build-whisper-official-windows.ps1",
+    "build:whisper:unix": "bash scripts/build-whisper-official-unix.sh",
     "electron:build": "npm run build && electron-builder && node scripts/rename-portable.js",
     "electron:build:win": "npm run build && electron-builder --win && node scripts/rename-portable.js",
     "dist": "npm run build:whisper && npm run electron:build",
@@ -127,14 +129,7 @@
       "!src/renderer/whisperdesk-ui/public/**/*",
       "!src/renderer/whisperdesk-ui/node_modules/**/*",
       "!src/renderer/whisperdesk-ui/package*.json",
-      "!**/node_modules/.cache/**/*",
-      "!**/*.{iml,o,hprof,orig,pyc,pyo,rbc,swp,csproj,sln,xproj}",
-      "!.editorconfig",
-      "!**/._*",
-      "!**/{.DS_Store,.git,.hg,.svn,CVS,RCS,SCCS,.gitignore,.gitattributes}",
-      "!**/{__pycache__,thumbs.db,.flowconfig,.idea,.vs,.nyc_output}",
-      "!**/{appveyor.yml,.travis.yml,circle.yml}",
-      "!**/{npm-debug.log,yarn.lock,.yarn-integrity,.yarn-metadata.json}"
+      "!**/node_modules/.cache/**/*"
     ],
     
     "extraResources": [
@@ -164,7 +159,34 @@
       ],
       "publisherName": "WhisperDesk",
       "verifyUpdateCodeSignature": false,
-      "requestedExecutionLevel": "asInvoker"
+      "requestedExecutionLevel": "asInvoker",
+      
+      "extraFiles": [
+        {
+          "from": "binaries/whisper.dll",
+          "to": "binaries/whisper.dll"
+        },
+        {
+          "from": "binaries/ggml.dll", 
+          "to": "binaries/ggml.dll"
+        },
+        {
+          "from": "binaries/ggml-base.dll",
+          "to": "binaries/ggml-base.dll"
+        },
+        {
+          "from": "binaries/ggml-cpu.dll",
+          "to": "binaries/ggml-cpu.dll"
+        },
+        {
+          "from": "binaries/SDL2.dll",
+          "to": "binaries/SDL2.dll"
+        },
+        {
+          "from": "binaries/main.exe",
+          "to": "binaries/main.exe"
+        }
+      ]
     },
     
     "nsis": {
@@ -175,7 +197,8 @@
       "shortcutName": "WhisperDesk",
       "installerIcon": "resources/icons/icon.ico",
       "uninstallerIcon": "resources/icons/icon.ico",
-      "artifactName": "${productName}-Setup-${version}-${os}-${arch}.${ext}"
+      "artifactName": "${productName}-Setup-${version}-${os}-${arch}.${ext}",
+      "include": "build/installer.nsh"
     },
     
     "mac": {

@@ -6,8 +6,8 @@ const os = require('os');
 const transcriptionStore = require('./transcription-store');
 
 // Import managers and providers
-const BinaryManager = require('./binary-manager');
-const NativeWhisperProvider = require('./providers/native-whisper-provider');
+const BinaryManager = require('./binary-manager-dll');
+const NativeWhisperProvider = require('./providers/native-whisper-provider-dll');
 const DeepgramProvider = require('./providers/deepgram-provider');
 
 class NativeTranscriptionService extends EventEmitter {
