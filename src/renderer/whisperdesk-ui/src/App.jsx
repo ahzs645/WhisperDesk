@@ -35,6 +35,7 @@ function AppStateProvider({ children }) {
     isTranscribing: false,
     progress: 0,
     progressMessage: '',
+    activeTranscriptionId: null,
     
     // Settings state
     selectedProvider: 'whisper-native',
@@ -81,7 +82,8 @@ function AppStateProvider({ children }) {
       isTranscribing: false,
       progress: 0,
       progressMessage: '',
-      lastTranscriptionResult: null
+      lastTranscriptionResult: null,
+      activeTranscriptionId: null
     })
   }
 
@@ -94,7 +96,8 @@ function AppStateProvider({ children }) {
       isTranscribing: false,
       progress: 0,
       progressMessage: '',
-      lastTranscriptionResult: null
+      lastTranscriptionResult: null,
+      activeTranscriptionId: null
     })
   }
 

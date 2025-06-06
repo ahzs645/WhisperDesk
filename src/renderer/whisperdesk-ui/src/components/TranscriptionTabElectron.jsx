@@ -30,6 +30,8 @@ export function TranscriptionTabElectron() {
   const progressCleanupRef = useRef(null)
   const completeCleanupRef = useRef(null)
   const errorCleanupRef = useRef(null)
+  const startCleanupRef = useRef(null)
+  const cancelledCleanupRef = useRef(null)
   const lastToastRef = useRef(null)
   const hasShownCompletionToast = useRef(false)
 
@@ -41,6 +43,8 @@ export function TranscriptionTabElectron() {
       if (progressCleanupRef.current) progressCleanupRef.current()
       if (completeCleanupRef.current) completeCleanupRef.current()
       if (errorCleanupRef.current) errorCleanupRef.current()
+      if (startCleanupRef.current) startCleanupRef.current()
+      if (cancelledCleanupRef.current) cancelledCleanupRef.current()
       
       // Dismiss any active toasts
       if (lastToastRef.current) {
@@ -192,6 +196,23 @@ export function TranscriptionTabElectron() {
     } else {
       console.warn('❌ Error handler not available')
     }
+
+    if (window.electronAPI.transcription.onStart) {
+      startCleanupRef.current = window.electronAPI.transcription.onStart((data) => {
+        updateAppState({ activeTranscriptionId: data.transcriptionId, isTranscribing: true })
+      })
+    }
+
+    if (window.electronAPI.transcription.onCancelled) {
+      cancelledCleanupRef.current = window.electronAPI.transcription.onCancelled(() => {
+        updateAppState({ isTranscribing: false, progress: 0, progressMessage: 'Cancelled', activeTranscriptionId: null })
+        if (lastToastRef.current) {
+          toast.dismiss(lastToastRef.current)
+          lastToastRef.current = null
+        }
+        toast.warning('⏹️ Transcription cancelled')
+      })
+    }
   }
 
   const handleFileSelect = async () => {
@@ -306,6 +327,27 @@ export function TranscriptionTabElectron() {
       toast.error('Transcription failed: ' + error.message)
     } finally {
       setIsLoading(false)
+    }
+  }
+
+  const handleStopTranscription = async () => {
+    if (!appState.activeTranscriptionId) return
+    if (!window.electronAPI?.transcription?.stop) {
+      toast.error('Stop API not available')
+      return
+    }
+
+    try {
+      await window.electronAPI.transcription.stop(appState.activeTranscriptionId)
+      updateAppState({ isTranscribing: false, progress: 0, progressMessage: 'Cancelled', activeTranscriptionId: null })
+      if (lastToastRef.current) {
+        toast.dismiss(lastToastRef.current)
+        lastToastRef.current = null
+      }
+      toast.warning('⏹️ Transcription cancelled')
+    } catch (error) {
+      console.error('Failed to stop transcription:', error)
+      toast.error('Failed to stop transcription: ' + error.message)
     }
   }
 
@@ -619,6 +661,17 @@ export function TranscriptionTabElectron() {
                     Export
                   </Button>
                 </>
+              )}
+              {appState.isTranscribing && (
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={handleStopTranscription}
+                  disabled={!appState.activeTranscriptionId}
+                >
+                  <Square className="w-4 h-4 mr-2" />
+                  Stop
+                </Button>
               )}
               <Button
                 onClick={handleStartTranscription}

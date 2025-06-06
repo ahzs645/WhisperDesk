@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { Separator } from '@/components/ui/separator'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Package, Download, Trash2, HardDrive, Gauge, Clock, Check, AlertCircle, Loader2 } from 'lucide-react'
+import { Package, Download, Trash2, HardDrive, Gauge, Clock, Check, AlertCircle, Loader2, X } from 'lucide-react'
 import { toast } from 'sonner'
 
 export function ModelMarketplace() {
@@ -21,6 +21,7 @@ export function ModelMarketplace() {
   const downloadCompleteCleanup = useRef(null)
   const downloadErrorCleanup = useRef(null)
   const downloadQueuedCleanup = useRef(null)
+  const downloadCancelledCleanup = useRef(null)
 
   useEffect(() => {
     const electronAvailable = typeof window !== 'undefined' && window.electronAPI
@@ -39,6 +40,7 @@ export function ModelMarketplace() {
       if (downloadCompleteCleanup.current) downloadCompleteCleanup.current()
       if (downloadErrorCleanup.current) downloadErrorCleanup.current()
       if (downloadQueuedCleanup.current) downloadQueuedCleanup.current()
+      if (downloadCancelledCleanup.current) downloadCancelledCleanup.current()
     }
   }, [])
 
@@ -134,6 +136,17 @@ export function ModelMarketplace() {
       })
       console.log('✅ Download queued handler set up')
     }
+
+    if (window.electronAPI.model.onDownloadCancelled) {
+      downloadCancelledCleanup.current = window.electronAPI.model.onDownloadCancelled((data) => {
+        setDownloads(prev => {
+          const updated = new Map(prev)
+          updated.delete(data.modelId)
+          return updated
+        })
+        toast.warning('Download cancelled')
+      })
+    }
   }
 
   const loadModelsFromElectron = async () => {
@@ -205,6 +218,17 @@ export function ModelMarketplace() {
     } catch (error) {
       console.error('Failed to start download:', error)
       toast.error('Failed to start download: ' + error.message)
+    }
+  }
+
+  const handleCancelDownload = async (modelId) => {
+    if (!isElectron) return
+    try {
+      await window.electronAPI.model.cancelDownload(modelId)
+      toast.warning('Download cancelled')
+    } catch (error) {
+      console.error('Failed to cancel download:', error)
+      toast.error('Failed to cancel download: ' + error.message)
     }
   }
 
@@ -394,12 +418,20 @@ export function ModelMarketplace() {
                       </div>
 
                       <div className="flex items-center justify-between gap-2 pt-1">
-                        {status.isDownloading ? (
+                        {status.isDownloading || status.status === 'queued' ? (
                           <div className="flex items-center gap-2 w-full">
                             <Progress value={roundProgress(status.progress)} className="h-1.5 flex-1" />
                             <span className="text-xs text-muted-foreground whitespace-nowrap">
-                              {roundProgress(status.progress)}%
+                              {status.status === 'queued' ? 'Queued' : `${roundProgress(status.progress)}%`}
                             </span>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleCancelDownload(model.id)}
+                              className="h-6 w-6"
+                            >
+                              <X className="w-3 h-3" />
+                            </Button>
                           </div>
                         ) : isInstalled ? (
                           <div className="flex justify-end w-full">
