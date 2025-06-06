@@ -5,7 +5,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './components/ui/tabs'
 import { Mic, Package, Clock, Settings, Video } from 'lucide-react'
 import { ModelMarketplace } from './components/ModelMarketplace-WebCompatible'
-import { TranscriptionTab } from './components/TranscriptionTab-WebCompatible'
 import { TranscriptionTabElectron } from './components/TranscriptionTabElectron'
 import { ScreenRecorder } from './components/ScreenRecorder'
 import { SettingsTab } from './components/SettingsTab'
@@ -144,7 +143,7 @@ function AppContent() {
   const isMacOS = platform === 'darwin';
 
   // Choose the appropriate transcription component
-  const TranscriptionComponent = appState.isElectron ? TranscriptionTabElectron : TranscriptionTab
+  const TranscriptionComponent = TranscriptionTabElectron
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
