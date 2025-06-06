@@ -1,4 +1,4 @@
-// src/main/services/binary-manager-dll.js - Updated for official DLL-based approach
+// src/main/services/binary-manager-dll.js - Updated for whisper-cli.exe
 const path = require('path');
 const fs = require('fs').promises;
 const os = require('os');
@@ -40,7 +40,7 @@ class BinaryManagerDLL {
   getRequiredFiles() {
     if (this.platform === 'win32') {
       return {
-        // Windows DLL-based files (official method)
+        // Windows DLL-based files (official method with whisper-cli.exe)
         dlls: [
           'whisper.dll',
           'ggml.dll', 
@@ -48,21 +48,28 @@ class BinaryManagerDLL {
           'ggml-cpu.dll',
           'SDL2.dll'
         ],
-        executable: 'main.exe',
+        executable: 'whisper-cli.exe',  // ← UPDATED: Using whisper-cli.exe
+        optional: [
+          'whisper-stream.exe',
+          'whisper-server.exe',
+          'whisper-bench.exe',
+          'quantize.exe'
+        ],
         all: [
           'whisper.dll',
           'ggml.dll', 
           'ggml-base.dll',
           'ggml-cpu.dll',
           'SDL2.dll',
-          'main.exe'
+          'whisper-cli.exe'  // ← UPDATED: Using whisper-cli.exe
         ]
       };
     } else {
       // macOS/Linux - use single binary (working approach)
       return {
         dlls: [],
-        executable: 'whisper-cli',
+        executable: 'whisper-cli',  // ← UPDATED: Using whisper-cli (no .exe)
+        optional: [],
         all: ['whisper-cli']
       };
     }
@@ -130,14 +137,14 @@ class BinaryManagerDLL {
     }
 
     try {
-      const mainExePath = this.getWhisperBinaryPath();
+      const whisperCliPath = this.getWhisperBinaryPath();
       
       // Use dependency walker or dumpbin if available
       let dependencyCheckResult = null;
       
       try {
         // Try using dumpbin (comes with Visual Studio)
-        const { stdout } = await execAsync(`dumpbin /dependents "${mainExePath}"`, { timeout: 5000 });
+        const { stdout } = await execAsync(`dumpbin /dependents "${whisperCliPath}"`, { timeout: 5000 });
         
         // Parse dependencies to ensure our DLLs are found
         const lines = stdout.split('\n');
@@ -201,29 +208,33 @@ class BinaryManagerDLL {
       
       const output = stdout + stderr;
       
-      // Check for whisper-related keywords
+      // Check for whisper-related keywords (updated for whisper-cli)
       if (output.includes('whisper') || 
           output.includes('transcribe') ||
           output.includes('--model') ||
-          output.includes('usage')) {
+          output.includes('usage') ||
+          output.includes('whisper-cli')) {  // ← UPDATED: Check for whisper-cli
         
         return {
           success: true,
           error: null,
-          output: output.substring(0, 200) // First 200 chars for logging
+          output: output.substring(0, 200), // First 200 chars for logging
+          binaryType: 'whisper-cli'  // ← UPDATED: Indicate binary type
         };
       } else {
         return {
           success: false,
           error: 'Binary test produced unexpected output',
-          output: output.substring(0, 200)
+          output: output.substring(0, 200),
+          binaryType: 'unknown'
         };
       }
       
     } catch (error) {
       return {
         success: false,
-        error: error.message
+        error: error.message,
+        binaryType: 'unknown'
       };
     }
   }
@@ -245,14 +256,17 @@ class BinaryManagerDLL {
         return {
           success: false,
           error: testResult.error,
-          argumentFormat: 'unknown'
+          argumentFormat: 'unknown',
+          binaryType: 'unknown'
         };
       }
       
       const output = testResult.output;
       
       // Determine argument format based on help output
-      let argumentFormat = 'whisper-main';
+      let argumentFormat = 'whisper-cli';  // ← UPDATED: Default to whisper-cli format
+      
+      // whisper-cli.exe uses modern argument format
       if (output.includes('--output-file') || output.includes('-of')) {
         argumentFormat = 'whisper-cli';
       } else if (output.includes('-o ') && !output.includes('--output-file')) {
@@ -265,7 +279,9 @@ class BinaryManagerDLL {
         hasOutputDir: output.includes('--output-dir'),
         hasDiarize: output.includes('--diarize'),
         hasProgress: output.includes('--print-progress'),
-        hasNoFallback: output.includes('--no-fallback')
+        hasNoFallback: output.includes('--no-fallback'),
+        hasLanguage: output.includes('--language'),
+        hasModel: output.includes('--model')
       };
       
       return {
@@ -273,14 +289,17 @@ class BinaryManagerDLL {
         argumentFormat,
         features,
         version: this.extractVersionFromHelp(output),
-        buildType: this.platform === 'win32' ? 'dll-based' : 'static'
+        buildType: this.platform === 'win32' ? 'dll-based' : 'static',
+        binaryType: 'whisper-cli',  // ← UPDATED: Indicate this is whisper-cli
+        executableName: this.requiredFiles.executable
       };
       
     } catch (error) {
       return {
         success: false,
         error: error.message,
-        argumentFormat: 'unknown'
+        argumentFormat: 'unknown',
+        binaryType: 'unknown'
       };
     }
   }
@@ -289,7 +308,10 @@ class BinaryManagerDLL {
    * Extract version information from help output
    */
   extractVersionFromHelp(helpOutput) {
-    const versionMatch = helpOutput.match(/version[:\s]+([0-9.]+)/i);
+    // whisper-cli might show version differently
+    const versionMatch = helpOutput.match(/version[:\s]+([0-9.]+)/i) ||
+                        helpOutput.match(/whisper-cli[:\s]+([0-9.]+)/i) ||
+                        helpOutput.match(/v([0-9.]+)/i);
     return versionMatch ? versionMatch[1] : 'unknown';
   }
 
@@ -303,7 +325,10 @@ class BinaryManagerDLL {
       binariesDir: this.binariesDir,
       whisperBinaryPath: this.getWhisperBinaryPath(),
       buildType: this.platform === 'win32' ? 'dll-based' : 'static',
+      binaryType: 'whisper-cli',  // ← UPDATED: Indicate whisper-cli
+      executableName: this.requiredFiles.executable,
       requiredFiles: this.requiredFiles.all,
+      optionalFiles: this.requiredFiles.optional || [],
       fileStatus: {},
       binaryExists: false,
       binaryExecutable: false,
@@ -332,6 +357,27 @@ class BinaryManagerDLL {
         }
       }
       
+      // Check optional files
+      for (const fileName of (this.requiredFiles.optional || [])) {
+        const filePath = path.join(this.binariesDir, fileName);
+        try {
+          const stats = await fs.stat(filePath);
+          status.fileStatus[fileName] = {
+            exists: true,
+            size: Math.round(stats.size / 1024),
+            executable: true,
+            optional: true
+          };
+        } catch {
+          status.fileStatus[fileName] = {
+            exists: false,
+            size: 0,
+            executable: false,
+            optional: true
+          };
+        }
+      }
+      
       // Check main executable
       const binaryPath = this.getWhisperBinaryPath();
       try {
@@ -344,7 +390,7 @@ class BinaryManagerDLL {
           status.binaryExecutable = true;
         } catch {
           status.binaryExecutable = false;
-          status.recommendation = 'Binary found but not executable. Run: chmod +x ' + binaryPath;
+          status.recommendation = `Binary found but not executable. Run: chmod +x ${binaryPath}`;
         }
       } catch {
         status.binaryExists = false;
@@ -376,7 +422,7 @@ class BinaryManagerDLL {
       // If everything is good
       if (status.binaryExists && status.binaryExecutable && 
           status.dependencyCheck?.success && status.testResult?.success) {
-        status.recommendation = `Binary is ready to use! (${status.buildType})`;
+        status.recommendation = `whisper-cli.exe is ready to use! (${status.buildType})`;
       }
 
     } catch (error) {
@@ -390,10 +436,11 @@ class BinaryManagerDLL {
    * Initialize with status reporting
    */
   async initialize() {
-    console.log('🔧 Initializing DLL-Compatible BinaryManager...');
+    console.log('🔧 Initializing DLL-Compatible BinaryManager (whisper-cli.exe)...');
     console.log(`📍 Platform: ${this.platform} (${this.arch})`);
     console.log(`📁 Binaries directory: ${this.binariesDir}`);
     console.log(`🔧 Build type: ${this.platform === 'win32' ? 'DLL-based (official)' : 'Static'}`);
+    console.log(`🎯 Executable: ${this.requiredFiles.executable}`);
 
     try {
       // Ensure binaries directory exists
@@ -408,10 +455,12 @@ class BinaryManagerDLL {
     const binaryReady = await this.ensureWhisperBinary();
     
     if (binaryReady) {
-      console.log('✅ DLL-Compatible BinaryManager initialized with working binaries');
+      console.log('✅ DLL-Compatible BinaryManager initialized with working whisper-cli binaries');
       const status = await this.getStatus();
       console.log(`📊 Build type: ${status.buildType}`);
+      console.log(`📊 Binary type: ${status.binaryType}`);
       console.log(`📋 Required files: ${status.requiredFiles.length}`);
+      console.log(`📋 Optional files: ${status.optionalFiles.length}`);
       return true;
     } else {
       console.warn('⚠️ BinaryManager initialized but binaries are not available');
@@ -427,8 +476,8 @@ class BinaryManagerDLL {
     const binaryPath = this.getWhisperBinaryPath();
     
     const buildInstructions = this.platform === 'win32' 
-      ? 'Run "npm run build:whisper" to build using official DLL method'
-      : 'Run "npm run build:whisper" to build the static binary';
+      ? 'Run "npm run build:whisper" to build using official DLL method with whisper-cli.exe'
+      : 'Run "npm run build:whisper" to build the static whisper-cli binary';
     
     return {
       title: 'Whisper Binaries Not Available',
@@ -443,6 +492,8 @@ class BinaryManagerDLL {
         platform: this.platform,
         architecture: this.arch,
         buildType: this.platform === 'win32' ? 'dll-based' : 'static',
+        binaryType: 'whisper-cli',
+        executableName: this.requiredFiles.executable,
         expectedFiles: this.requiredFiles.all,
         binariesDirectory: this.binariesDir
       }

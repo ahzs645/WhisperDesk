@@ -1,3 +1,4 @@
+# .github/workflows/main.yml - Updated for whisper-cli.exe
 name: Build WhisperDesk for All Platforms
 
 on:
@@ -86,7 +87,7 @@ jobs:
           echo "🏷️ Version: $VERSION"
           echo "🏷️ Tag: $TAG_NAME"
 
-  # Windows build with official whisper.cpp method
+  # Windows build with official whisper.cpp method (whisper-cli.exe)
   build-windows:
     runs-on: windows-latest
     needs: determine-version
@@ -170,17 +171,17 @@ jobs:
             Set-Location "$env:GITHUB_WORKSPACE"
           }
 
-      # NEW: Official whisper.cpp build process
+      # UPDATED: Official whisper.cpp build process with whisper-cli.exe
       - name: Fetch SDL2 and set SDL2_DIR
         run: |
           C:/msys64/usr/bin/wget.exe -qO sdl2.zip https://github.com/libsdl-org/SDL/releases/download/release-2.28.5/SDL2-devel-2.28.5-VC.zip
           7z x sdl2.zip
           echo "SDL2_DIR=$env:GITHUB_WORKSPACE/SDL2-2.28.5/cmake" >> $env:GITHUB_ENV
 
-      - name: Clone and build whisper.cpp (official method)
+      - name: Clone and build whisper.cpp (official method with examples)
         shell: pwsh
         run: |
-          Write-Host "🔧 Building whisper.cpp with official method..."
+          Write-Host "🔧 Building whisper.cpp with official method (whisper-cli.exe)..."
           
           # Create temp directory for whisper.cpp
           $tempDir = Join-Path $env:TEMP "whisper-cpp-official"
@@ -190,12 +191,15 @@ jobs:
           git clone --depth 1 https://github.com/ggerganov/whisper.cpp.git $tempDir
           Set-Location $tempDir
           
-          # Configure with official settings (DLL-based)
+          # Configure with official settings (DLL-based with examples)
           cmake -S . -B ./build -A ${{ matrix.arch }} `
             -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} `
             -DBUILD_SHARED_LIBS=ON `
             -DWHISPER_SDL2=${{ matrix.sdl2 }} `
-            -DWHISPER_BUILD_EXAMPLES=ON
+            -DWHISPER_BUILD_EXAMPLES=ON `
+            -DWHISPER_BUILD_TESTS=ON `
+            -DWHISPER_BUILD_SERVER=ON `
+            -DWHISPER_BUILD_BENCHMARKS=ON
           
           # Build
           Set-Location ./build
@@ -207,11 +211,23 @@ jobs:
           
           # Copy all DLLs and executables
           $buildBin = "bin/${{ matrix.build_type }}"
+          
+          # Required files for whisper-cli.exe
           Copy-Item "$buildBin/whisper.dll" $binariesDir -Force
           Copy-Item "$buildBin/ggml.dll" $binariesDir -Force
           Copy-Item "$buildBin/ggml-base.dll" $binariesDir -Force  
           Copy-Item "$buildBin/ggml-cpu.dll" $binariesDir -Force
-          Copy-Item "$buildBin/main.exe" $binariesDir -Force
+          Copy-Item "$buildBin/whisper-cli.exe" $binariesDir -Force  # ← UPDATED: whisper-cli.exe
+          
+          # Optional executables if they exist
+          $optionalFiles = @("whisper-stream.exe", "whisper-server.exe", "whisper-bench.exe", "quantize.exe")
+          foreach ($file in $optionalFiles) {
+            $sourcePath = Join-Path $buildBin $file
+            if (Test-Path $sourcePath) {
+              Copy-Item $sourcePath $binariesDir -Force
+              Write-Host "✅ Copied optional $file"
+            }
+          }
           
           # Copy SDL2.dll
           Copy-Item "$env:SDL2_DIR/../lib/${{ matrix.arch }}/SDL2.dll" $binariesDir -Force
@@ -227,7 +243,7 @@ jobs:
           
           Set-Location $env:GITHUB_WORKSPACE
 
-      # Test the binaries - FIXED VERSION
+      # Test the binaries - UPDATED VERSION for whisper-cli.exe
       - name: Test whisper binaries
         shell: pwsh
         run: |
@@ -236,7 +252,7 @@ jobs:
           $binariesDir = "binaries"
           
           # Check all required files exist
-          $requiredFiles = @("whisper.dll", "ggml.dll", "ggml-base.dll", "ggml-cpu.dll", "SDL2.dll", "main.exe")
+          $requiredFiles = @("whisper.dll", "ggml.dll", "ggml-base.dll", "ggml-cpu.dll", "SDL2.dll", "whisper-cli.exe")
           foreach ($file in $requiredFiles) {
             $filePath = Join-Path $binariesDir $file
             if (-not (Test-Path $filePath)) {
@@ -248,23 +264,23 @@ jobs:
             Write-Host "✅ Found $file ($sizeKB KB)"
           }
           
-          # Test main.exe can run (basic check) - DON'T FAIL ON NON-ZERO EXIT
+          # Test whisper-cli.exe can run (basic check) - DON'T FAIL ON NON-ZERO EXIT
           try {
-            $mainExe = Join-Path $binariesDir "main.exe"
-            $process = Start-Process -FilePath $mainExe -ArgumentList "--help" -NoNewWindow -Wait -PassThru -RedirectStandardOutput NUL -RedirectStandardError NUL
+            $whisperCliExe = Join-Path $binariesDir "whisper-cli.exe"
+            $process = Start-Process -FilePath $whisperCliExe -ArgumentList "--help" -NoNewWindow -Wait -PassThru -RedirectStandardOutput NUL -RedirectStandardError NUL
             $exitCode = $process.ExitCode
             
             if ($exitCode -eq 0) {
-              Write-Host "✅ main.exe runs successfully (exit code: $exitCode)"
+              Write-Host "✅ whisper-cli.exe runs successfully (exit code: $exitCode)"
             } else {
-              Write-Host "✅ main.exe executed successfully (exit code: $exitCode - this is normal for whisper binaries)"
+              Write-Host "✅ whisper-cli.exe executed successfully (exit code: $exitCode - this is normal for whisper binaries)"
             }
           } catch {
-            Write-Warning "⚠️ Could not test main.exe execution: $($_.Exception.Message)"
+            Write-Warning "⚠️ Could not test whisper-cli.exe execution: $($_.Exception.Message)"
             # Don't fail the build for this
           }
           
-          # Ensure we exit with success code regardless of main.exe behavior
+          # Ensure we exit with success code regardless of whisper-cli.exe behavior
           $LASTEXITCODE = 0
           Write-Host "✅ Binary verification completed successfully"
 
@@ -307,8 +323,8 @@ jobs:
         run: |
           Write-Host "📋 Verifying build prerequisites..."
           
-          # Check binaries (now multiple DLLs)
-          $requiredBinaries = @("whisper.dll", "ggml.dll", "ggml-base.dll", "ggml-cpu.dll", "SDL2.dll", "main.exe")
+          # Check binaries (now using whisper-cli.exe)
+          $requiredBinaries = @("whisper.dll", "ggml.dll", "ggml-base.dll", "ggml-cpu.dll", "SDL2.dll", "whisper-cli.exe")
           foreach ($binary in $requiredBinaries) {
             if (Test-Path "binaries/$binary") {
               Write-Host "✅ $binary found"
@@ -382,7 +398,7 @@ jobs:
           retention-days: 30
           if-no-files-found: error
 
-  # macOS build
+  # macOS build (updated for whisper-cli)
   build-macos:
     runs-on: macos-latest
     needs: determine-version
@@ -501,7 +517,7 @@ jobs:
             dist/*.zip
           retention-days: 30
 
-  # Linux build
+  # Linux build (updated for whisper-cli)
   build-linux:
     runs-on: ubuntu-22.04
     needs: determine-version
@@ -676,13 +692,19 @@ jobs:
             - `WhisperDesk-${{ needs.determine-version.outputs.version }}-linux-x64.tar.gz` - Generic archive
             
             ### ✨ Features:
-            - 🎵 Native whisper.cpp integration with whisper-cli binary
+            - 🎵 Native whisper.cpp integration with **whisper-cli** binary (updated from deprecated main.exe)
             - 📱 Cross-platform support (Windows, macOS, Linux)
             - 🔄 Real-time progress tracking
             - 💾 Persistent state management
             - 🎯 Multiple model support (Tiny, Base, Small, Medium, Large)
             - 📁 Drag & drop file upload
             - 🎨 Modern, responsive UI
+            
+            ### 🔧 Technical Updates:
+            - **Updated to whisper-cli.exe**: Using the latest non-deprecated executable
+            - **Official Build Method**: Following ggerganov/whisper.cpp official build approach
+            - **Enhanced Examples**: Built with full example suite (whisper-stream, whisper-server, etc.)
+            - **Improved Compatibility**: Better DLL handling and dependency management
             
             ### 🚀 Quick Start:
             1. **Download** the appropriate file for your platform
@@ -700,8 +722,8 @@ jobs:
             
             **Technical Details:**
             - Version: ${{ needs.determine-version.outputs.version }}
-            - Binary: whisper-cli (latest whisper.cpp)
-            - Built with: CMake + electron-builder
+            - Binary: whisper-cli (official, replaces deprecated main.exe)
+            - Built with: CMake + electron-builder + official whisper.cpp method
             
             Auto-generated release notes below ⬇️
         env:

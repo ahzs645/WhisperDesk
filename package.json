@@ -21,8 +21,8 @@
     "build:renderer": "cd src/renderer/whisperdesk-ui && npm run build",
     "build:main": "echo 'Main process ready'",
     "build:whisper": "node scripts/build-whisper-official.js",
-    "build:whisper:windows": "powershell -ExecutionPolicy Bypass -File scripts/build-whisper-official-windows.ps1",
-    "build:whisper:unix": "bash scripts/build-whisper-official-unix.sh",
+    "build:whisper:windows": "powershell -ExecutionPolicy Bypass -File scripts/compile-whisper-windows.ps1",
+    "build:whisper:unix": "bash scripts/build-whisper.sh",
     "electron:build": "npm run build && electron-builder && node scripts/rename-portable.js",
     "electron:build:win": "npm run build && electron-builder --win && node scripts/rename-portable.js",
     "dist": "npm run build:whisper && npm run electron:build",
@@ -34,7 +34,7 @@
     "test": "jest",
     "test:native": "node test-native-services.js",
     "test:transcription": "node test-transcription.js",
-    "test:binary": "node -e \"const BinaryManager = require('./src/main/services/binary-manager'); (async () => { const bm = new BinaryManager(); await bm.initialize(); const status = await bm.getStatus(); console.log(JSON.stringify(status, null, 2)); })()\"",
+    "test:binary": "node -e \"const BinaryManager = require('./src/main/services/binary-manager-dll'); (async () => { const bm = new BinaryManager(); await bm.initialize(); const status = await bm.getStatus(); console.log(JSON.stringify(status, null, 2)); })()\"",
     "server": "node transcription-server.js",
     "web": "concurrently \"npm run server\" \"cd src/renderer/whisperdesk-ui && pnpm run dev\"",
     "lint": "eslint src/",
@@ -44,7 +44,7 @@
     "setup": "./setup.sh",
     "setup:check": "node scripts/setup-check.js",
     "setup:macos": "chmod +x scripts/build-whisper.sh && ./scripts/build-whisper.sh && npm run download:model:tiny",
-    "setup:windows": "powershell -ExecutionPolicy Bypass -File scripts/setup.ps1",
+    "setup:windows": "powershell -ExecutionPolicy Bypass -File scripts/compile-whisper-windows.ps1",
     "download:model:tiny": "mkdir -p models && curl -L -o models/ggml-tiny.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin",
     "release:prepare": "npm run clean && npm run build && npm run dist:all",
     "release:github": "gh release create v$npm_package_version dist/* --generate-notes",
@@ -81,17 +81,21 @@
         "darwin": {
           "staticLinking": true,
           "architectures": ["x64", "arm64"],
-          "dependencyCheck": "otool"
+          "dependencyCheck": "otool",
+          "executable": "whisper-cli"
         },
         "win32": {
           "staticLinking": false,
           "architectures": ["x64"],
-          "bundleRuntime": true
+          "bundleRuntime": true,
+          "executable": "whisper-cli.exe",
+          "buildMethod": "official-dll"
         },
         "linux": {
           "staticLinking": true,
           "architectures": ["x64"],
-          "dependencyCheck": "ldd"
+          "dependencyCheck": "ldd",
+          "executable": "whisper-cli"
         }
       }
     },
@@ -183,8 +187,8 @@
           "to": "binaries/SDL2.dll"
         },
         {
-          "from": "binaries/main.exe",
-          "to": "binaries/main.exe"
+          "from": "binaries/whisper-cli.exe",
+          "to": "binaries/whisper-cli.exe"
         }
       ]
     },
@@ -246,6 +250,7 @@
     "transcription",
     "speech-to-text",
     "whisper",
+    "whisper-cli",
     "ai",
     "audio",
     "voice",

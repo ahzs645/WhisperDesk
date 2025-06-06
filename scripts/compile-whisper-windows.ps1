@@ -1,5 +1,5 @@
-# scripts/build-whisper-official-windows.ps1
-# Official whisper.cpp build method for Windows
+# scripts/compile-whisper-windows.ps1
+# Official whisper.cpp build method for Windows with whisper-cli.exe
 
 param (
     [string]$Architecture = "x64",
@@ -26,9 +26,9 @@ function Write-Info($message) {
 }
 
 # Display script information
-Write-Info "WhisperDesk Official Build Script"
-Write-Info "================================="
-Write-Info "Using official whisper.cpp build method"
+Write-Info "WhisperDesk Official Build Script (whisper-cli.exe)"
+Write-Info "================================================="
+Write-Info "Using official whisper.cpp build method with whisper-cli.exe"
 Write-Info "Architecture: $Architecture"
 Write-Info "Build Type: $BuildType"
 Write-Info "SDL2 Version: $SDL2Version"
@@ -80,7 +80,7 @@ try {
     Set-Location $WhisperDir
     Write-Success "whisper.cpp cloned successfully"
 
-    # Step 3: Configure with CMake (official settings)
+    # Step 3: Configure with CMake (official settings with examples enabled)
     Write-Info "Configuring CMake build with official settings..."
     $BuildDir = Join-Path $WhisperDir "build"
     
@@ -89,11 +89,12 @@ try {
         "-B", $BuildDir,
         "-A", $Architecture,
         "-DCMAKE_BUILD_TYPE=$BuildType",
-        "-DBUILD_SHARED_LIBS=ON",           # ← DLL-based (official method)
-        "-DWHISPER_SDL2=ON",                # ← Enable SDL2 audio support
-        "-DWHISPER_BUILD_EXAMPLES=ON",      # ← Build examples including main.exe
-        "-DWHISPER_BUILD_TESTS=OFF",        # ← Skip tests
-        "-DWHISPER_BUILD_SERVER=OFF"        # ← Skip server
+        "-DBUILD_SHARED_LIBS=ON",           # DLL-based (official method)
+        "-DWHISPER_SDL2=ON",                # Enable SDL2 audio support
+        "-DWHISPER_BUILD_EXAMPLES=ON",      # ← KEY: Build whisper-cli.exe and examples
+        "-DWHISPER_BUILD_TESTS=ON",         # Build test executables
+        "-DWHISPER_BUILD_SERVER=ON",        # Build whisper-server.exe
+        "-DWHISPER_BUILD_BENCHMARKS=ON"     # Build benchmark tools
     )
     
     Write-Info "CMake arguments: $($cmakeArgs -join ' ')"
@@ -119,13 +120,21 @@ try {
     Write-Info "Copying binaries to project directory..."
     $BuildBinDir = Join-Path $BuildDir "bin/$BuildType"
     
-    # Required DLLs and executables
+    # Required DLLs and executables (updated for whisper-cli)
     $RequiredFiles = @(
         "whisper.dll",
         "ggml.dll", 
         "ggml-base.dll",
         "ggml-cpu.dll",
-        "main.exe"
+        "whisper-cli.exe"           # ← UPDATED: Using whisper-cli.exe instead of main.exe
+    )
+    
+    # Optional executables that might be built
+    $OptionalFiles = @(
+        "whisper-stream.exe",
+        "whisper-server.exe",
+        "whisper-bench.exe",
+        "quantize.exe"
     )
     
     foreach ($file in $RequiredFiles) {
@@ -139,6 +148,18 @@ try {
         } else {
             Write-Error "Required file not found: $sourcePath"
             throw "Missing required file: $file"
+        }
+    }
+    
+    # Copy optional files if they exist
+    foreach ($file in $OptionalFiles) {
+        $sourcePath = Join-Path $BuildBinDir $file
+        $destPath = Join-Path $BinariesDir $file
+        
+        if (Test-Path $sourcePath) {
+            Copy-Item $sourcePath $destPath -Force
+            $fileSize = [math]::Round((Get-Item $destPath).Length / 1024, 1)
+            Write-Success "Copied optional $file ($fileSize KB)"
         }
     }
     
@@ -170,23 +191,25 @@ try {
         }
     }
 
-    # Step 7: Test main.exe
-    Write-Info "Testing main.exe..."
-    $MainExePath = Join-Path $BinariesDir "main.exe"
+    # Step 7: Test whisper-cli.exe
+    Write-Info "Testing whisper-cli.exe..."
+    $WhisperCliPath = Join-Path $BinariesDir "whisper-cli.exe"
     
     try {
-        $testOutput = & $MainExePath --help 2>&1
-        Write-Success "main.exe executed successfully"
-        Write-Info "Test output preview: $($testOutput | Select-Object -First 2)"
+        $testOutput = & $WhisperCliPath --help 2>&1
+        Write-Success "whisper-cli.exe executed successfully"
+        Write-Info "Test output preview: $($testOutput | Select-Object -First 3)"
     } catch {
-        Write-Warning "main.exe test failed: $($_.Exception.Message)"
+        Write-Warning "whisper-cli.exe test failed: $($_.Exception.Message)"
         Write-Info "This may be normal - the binary was built successfully"
     }
 
     # Summary
     Write-Success "Official whisper.cpp build completed successfully!"
-    Write-Info "Built using DLL-based official method"
+    Write-Info "Built using DLL-based official method with whisper-cli.exe"
     Write-Info "Location: $BinariesDir"
+    Write-Info ""
+    Write-Info "Main executable: whisper-cli.exe (replaces main.exe)"
     Write-Info ""
     Write-Info "Files created:"
     Get-ChildItem $BinariesDir | ForEach-Object {
@@ -213,4 +236,4 @@ try {
     }
 }
 
-Write-Success "🎉 Ready to build Electron app with official whisper.cpp binaries!"
+Write-Success "🎉 Ready to build Electron app with official whisper-cli.exe binaries!"
