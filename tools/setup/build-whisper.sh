@@ -1,5 +1,5 @@
 #!/bin/bash
-# scripts/build-whisper.sh - Modern whisper.cpp build script
+# tools/setup/build-whisper.sh - Modern whisper.cpp build script
 
 echo "🔨 Building whisper.cpp with Modern CMAKE Approach"
 echo "=================================================="

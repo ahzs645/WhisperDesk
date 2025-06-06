@@ -89,7 +89,7 @@ You can use the automated setup scripts or follow the manual steps:
     # Build from source (recommended for all platforms)
     npm run build:whisper
     ```
-    *(Refer to `scripts/build-whisper.sh` for Unix or `scripts/compile-whisper-windows.ps1` for Windows for more details on the native build process).*
+    *(Refer to `tools/setup/build-whisper.sh` for Unix or `tools/setup/compile-whisper-windows.ps1` for Windows for more details on the native build process).*
 4.  **Download a Model:**
     Manually download a model if needed (the application can also do this via the UI).
     ```bash
@@ -282,7 +282,7 @@ If you encounter issues on Windows, you can use the diagnostic script:
 # Diagnose common issues with whisper.cpp binary on Windows
 scripts\diagnose-whisper-windows.ps1
 ```
-For other platforms, ensure all dependencies are correctly installed as per the build scripts (`scripts/build-whisper.sh`).
+For other platforms, ensure all dependencies are correctly installed as per the build scripts (`tools/setup/build-whisper.sh`).
 
 ## 📁 Project Structure
 

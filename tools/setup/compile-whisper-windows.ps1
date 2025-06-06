@@ -1,4 +1,4 @@
-# scripts/compile-whisper-windows.ps1
+# tools/setup/compile-whisper-windows.ps1
 # Official whisper.cpp build method for Windows with whisper-cli.exe
 
 param (
