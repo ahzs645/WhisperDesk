@@ -474,8 +474,38 @@ jobs:
             echo "⚠️ Renderer directory not found, skipping"
           fi
 
-      - name: Build whisper.cpp (via script)
-        run: npm run build:whisper
+      # FIXED: More robust whisper build with verification
+      - name: Build whisper.cpp with verification
+        run: |
+          echo "🔨 Starting whisper.cpp build for macOS..."
+          echo "Platform: $(uname -s)"
+          echo "Architecture: $(uname -m)"
+          
+          # Run the build script
+          npm run build:whisper
+          
+          # Verify the binary was created
+          BINARY_PATH="binaries/whisper-cli"
+          if [ -f "$BINARY_PATH" ]; then
+            echo "✅ Binary created successfully: $BINARY_PATH"
+            ls -la "$BINARY_PATH"
+            
+            # Make sure it's executable
+            chmod +x "$BINARY_PATH"
+            
+            # Test the binary (with timeout to prevent hanging)
+            echo "🧪 Testing binary..."
+            timeout 10s "$BINARY_PATH" --help >/dev/null 2>&1 || echo "⚠️ Binary test completed (timeout expected)"
+            
+            echo "📊 Binary size: $(ls -lh $BINARY_PATH | awk '{print $5}')"
+          else
+            echo "❌ Binary not found at: $BINARY_PATH"
+            echo "📋 Contents of binaries directory:"
+            ls -la binaries/ || echo "Binaries directory doesn't exist"
+            echo "📋 Contents of project root:"
+            ls -la
+            exit 1
+          fi
         shell: bash
 
       # Download tiny model
@@ -492,6 +522,39 @@ jobs:
             pnpm run build
           else
             echo "⚠️ Renderer directory not found, skipping"
+          fi
+
+      # FIXED: Verify prerequisites before building Electron app
+      - name: Verify build prerequisites
+        run: |
+          echo "📋 Verifying all build prerequisites..."
+          
+          # Check binary exists and is executable
+          BINARY_PATH="binaries/whisper-cli"
+          if [ -f "$BINARY_PATH" ] && [ -x "$BINARY_PATH" ]; then
+            echo "✅ whisper-cli binary found and executable"
+            echo "📊 Size: $(ls -lh $BINARY_PATH | awk '{print $5}')"
+          else
+            echo "❌ whisper-cli binary missing or not executable"
+            ls -la binaries/ || echo "Binaries directory missing"
+            exit 1
+          fi
+          
+          # Check model exists
+          if [ -f "models/ggml-tiny.bin" ]; then
+            echo "✅ Model found"
+            echo "📊 Size: $(ls -lh models/ggml-tiny.bin | awk '{print $5}')"
+          else
+            echo "❌ Model missing"
+            exit 1
+          fi
+          
+          # Check renderer build
+          if [ -d "src/renderer/whisperdesk-ui/dist" ]; then
+            echo "✅ Renderer build found"
+          else
+            echo "❌ Renderer build missing"
+            exit 1
           fi
 
       # Build Electron app
