@@ -225,6 +225,11 @@ export function ModelMarketplace() {
     if (!isElectron) return
     try {
       await window.electronAPI.model.cancelDownload(modelId)
+      setDownloads(prev => {
+        const updated = new Map(prev)
+        updated.delete(modelId)
+        return updated
+      })
       toast.warning('Download cancelled')
     } catch (error) {
       console.error('Failed to cancel download:', error)
