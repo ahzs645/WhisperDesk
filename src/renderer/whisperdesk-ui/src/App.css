@@ -121,6 +121,50 @@
   }
 }
 
+/* CROSS-PLATFORM SCROLLBAR NORMALIZATION */
+/* Webkit browsers (Chrome, Safari, newer Edge) */
+::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 6px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.3);
+  background-clip: content-box;
+}
+
+/* Firefox */
+html {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 0, 0, 0.2) transparent;
+}
+
+/* Dark mode scrollbar adjustments */
+.dark ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  background-clip: content-box;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+  background-clip: content-box;
+}
+
+.dark html {
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+}
+
 /* Spinner animations for model marketplace */
 .spinner {
   width: 20px;
@@ -219,9 +263,9 @@ body {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
-  overflow-y: auto; /* Changed from scroll to auto */
+  overflow-y: auto;
   scrollbar-gutter: stable;
-  scroll-behavior: smooth; /* Add smooth scrolling */
+  scroll-behavior: smooth;
 }
 
 /* Main content area */
@@ -229,17 +273,16 @@ main {
   position: relative;
   z-index: 1;
   flex: 1;
-  /* REMOVED: margin-top: calc(var(--header-height)); */
-  padding-top: calc(var(--header-height) + 24px); /* Add top padding instead */
+  padding-top: calc(var(--header-height) + 24px);
   padding-left: var(--header-margin);
   padding-right: var(--header-margin);
   padding-bottom: var(--header-margin);
   width: 100%;
   box-sizing: border-box;
-  min-height: 100vh; /* Changed from calc(100vh - var(--header-height)) */
+  min-height: 100vh;
   isolation: isolate;
   overflow-anchor: none;
-  contain: layout style; /* Removed paint to allow backdrop-filter to work */
+  contain: layout style;
 }
 
 /* Container styles to prevent overlap */
@@ -250,7 +293,7 @@ main {
   z-index: 1;
 }
 
-/* FIXED GLASS HEADER STYLES */
+/* FIXED GLASS HEADER STYLES - CROSS-PLATFORM COMPATIBLE */
 .unified-header {
   position: fixed !important;
   top: 0 !important;
@@ -269,43 +312,100 @@ main {
   -moz-user-select: none !important;
   -ms-user-select: none !important;
   
-  /* ENHANCED GLASS EFFECT */
-  background: rgba(255, 255, 255, 0.7) !important;
-  backdrop-filter: blur(16px) saturate(180%) !important;
-  -webkit-backdrop-filter: blur(16px) saturate(180%) !important;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
-  
-  /* Enhanced shadows for better glass effect */
-  box-shadow: 
-    0 8px 32px rgba(0, 0, 0, 0.1),
-    0 4px 16px rgba(0, 0, 0, 0.05),
-    inset 0 1px 0 rgba(255, 255, 255, 0.8),
-    inset 0 -1px 0 rgba(255, 255, 255, 0.2);
-  
-  isolation: isolate;
-  
-  /* Ensure hardware acceleration */
-  will-change: transform;
-  transform: translateZ(0);
-  background: rgba(255, 255, 255, 0.8);
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  /* Base fallback background - works on all platforms */
+  background: rgba(255, 255, 255, 0.95);
   border-bottom: 1px solid rgba(255, 255, 255, 0.3);
-  box-shadow: 
-    0 4px 6px -1px rgba(0, 0, 0, 0.05),
-    0 2px 4px -1px rgba(0, 0, 0, 0.03),
-    inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  
+  /* Performance optimizations */
+  transform: translate3d(0, 0, 0);
+  will-change: backdrop-filter;
+  contain: layout style;
   isolation: isolate;
 }
 
+/* Modern browsers with full backdrop filter support */
+@supports (backdrop-filter: blur(1px)) and (-webkit-backdrop-filter: blur(1px)) {
+  .unified-header {
+    background: rgba(255, 255, 255, 0.8);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.3);
+    box-shadow: 
+      0 4px 6px -1px rgba(0, 0, 0, 0.05),
+      0 2px 4px -1px rgba(0, 0, 0, 0.03),
+      inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  }
+}
+
+/* Firefox and other non-webkit browsers with backdrop filter */
+@supports (backdrop-filter: blur(1px)) and (not (-webkit-backdrop-filter: blur(1px))) {
+  .unified-header {
+    background: rgba(255, 255, 255, 0.85);
+    backdrop-filter: blur(15px) saturate(160%);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.25);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+  }
+}
+
+/* Platform-specific optimizations */
+@media screen and (-webkit-min-device-pixel-ratio: 2) {
+  /* Retina displays (common on macOS) - enhanced effects */
+  @supports (backdrop-filter: blur(1px)) {
+    .unified-header {
+      backdrop-filter: blur(20px) saturate(180%);
+      -webkit-backdrop-filter: blur(20px) saturate(180%);
+    }
+  }
+}
+
+/* Windows-specific adjustments for better performance */
+@media screen and (min-resolution: 96dpi) and (max-resolution: 192dpi) {
+  @supports (backdrop-filter: blur(1px)) {
+    .unified-header {
+      backdrop-filter: blur(10px) saturate(150%);
+      background: rgba(255, 255, 255, 0.9);
+    }
+  }
+}
+
+/* Dark mode header styles */
 .dark .unified-header {
-  background: rgba(15, 15, 15, 0.7) !important;
+  background: rgba(15, 15, 15, 0.95);
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: 
-    0 8px 32px rgba(0, 0, 0, 0.3),
-    0 4px 16px rgba(0, 0, 0, 0.2),
-    inset 0 1px 0 rgba(255, 255, 255, 0.1),
-    inset 0 -1px 0 rgba(255, 255, 255, 0.05);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+@supports (backdrop-filter: blur(1px)) and (-webkit-backdrop-filter: blur(1px)) {
+  .dark .unified-header {
+    background: rgba(15, 15, 15, 0.8);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    box-shadow: 
+      0 4px 6px -1px rgba(0, 0, 0, 0.15),
+      0 2px 4px -1px rgba(0, 0, 0, 0.1),
+      inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  }
+}
+
+@supports (backdrop-filter: blur(1px)) and (not (-webkit-backdrop-filter: blur(1px))) {
+  .dark .unified-header {
+    background: rgba(15, 15, 15, 0.85);
+    backdrop-filter: blur(15px) saturate(160%);
+  }
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+  .unified-header {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    background: rgba(255, 255, 255, 0.95) !important;
+  }
+  
+  .dark .unified-header {
+    background: rgba(15, 15, 15, 0.95) !important;
+  }
 }
 
 /* Header content - keep draggable */
@@ -454,65 +554,40 @@ main {
   padding-right: 12px;
 }
 
-/* Frosted glass effect for logo */
+/* IMPROVED FROSTED GLASS EFFECT WITH CROSS-PLATFORM FALLBACKS */
 .frosted-glass {
-  background: rgba(255, 255, 255, 0.15) !important;
-  backdrop-filter: blur(12px) saturate(150%) !important;
-  -webkit-backdrop-filter: blur(12px) saturate(150%) !important;
+  /* Base fallback */
+  background: rgba(255, 255, 255, 0.9) !important;
   border: 1px solid rgba(255, 255, 255, 0.2);
-  box-shadow: 
-    0 4px 16px rgba(0, 0, 0, 0.1),
-    inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+@supports (backdrop-filter: blur(1px)) {
+  .frosted-glass {
+    background: rgba(255, 255, 255, 0.15) !important;
+    backdrop-filter: blur(12px) saturate(150%) !important;
+    -webkit-backdrop-filter: blur(12px) saturate(150%) !important;
+    box-shadow: 
+      0 4px 16px rgba(0, 0, 0, 0.1),
+      inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  }
 }
 
 .dark .frosted-glass {
-  background: rgba(0, 0, 0, 0.25) !important;
+  background: rgba(0, 0, 0, 0.8) !important;
   border-color: rgba(255, 255, 255, 0.15);
-  box-shadow: 
-    0 4px 16px rgba(0, 0, 0, 0.2),
-    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }
 
-/* Fallback for browsers that don't support backdrop-filter */
-@supports not (backdrop-filter: blur(1px)) {
-  .unified-header {
-    background: rgba(255, 255, 255, 0.95) !important;
-  }
-  
-  .dark .unified-header {
-    background: rgba(15, 15, 15, 0.95) !important;
-  }
-  
-  .frosted-glass {
-    background: rgba(255, 255, 255, 0.9) !important;
-  }
-  
+@supports (backdrop-filter: blur(1px)) {
   .dark .frosted-glass {
-    background: rgba(0, 0, 0, 0.8) !important;
+    background: rgba(0, 0, 0, 0.25) !important;
+    backdrop-filter: blur(12px) saturate(150%) !important;
+    -webkit-backdrop-filter: blur(12px) saturate(150%) !important;
+    box-shadow: 
+      0 4px 16px rgba(0, 0, 0, 0.2),
+      inset 0 1px 0 rgba(255, 255, 255, 0.2);
   }
-}
-
-/* Enhanced scrolling behavior */
-body {
-  margin: 0;
-  padding: 0;
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  overflow-y: auto; /* Changed from scroll to auto */
-  scrollbar-gutter: stable;
-  scroll-behavior: smooth; /* Add smooth scrolling */
-}
-
-/* Optional: Add more content for testing glass effect */
-.test-content {
-  min-height: 200vh;
-  background: linear-gradient(45deg, 
-    rgba(59, 130, 246, 0.1) 0%, 
-    rgba(147, 51, 234, 0.1) 25%,
-    rgba(236, 72, 153, 0.1) 50%,
-    rgba(251, 146, 60, 0.1) 75%,
-    rgba(34, 197, 94, 0.1) 100%);
 }
 
 /* Force hardware acceleration for better performance */
@@ -601,10 +676,12 @@ body {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 }
 
-/* Add blur effect for glass morphism */
-[data-sonner-toast] {
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+/* Add blur effect for glass morphism - with fallback */
+@supports (backdrop-filter: blur(1px)) {
+  [data-sonner-toast] {
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
 }
 
 /* Toast animations */
@@ -716,12 +793,14 @@ body {
 /* High contrast mode support */
 @media (prefers-contrast: high) {
   .unified-header {
-    background: white;
+    background: white !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
     border-bottom: 2px solid black;
   }
   
   .dark .unified-header {
-    background: black;
+    background: black !important;
     border-bottom: 2px solid white;
   }
   
@@ -732,4 +811,21 @@ body {
   .windows-controls button {
     border: 1px solid currentColor;
   }
+  
+  .frosted-glass {
+    background: var(--background) !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+}
+
+/* Optional: Add more content for testing glass effect */
+.test-content {
+  min-height: 200vh;
+  background: linear-gradient(45deg, 
+    rgba(59, 130, 246, 0.1) 0%, 
+    rgba(147, 51, 234, 0.1) 25%,
+    rgba(236, 72, 153, 0.1) 50%,
+    rgba(251, 146, 60, 0.1) 75%,
+    rgba(34, 197, 94, 0.1) 100%);
 }
