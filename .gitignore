@@ -10,7 +10,7 @@ pnpm-debug.log*
 dist/
 build/
 out/
-
+binaries/
 # Environment variables
 .env
 .env.local
