@@ -612,10 +612,17 @@ main {
   --toast-min-height: 3.5rem;
 }
 
+.toaster {
+  position: fixed;
+  bottom: 1rem;
+  right: 1rem;
+  z-index: 1000;
+}
+
 [data-sonner-toast] {
   position: relative;
   min-height: var(--toast-min-height);
-  height: max-content;
+  height: var(--toast-min-height);
   box-sizing: border-box;
   padding: 0.875rem 1rem;
   padding-right: 2rem; /* Reserve space for close button */
