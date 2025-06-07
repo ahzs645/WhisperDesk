@@ -617,6 +617,11 @@ main {
   bottom: 1rem;
   right: 1rem;
   z-index: 1000;
+  display: flex;
+  flex-direction: column-reverse;
+  align-items: flex-end;
+  max-height: calc(100vh - 2rem);
+  overflow-y: auto;
 }
 
 [data-sonner-toast] {
