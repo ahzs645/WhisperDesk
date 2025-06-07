@@ -35,7 +35,7 @@ Write-Info "SDL2 Version: $SDL2Version"
 
 # Set up directories
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$ProjectRoot = Resolve-Path (Join-Path $ScriptDir "..")
+$ProjectRoot = Resolve-Path (Join-Path $ScriptDir "..\..")
 $BinariesDir = Join-Path $ProjectRoot "binaries"
 $TempDir = Join-Path $env:TEMP "whisper-official-build-$(Get-Date -Format 'yyyyMMddHHmmss')"
 
