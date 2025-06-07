@@ -83,6 +83,10 @@ You can use the automated setup scripts or follow the manual steps:
     pnpm install
     cd ../../..
     ```
+    Or run the convenience script to install everything and build the native binary:
+    ```bash
+    npm run install:all
+    ```
 3.  **Set up Whisper Binary:**
     Build the whisper.cpp native binary. This is often handled by the `setup.sh` or `setup.ps1` scripts.
     ```bash
