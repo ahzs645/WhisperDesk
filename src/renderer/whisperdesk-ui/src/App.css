@@ -630,12 +630,14 @@ main {
   top: 0.25rem;
   right: 0.25rem;
   opacity: 0;
+  pointer-events: none;
   transition: opacity 0.2s ease-out;
   transform: none;
 }
 
 [data-sonner-toast]:hover [data-close-button] {
   opacity: 1;
+  pointer-events: auto;
 }
 
 /* Preserve existing toast styles */
