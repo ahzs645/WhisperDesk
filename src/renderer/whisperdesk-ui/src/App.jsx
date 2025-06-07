@@ -9,7 +9,7 @@ import { TranscriptionTabElectron } from './components/TranscriptionTabElectron'
 import { ScreenRecorder } from './components/ScreenRecorder'
 import { SettingsTab } from './components/SettingsTab'
 import { UnifiedWindowControls } from './components/UnifiedWindowControls'
-import { Toaster } from 'sonner'
+import { Toaster } from './components/ui/sonner'
 import './App.css'
 import { Label } from './components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './components/ui/select'
@@ -35,6 +35,7 @@ function AppStateProvider({ children }) {
     isTranscribing: false,
     progress: 0,
     progressMessage: '',
+    activeTranscriptionId: null,
     
     // Settings state
     selectedProvider: 'whisper-native',
@@ -81,7 +82,8 @@ function AppStateProvider({ children }) {
       isTranscribing: false,
       progress: 0,
       progressMessage: '',
-      lastTranscriptionResult: null
+      lastTranscriptionResult: null,
+      activeTranscriptionId: null
     })
   }
 
@@ -94,13 +96,25 @@ function AppStateProvider({ children }) {
       isTranscribing: false,
       progress: 0,
       progressMessage: '',
-      lastTranscriptionResult: null
+      lastTranscriptionResult: null,
+      activeTranscriptionId: null
     })
   }
 
-  // Add theme change listener
+  // Apply theme whenever it changes
   useEffect(() => {
-    const handleThemeChange = (event, theme) => {
+    document.documentElement.classList.remove('dark', 'light')
+    if (appState.theme === 'system') {
+      const systemTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+      document.documentElement.classList.add(systemTheme)
+    } else {
+      document.documentElement.classList.add(appState.theme)
+    }
+  }, [appState.theme])
+
+  // Listen for system theme changes from main process (Electron)
+  useEffect(() => {
+    const handleThemeChange = (_, theme) => {
       if (appState.theme === 'system') {
         document.documentElement.classList.remove('dark', 'light')
         document.documentElement.classList.add(theme)

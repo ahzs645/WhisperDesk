@@ -62,7 +62,7 @@ fi
 print_success "Dependencies ready"
 
 # Set up directories
-PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 TEMP_DIR="/tmp/whisper-cpp-build-$(date +%s)"
 BINARIES_DIR="$PROJECT_ROOT/binaries"
 

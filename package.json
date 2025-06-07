@@ -16,7 +16,7 @@
     "dev:main": "cross-env NODE_ENV=development nodemon --watch src/main --exec electron .",
     "dev:renderer": "cd src/renderer/whisperdesk-ui && pnpm run dev",
     "dev:clean": "npm run clean && npm run dev",
-    "install:all": "npm install && cd src/renderer/whisperdesk-ui && pnpm install && cd ../../..",
+    "install:all": "npm install && cd src/renderer/whisperdesk-ui && pnpm install && cd ../../.. && npm run build:whisper",
     "build": "npm run build:renderer && npm run build:main",
     "build:renderer": "cd src/renderer/whisperdesk-ui && npm run build",
     "build:main": "echo 'Main process ready'",

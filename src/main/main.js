@@ -87,6 +87,9 @@ async function initializeModelManager() {
     services.modelManager.on('downloadError', (data) => {
       mainWindow?.webContents.send('model:downloadError', data);
     });
+    services.modelManager.on('downloadCancelled', (data) => {
+      mainWindow?.webContents.send('model:downloadCancelled', data);
+    });
     
     console.log('✅ Model Manager initialized');
   } catch (error) {
@@ -132,6 +135,10 @@ async function initializeTranscriptionService() {
     services.transcriptionService.on('start', (data) => {
       console.log('🎬 Transcription started');
       mainWindow?.webContents.send('transcription:start', data);
+    });
+    services.transcriptionService.on('cancelled', (data) => {
+      console.log('⏹️ Transcription cancelled');
+      mainWindow?.webContents.send('transcription:cancelled', data);
     });
     
     console.log('✅ Transcription Service initialized');
@@ -455,6 +462,7 @@ function setupIpcHandlers() {
   ipcMain.handle('model:download', (event, modelId) => services.modelManager.downloadModel(modelId));
   ipcMain.handle('model:delete', (event, modelId) => services.modelManager.deleteModel(modelId));
   ipcMain.handle('model:getInfo', (event, modelId) => services.modelManager.getModelInfo(modelId));
+  ipcMain.handle('model:cancelDownload', (event, modelId) => services.modelManager.cancelDownload(modelId));
 
   // Transcription - now using real service
   ipcMain.handle('transcription:getProviders', () => services.transcriptionService.getProviders());
@@ -473,6 +481,7 @@ function setupIpcHandlers() {
       throw error;
     }
   });
+  ipcMain.handle('transcription:stop', (event, transcriptionId) => services.transcriptionService.cancelTranscription(transcriptionId));
 
   // Settings - now using real service
   ipcMain.handle('settings:get', (event, key) => services.settingsService.get(key));

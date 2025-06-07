@@ -16,7 +16,7 @@ function runScript(command, args, options = {}) {
     
     const processToRun = spawn(command, args, {
       stdio: 'inherit',
-      shell: true,
+      shell: false,
       ...options
     });
     

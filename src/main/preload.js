@@ -96,6 +96,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     download: createSafeIPC('model:download'),
     delete: createSafeIPC('model:delete'),
     getInfo: createSafeIPC('model:getInfo'),
+    cancelDownload: createSafeIPC('model:cancelDownload'),
     
     // Model events
     onDownloadQueued: createEventListener('model:downloadQueued'),
@@ -122,7 +123,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     onComplete: createEventListener('transcription:complete'),
     onError: createEventListener('transcription:error'),
     onResult: createEventListener('transcription:result'),
-    onStart: createEventListener('transcription:start')
+    onStart: createEventListener('transcription:start'),
+    onCancelled: createEventListener('transcription:cancelled')
   },
 
   // Audio service

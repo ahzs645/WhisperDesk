@@ -83,6 +83,10 @@ You can use the automated setup scripts or follow the manual steps:
     pnpm install
     cd ../../..
     ```
+    Or run the convenience script to install everything and build the native binary:
+    ```bash
+    npm run install:all
+    ```
 3.  **Set up Whisper Binary:**
     Build the whisper.cpp native binary. This is often handled by the `setup.sh` or `setup.ps1` scripts.
     ```bash
@@ -247,6 +251,8 @@ This section assumes you have followed either the "Download & Install" or "Build
 - Right-click the app and select "Open" to bypass Gatekeeper
 - Check System Preferences → Security & Privacy for blocked apps
 - For M1/M2/M3/M4 Macs, ensure you downloaded the ARM64 version
+- If macOS reports the app is damaged, run:
+  `sudo xattr -rd com.apple.quarantine /Applications/WhisperDesk.app`
 
 **App won't start on Linux:**
 - Make AppImage executable: `chmod +x WhisperDesk-*.AppImage`

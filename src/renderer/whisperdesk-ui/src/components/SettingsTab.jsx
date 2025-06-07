@@ -2,45 +2,11 @@ import { Label } from '../components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card'
 import { useAppState } from '../App'
-import { useEffect } from 'react'
 
 export function SettingsTab() {
   const { appState, updateAppState } = useAppState()
   const isElectron = typeof window !== 'undefined' && window.electronAPI
 
-  // Apply theme changes
-  useEffect(() => {
-    const applyTheme = (theme) => {
-      // Remove existing theme classes
-      document.documentElement.classList.remove('dark', 'light')
-      
-      if (theme === 'system') {
-        // For system theme, we'll let the system handle it
-        const systemTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
-        document.documentElement.classList.add(systemTheme)
-      } else {
-        // For explicit themes, apply them directly
-        document.documentElement.classList.add(theme)
-      }
-    }
-
-    // Apply initial theme
-    applyTheme(appState.theme)
-
-    // Listen for system theme changes if using system theme
-    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
-    const handleSystemThemeChange = (e) => {
-      if (appState.theme === 'system') {
-        applyTheme('system')
-      }
-    }
-
-    mediaQuery.addEventListener('change', handleSystemThemeChange)
-
-    return () => {
-      mediaQuery.removeEventListener('change', handleSystemThemeChange)
-    }
-  }, [appState.theme])
 
   const handleThemeChange = (value) => {
     // Update app state
