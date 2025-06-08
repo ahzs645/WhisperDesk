@@ -1,15 +1,18 @@
-import { useTheme } from "next-themes"
 import { Toaster as Sonner, toast } from "sonner";
+import { useAppState } from "../../App";
 
 const Toaster = ({
   ...props
 }) => {
-  const { theme = "system" } = useTheme()
+  const { appState } = useAppState()
+  const currentTheme = appState.theme === "system"
+    ? (typeof window !== "undefined" && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light")
+    : appState.theme
 
   return (
     <>
       <Sonner
-        theme={theme}
+        theme={currentTheme}
         className="toaster group"
         style={{
           "--normal-bg": "var(--popover)",
