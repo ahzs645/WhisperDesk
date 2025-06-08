@@ -56,22 +56,29 @@ function AppStateProvider({ children }) {
     theme: localStorage.getItem('theme') || 'system'
   })
 
-  // Initialize theme
-  useEffect(() => {
-    const theme = localStorage.getItem('theme') || 'system'
-    setAppState(prev => ({ ...prev, theme }))
-    
-    // Apply initial theme
+  // Helper to apply theme classes immediately
+  const applyTheme = (theme) => {
+    document.documentElement.classList.remove('dark', 'light')
     if (theme === 'system') {
       const systemTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
       document.documentElement.classList.add(systemTheme)
     } else {
       document.documentElement.classList.add(theme)
     }
+  }
+
+  // Initialize theme
+  useEffect(() => {
+    const theme = localStorage.getItem('theme') || 'system'
+    setAppState(prev => ({ ...prev, theme }))
+    applyTheme(theme)
   }, [])
 
   // Update helper function
   const updateAppState = (updates) => {
+    if (typeof updates.theme !== 'undefined') {
+      applyTheme(updates.theme)
+    }
     setAppState(prev => ({ ...prev, ...updates }))
   }
 
@@ -103,21 +110,14 @@ function AppStateProvider({ children }) {
 
   // Apply theme whenever it changes
   useEffect(() => {
-    document.documentElement.classList.remove('dark', 'light')
-    if (appState.theme === 'system') {
-      const systemTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
-      document.documentElement.classList.add(systemTheme)
-    } else {
-      document.documentElement.classList.add(appState.theme)
-    }
+    applyTheme(appState.theme)
   }, [appState.theme])
 
   // Listen for system theme changes from main process (Electron)
   useEffect(() => {
     const handleThemeChange = (_, theme) => {
       if (appState.theme === 'system') {
-        document.documentElement.classList.remove('dark', 'light')
-        document.documentElement.classList.add(theme)
+        applyTheme(theme)
       }
     }
 
@@ -125,6 +125,15 @@ function AppStateProvider({ children }) {
     return () => {
       window.electronAPI?.window?.removeThemeListener(handleThemeChange)
     }
+  }, [appState.theme])
+
+  // Listen for system theme changes in the browser
+  useEffect(() => {
+    if (appState.theme !== 'system') return
+    const media = window.matchMedia('(prefers-color-scheme: dark)')
+    const listener = (e) => applyTheme(e.matches ? 'dark' : 'light')
+    media.addEventListener('change', listener)
+    return () => media.removeEventListener('change', listener)
   }, [appState.theme])
 
   // Single useEffect for Electron detection
