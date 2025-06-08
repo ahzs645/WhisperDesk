@@ -494,39 +494,49 @@ class ModelManager extends EventEmitter {
       console.log(`📥 Downloading ${model.name} as ${outputFilename}`);
       
       await this.downloadFile(model.downloadUrl, outputPath, downloadInfo);
-      
-      // Skip checksum verification for now since we're using new model files
-      // if (downloadInfo.model.checksum) {
-      //   await this.verifyChecksum(outputPath, downloadInfo.model.checksum);
-      // }
 
-      // Add to installed models
-      const stats = await fs.stat(outputPath);
-      const installedModel = {
-        id: modelId,
-        name: model.name,
-        path: outputPath,
-        filename: outputFilename,
-        size: stats.size,
-        installedAt: new Date(),
-        version: model.version,
-        type: model.type,
-        isCompatible: this.isFileNameCompatible(outputFilename)
-      };
+      if (downloadInfo.cancelled) {
+        try { await fs.unlink(outputPath); } catch {}
+        downloadInfo.status = 'cancelled';
+        this.emit('downloadCancelled', { modelId });
+      } else {
+        // Skip checksum verification for now since we're using new model files
+        // if (downloadInfo.model.checksum) {
+        //   await this.verifyChecksum(outputPath, downloadInfo.model.checksum);
+        // }
 
-      this.installedModels.set(modelId, installedModel);
-      
-      downloadInfo.status = 'completed';
-      downloadInfo.progress = 100;
-      downloadInfo.completedAt = Date.now();
+        const stats = await fs.stat(outputPath);
+        const installedModel = {
+          id: modelId,
+          name: model.name,
+          path: outputPath,
+          filename: outputFilename,
+          size: stats.size,
+          installedAt: new Date(),
+          version: model.version,
+          type: model.type,
+          isCompatible: this.isFileNameCompatible(outputFilename)
+        };
 
-      console.log(`✅ Model ${model.name} downloaded successfully as ${outputFilename}`);
-      this.emit('downloadComplete', { modelId, installedModel });
+        this.installedModels.set(modelId, installedModel);
+
+        downloadInfo.status = 'completed';
+        downloadInfo.progress = 100;
+        downloadInfo.completedAt = Date.now();
+
+        console.log(`✅ Model ${model.name} downloaded successfully as ${outputFilename}`);
+        this.emit('downloadComplete', { modelId, installedModel });
+      }
 
     } catch (error) {
-      downloadInfo.status = 'error';
-      downloadInfo.error = error.message;
-      this.emit('downloadError', { modelId, error: error.message });
+      if (downloadInfo.cancelled || error.message === 'Download cancelled') {
+        downloadInfo.status = 'cancelled';
+        this.emit('downloadCancelled', { modelId });
+      } else {
+        downloadInfo.status = 'error';
+        downloadInfo.error = error.message;
+        this.emit('downloadError', { modelId, error: error.message });
+      }
       
       // Clean up partial download
       const model = downloadInfo.model;
@@ -574,6 +584,8 @@ class ModelManager extends EventEmitter {
         }
 
         const writeStream = require('fs').createWriteStream(outputPath);
+        downloadInfo.request = request;
+        downloadInfo.writeStream = writeStream;
         let downloadedBytes = 0;
 
         response.on('data', (chunk) => {
@@ -592,19 +604,29 @@ class ModelManager extends EventEmitter {
 
         response.on('end', () => {
           writeStream.end();
+          downloadInfo.request = null;
+          downloadInfo.writeStream = null;
           resolve();
         });
 
         response.on('error', (error) => {
           writeStream.destroy();
+          downloadInfo.request = null;
+          downloadInfo.writeStream = null;
           reject(error);
         });
 
         response.pipe(writeStream);
       });
 
-      request.on('error', reject);
+      request.on('error', (err) => {
+        downloadInfo.request = null;
+        downloadInfo.writeStream = null;
+        reject(err);
+      });
       request.setTimeout(30000, () => {
+        downloadInfo.request = null;
+        downloadInfo.writeStream = null;
         request.destroy();
         reject(new Error('Download timeout'));
       });
@@ -688,23 +710,22 @@ class ModelManager extends EventEmitter {
       throw new Error(`No active download for model ${modelId}`);
     }
 
-    if (downloadInfo.status === 'downloading') {
-      // In a real implementation, you'd cancel the HTTP request
-      downloadInfo.status = 'cancelled';
+    if (downloadInfo.status === 'queued') {
       this.downloadQueue.delete(modelId);
-      this.activeDownloads--;
-      
-      // Clean up partial download
-      const model = downloadInfo.model;
-      const outputFilename = model.expectedFilename || `${modelId}.bin`;
-      const outputPath = path.join(this.modelsDir, outputFilename);
-      try {
-        await fs.unlink(outputPath);
-      } catch (error) {
-        console.error('Error cleaning up cancelled download:', error);
-      }
-      
+      downloadInfo.status = 'cancelled';
       this.emit('downloadCancelled', { modelId });
+      return { success: true };
+    }
+
+    if (downloadInfo.status === 'downloading') {
+      downloadInfo.cancelled = true;
+      if (downloadInfo.request) {
+        downloadInfo.request.destroy(new Error('Download cancelled'));
+      }
+      if (downloadInfo.writeStream) {
+        downloadInfo.writeStream.destroy();
+      }
+      return { success: true };
     }
 
     return { success: true };

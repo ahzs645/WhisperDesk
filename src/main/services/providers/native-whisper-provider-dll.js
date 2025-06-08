@@ -118,7 +118,8 @@ class NativeWhisperProviderDLL extends EventEmitter {
     ];
 
     // Add progress reporting (modern whisper-cli supports this)
-    args.push('--print-progress', 'true');
+    // Modern whisper-cli uses flag form for progress output
+    args.push('--print-progress');
 
     // Language settings
     if (language && language !== 'auto') {

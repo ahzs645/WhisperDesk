@@ -410,7 +410,8 @@ main {
 
 /* Header content - keep draggable */
 .unified-header-content {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
   align-items: center;
   height: 100%;
   padding: 0 16px;
@@ -447,6 +448,14 @@ main {
 .header-right {
   -webkit-app-region: drag !important;
   padding: 8px;
+}
+
+.header-left {
+  justify-self: start;
+}
+
+.header-right {
+  justify-self: end;
 }
 
 /* ONLY make the actual clickable elements non-draggable */
@@ -603,11 +612,25 @@ main {
   --toast-min-height: 3.5rem;
 }
 
+.toaster {
+  position: fixed;
+  bottom: 1rem;
+  right: 1rem;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column-reverse;
+  align-items: flex-end;
+  max-height: calc(100vh - 2rem);
+  overflow-y: auto;
+}
+
 [data-sonner-toast] {
+  position: relative;
   min-height: var(--toast-min-height);
-  height: max-content;
+  height: var(--toast-min-height);
   box-sizing: border-box;
   padding: 0.875rem 1rem;
+  padding-right: 2rem; /* Reserve space for close button */
   transition: all 0.2s ease-out;
   will-change: transform, opacity;
   transform-origin: center;
@@ -615,14 +638,18 @@ main {
 }
 
 [data-sonner-toast] [data-close-button] {
+  position: absolute;
+  top: 0.25rem;
+  right: 0.25rem;
   opacity: 0;
-  transform: translateX(-4px);
-  transition: all 0.2s ease-out;
+  pointer-events: none;
+  transition: opacity 0.2s ease-out;
+  transform: none;
 }
 
 [data-sonner-toast]:hover [data-close-button] {
   opacity: 1;
-  transform: translateX(0);
+  pointer-events: auto;
 }
 
 /* Preserve existing toast styles */
