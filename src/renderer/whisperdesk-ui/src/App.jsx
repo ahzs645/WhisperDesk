@@ -1,4 +1,4 @@
-// src/renderer/whisperdesk-ui/src/App.jsx - With persistent file state
+// src/renderer/whisperdesk-ui/src/App.jsx - Fixed theme handling
 import React, { useState, useEffect, createContext, useContext } from 'react'
 import { Button } from './components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './components/ui/card'
@@ -25,7 +25,82 @@ export const useAppState = () => {
   return context
 }
 
+// FIXED: Improved theme management
+const useThemeManager = () => {
+  const [theme, setTheme] = useState(() => {
+    return localStorage.getItem('theme') || 'system'
+  })
+
+  // Helper to apply theme classes to DOM - FIXED VERSION
+  const applyThemeToDOM = (themeValue) => {
+    console.log('🎨 Applying theme to DOM:', themeValue)
+    
+    // Remove existing theme classes
+    document.documentElement.classList.remove('dark', 'light')
+    
+    let effectiveTheme = themeValue
+    
+    if (themeValue === 'system') {
+      // Check system preference
+      const systemPrefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
+      effectiveTheme = systemPrefersDark ? 'dark' : 'light'
+      console.log('🎨 System theme detected:', effectiveTheme)
+    }
+    
+    // Only add dark class - light is the default (no class needed)
+    if (effectiveTheme === 'dark') {
+      document.documentElement.classList.add('dark')
+      console.log('🎨 Added dark class to document')
+    } else {
+      console.log('🎨 Using light theme (no class needed)')
+    }
+    
+    // Force a small delay to ensure CSS is applied
+    setTimeout(() => {
+      console.log('🎨 Theme applied, current classes:', document.documentElement.className)
+    }, 10)
+  }
+
+  // Apply theme immediately when it changes
+  useEffect(() => {
+    console.log('🎨 Theme changing to:', theme)
+    applyThemeToDOM(theme)
+  }, [theme])
+
+  // Listen for system theme changes
+  useEffect(() => {
+    if (theme !== 'system') return
+
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
+    const handleSystemThemeChange = (e) => {
+      console.log('🎨 System theme changed, dark mode:', e.matches)
+      if (theme === 'system') {
+        applyThemeToDOM('system')
+      }
+    }
+
+    mediaQuery.addEventListener('change', handleSystemThemeChange)
+    return () => mediaQuery.removeEventListener('change', handleSystemThemeChange)
+  }, [theme])
+
+  // Update theme function
+  const updateTheme = (newTheme) => {
+    console.log('🎨 Theme update requested:', newTheme)
+    setTheme(newTheme)
+    localStorage.setItem('theme', newTheme)
+    
+    // Send to Electron main process if available
+    if (window.electronAPI?.window?.setTheme) {
+      window.electronAPI.window.setTheme(newTheme)
+    }
+  }
+
+  return { theme, updateTheme }
+}
+
 function AppStateProvider({ children }) {
+  const { theme, updateTheme } = useThemeManager()
+  
   const [appState, setAppState] = useState({
     // File selection state
     selectedFile: null,
@@ -53,36 +128,24 @@ function AppStateProvider({ children }) {
     
     // Environment
     isElectron: false,
-    theme: localStorage.getItem('theme') || 'system'
+    theme: theme // Use theme from theme manager
   })
 
-  // Helper to apply theme classes immediately
-  const applyTheme = (theme) => {
-    const root = document.documentElement
-    const body = document.body
-    root.classList.remove('dark', 'light')
-    body?.classList.remove('dark', 'light')
-
-    const resolved = theme === 'system'
-      ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
-      : theme
-
-    root.classList.add(resolved)
-    body?.classList.add(resolved)
-  }
-
-  // Initialize theme
+  // Update app state when theme changes
   useEffect(() => {
-    const theme = localStorage.getItem('theme') || 'system'
     setAppState(prev => ({ ...prev, theme }))
-    applyTheme(theme)
-  }, [])
+  }, [theme])
 
-  // Update helper function
+  // FIXED: Simplified update function that doesn't handle theme directly
   const updateAppState = (updates) => {
+    // Handle theme updates specially
     if (typeof updates.theme !== 'undefined') {
-      applyTheme(updates.theme)
+      updateTheme(updates.theme)
+      // Remove theme from updates to avoid state conflicts
+      const { theme: _, ...otherUpdates } = updates
+      updates = otherUpdates
     }
+    
     setAppState(prev => ({ ...prev, ...updates }))
   }
 
@@ -100,8 +163,8 @@ function AppStateProvider({ children }) {
 
   // Clear everything (new session)
   const clearAll = () => {
-    setAppState({
-      ...appState,
+    setAppState(prev => ({
+      ...prev,
       selectedFile: null,
       transcription: '',
       isTranscribing: false,
@@ -109,38 +172,10 @@ function AppStateProvider({ children }) {
       progressMessage: '',
       lastTranscriptionResult: null,
       activeTranscriptionId: null
-    })
+    }))
   }
 
-  // Apply theme whenever it changes
-  useEffect(() => {
-    applyTheme(appState.theme)
-  }, [appState.theme])
-
-  // Listen for system theme changes from main process (Electron)
-  useEffect(() => {
-    const handleThemeChange = (_, theme) => {
-      if (appState.theme === 'system') {
-        applyTheme(theme)
-      }
-    }
-
-    window.electronAPI?.window?.onThemeChanged(handleThemeChange)
-    return () => {
-      window.electronAPI?.window?.removeThemeListener(handleThemeChange)
-    }
-  }, [appState.theme])
-
-  // Listen for system theme changes in the browser
-  useEffect(() => {
-    if (appState.theme !== 'system') return
-    const media = window.matchMedia('(prefers-color-scheme: dark)')
-    const listener = (e) => applyTheme(e.matches ? 'dark' : 'light')
-    media.addEventListener('change', listener)
-    return () => media.removeEventListener('change', listener)
-  }, [appState.theme])
-
-  // Single useEffect for Electron detection
+  // Detect Electron environment
   useEffect(() => {
     const isElectron = typeof window !== 'undefined' && !!window.electronAPI
     if (isElectron !== appState.isElectron) {
@@ -148,14 +183,22 @@ function AppStateProvider({ children }) {
     }
   }, [appState.isElectron])
 
+  // REMOVED: The problematic Electron theme listener that was causing conflicts
+
   return (
-    <AppStateContext.Provider value={{ appState, updateAppState, resetTranscription, clearAll }}>
+    <AppStateContext.Provider value={{ 
+      appState, 
+      updateAppState, 
+      resetTranscription, 
+      clearAll,
+      updateTheme // Expose theme updater directly
+    }}>
       {children}
     </AppStateContext.Provider>
   )
 }
 
-// App content component
+// App content component (unchanged)
 function AppContent() {
   const { appState } = useAppState();
   const [platform, setPlatform] = useState('unknown');
@@ -174,7 +217,16 @@ function AppContent() {
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
-      <Toaster position="bottom-right" />
+      <Toaster 
+        position="bottom-right"
+        expand={false}  // 🔑 KEY FIX: Prevents baseline shifting
+        richColors={true}
+        closeButton={true}
+        duration={4000}
+        visibleToasts={4}  // 🔑 KEY FIX: Limits visible toasts
+        gap={12}
+        offset={16}
+      />
       
       <header className="unified-header">
         <div className="unified-header-content">
@@ -364,7 +416,7 @@ function HistoryTab() {
         <div className="pt-4 border-t">
           <h3 className="font-medium mb-2">Saved History</h3>
           <p className="text-sm text-muted-foreground">
-            Persistent history across sessions coming soon...
+            Persisteçnt history across sessions coming soon...
           </p>
         </div>
       </CardContent>

@@ -607,172 +607,73 @@ main {
   perspective: 1000px;
 }
 
-/* Toast notification styles */
-[data-sonner-toaster] {
-  --toast-min-height: 3.5rem;
-}
+/* MINIMAL TOAST STYLES - Let Sonner handle positioning */
 
-.toaster {
-  position: fixed;
-  bottom: 1rem;
-  right: 1rem;
-  z-index: 1000;
-  display: flex;
-  flex-direction: column-reverse;
-  align-items: flex-end;
-  max-height: calc(100vh - 2rem);
-  overflow-y: auto;
-}
-
-[data-sonner-toast] {
-  position: relative;
-  min-height: var(--toast-min-height);
-  height: var(--toast-min-height);
-  box-sizing: border-box;
-  padding: 0.875rem 1rem;
-  padding-right: 2rem; /* Reserve space for close button */
-  transition: all 0.2s ease-out;
-  will-change: transform, opacity;
-  transform-origin: center;
-  contain: layout style;
-}
-
-[data-sonner-toast] [data-close-button] {
-  position: absolute;
-  top: 0.25rem;
-  right: 0.25rem;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.2s ease-out;
-  transform: none;
-}
-
-[data-sonner-toast]:hover [data-close-button] {
-  opacity: 1;
-  pointer-events: auto;
-}
-
-/* Preserve existing toast styles */
+/* Theme variables */
 [data-sonner-toaster][data-theme="light"] {
-  --toast-bg: oklch(0.98 0 0);
-  --toast-border: var(--border);
-  --toast-text: var(--foreground);
-  --success-bg: oklch(0.96 0.04 150);
-  --success-border: oklch(0.92 0.08 150);
-  --success-text: oklch(0.5 0.12 150);
-  --error-bg: oklch(0.96 0.04 30);
-  --error-border: oklch(0.92 0.08 30);
-  --error-text: oklch(0.5 0.12 30);
+  --normal-bg: #ffffff;
+  --normal-border: hsl(var(--border));
+  --normal-text: hsl(var(--foreground));
+  --success-bg: #f0fdf4;
+  --success-border: #16a34a;
+  --success-text: #15803d;
+  --error-bg: #fef2f2;
+  --error-border: #dc2626;
+  --error-text: #991b1b;
+  --warning-bg: #fefce8;
+  --warning-border: #ca8a04;
+  --warning-text: #a16207;
 }
 
 [data-sonner-toaster][data-theme="dark"] {
-  --toast-bg: var(--card);
-  --toast-border: var(--border);
-  --toast-text: var(--foreground);
-  --success-bg: oklch(0.3 0.1 150 / 0.3);
-  --success-border: oklch(0.4 0.1 150 / 0.3);
-  --success-text: oklch(0.7 0.1 150);
-  --error-bg: oklch(0.3 0.1 30 / 0.3);
-  --error-border: oklch(0.4 0.1 30 / 0.3);
-  --error-text: oklch(0.7 0.1 30);
+  --normal-bg: hsl(var(--card));
+  --normal-border: hsl(var(--border));
+  --normal-text: hsl(var(--foreground));
+  --success-bg: rgba(34, 197, 94, 0.1);
+  --success-border: #16a34a;
+  --success-text: #4ade80;
+  --error-bg: rgba(239, 68, 68, 0.1);
+  --error-border: #dc2626;
+  --error-text: #f87171;
+  --warning-bg: rgba(245, 158, 11, 0.1);
+  --warning-border: #f59e0b;
+  --warning-text: #fbbf24;
 }
 
+/* ONLY style the appearance, not positioning */
 [data-sonner-toast] {
-  border-radius: var(--radius);
-  border: 1px solid var(--toast-border);
-  background: var(--toast-bg);
-  color: var(--toast-text);
-  box-shadow: 
-    0 4px 6px -1px rgba(0, 0, 0, 0.05),
-    0 2px 4px -1px rgba(0, 0, 0, 0.03);
+  background: var(--normal-bg) !important;
+  border: 1px solid var(--normal-border) !important;
+  color: var(--normal-text) !important;
+  border-radius: calc(var(--radius) - 2px) !important;
+  font-family: inherit !important;
+  
+  /* Add subtle backdrop blur if supported */
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
 }
 
 [data-sonner-toast][data-type="success"] {
-  background: var(--success-bg);
-  border-color: var(--success-border);
-  color: var(--success-text);
+  background: var(--success-bg) !important;
+  border-color: var(--success-border) !important;
+  color: var(--success-text) !important;
 }
 
 [data-sonner-toast][data-type="error"] {
-  background: var(--error-bg);
-  border-color: var(--error-border);
-  color: var(--error-text);
+  background: var(--error-bg) !important;
+  border-color: var(--error-border) !important;
+  color: var(--error-text) !important;
 }
 
-.dark [data-sonner-toast] {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+[data-sonner-toast][data-type="warning"] {
+  background: var(--warning-bg) !important;
+  border-color: var(--warning-border) !important;
+  color: var(--warning-text) !important;
 }
 
-/* Add blur effect for glass morphism - with fallback */
-@supports (backdrop-filter: blur(1px)) {
-  [data-sonner-toast] {
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
-  }
-}
-
-/* Toast animations */
-@keyframes toast-in {
-  from {
-    opacity: 0;
-    transform: translateY(16px) scale(0.9);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-
-@keyframes toast-out {
-  from {
-    opacity: 1;
-    transform: scale(1);
-  }
-  to {
-    opacity: 0;
-    transform: scale(0.9);
-  }
-}
-
-[data-sonner-toast][data-mounted="true"] {
-  animation: toast-in 0.2s ease-out;
-}
-
-[data-sonner-toast][data-removed="true"] {
-  animation: toast-out 0.2s ease-in forwards;
-}
-
-/* Create proper stacking contexts for various components */
-.dialog-overlay {
-  z-index: 100;
-}
-
-.dialog-content {
-  z-index: 101;
-}
-
-.dropdown-content {
-  z-index: 999;
-}
-
-/* Tab bar should appear above header but below dropdowns */
-.tabs-container {
-  position: fixed;
-  top: var(--header-height);
-  left: 0;
-  right: 0;
-  z-index: 51;
-  background: var(--background);
-  padding: 0 var(--header-margin);
-}
-
-.toast-container {
-  z-index: 1000;
-}
-
-/* Ensure tooltips are always on top */
-[role="tooltip"] {
-  z-index: 1001 !important;
+/* Ensure high z-index for toasts */
+[data-sonner-toaster] {
+  z-index: 999999 !important;
 }
 
 /* Responsive design */
@@ -844,15 +745,4 @@ main {
     backdrop-filter: none !important;
     -webkit-backdrop-filter: none !important;
   }
-}
-
-/* Optional: Add more content for testing glass effect */
-.test-content {
-  min-height: 200vh;
-  background: linear-gradient(45deg, 
-    rgba(59, 130, 246, 0.1) 0%, 
-    rgba(147, 51, 234, 0.1) 25%,
-    rgba(236, 72, 153, 0.1) 50%,
-    rgba(251, 146, 60, 0.1) 75%,
-    rgba(34, 197, 94, 0.1) 100%);
 }

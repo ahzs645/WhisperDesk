@@ -1,24 +1,72 @@
 import { Label } from '../components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card'
+import { Button } from '../components/ui/button'
+import { toast } from 'sonner'
 import { useAppState } from '../App'
 
+function ToastTestSection() {
+  const testMultipleToasts = () => {
+    // Fire multiple toasts quickly to test stacking
+    toast.success('✅ Success toast 1')
+    setTimeout(() => toast.error('❌ Error toast 2'), 100)
+    setTimeout(() => toast.warning('⚠️ Warning toast 3'), 200)
+    setTimeout(() => toast.info('ℹ️ Info toast 4'), 300)
+    setTimeout(() => toast.loading('⏳ Loading toast 5'), 400)
+  }
+
+  const testLongMessages = () => {
+    toast.success('✅ This is a really long success message that should wrap properly and not break the stacking layout')
+    setTimeout(() => {
+      toast.error('❌ This is an even longer error message that contains multiple lines of text and should demonstrate how the toast stacking handles different heights automatically without breaking')
+    }, 200)
+  }
+
+  const testDifferentDurations = () => {
+    toast.success('Short message (2s)', { duration: 2000 })
+    setTimeout(() => {
+      toast.warning('Medium message (5s)', { duration: 5000 })
+    }, 100)
+    setTimeout(() => {
+      toast.info('Long message (10s)', { duration: 10000 })
+    }, 200)
+  }
+
+  return (
+    <div className="space-y-2 p-4 border rounded-lg bg-muted/50">
+      <h4 className="font-medium">Toast Stacking Test</h4>
+      <div className="flex flex-wrap gap-2">
+        <Button size="sm" onClick={testMultipleToasts}>
+          Test Multiple Toasts
+        </Button>
+        <Button size="sm" onClick={testLongMessages}>
+          Test Long Messages
+        </Button>
+        <Button size="sm" onClick={testDifferentDurations}>
+          Test Different Durations
+        </Button>
+        <Button size="sm" variant="destructive" onClick={() => toast.dismiss()}>
+          Dismiss All
+        </Button>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Use these buttons to test if toast stacking is working properly.
+        Multiple toasts should stack vertically and animate smoothly.
+      </p>
+    </div>
+  )
+}
+
 export function SettingsTab() {
-  const { appState, updateAppState } = useAppState()
+  const { appState, updateTheme } = useAppState() // Use updateTheme directly
   const isElectron = typeof window !== 'undefined' && window.electronAPI
 
-
+  // FIXED: Simplified theme change handler
   const handleThemeChange = (value) => {
-    // Update app state
-    updateAppState({ theme: value })
+    console.log('🎨 Settings: Theme change requested:', value)
     
-    // Persist theme preference
-    localStorage.setItem('theme', value)
-    
-    // Send theme to main process if in Electron
-    if (isElectron && window.electronAPI?.window?.setTheme) {
-      window.electronAPI.window.setTheme(value)
-    }
+    // Use the updateTheme function from the theme manager
+    updateTheme(value)
   }
   
   return (
@@ -31,6 +79,9 @@ export function SettingsTab() {
       </CardHeader>
       <CardContent>
         <div className="space-y-6">
+          {/* Add toast test section temporarily */}
+          <ToastTestSection />
+
           {/* Theme Settings */}
           <div className="grid gap-2">
             <Label htmlFor="theme">Theme</Label>
@@ -48,6 +99,10 @@ export function SettingsTab() {
                 <SelectItem value="dark">Dark</SelectItem>
               </SelectContent>
             </Select>
+            {/* Add current theme indicator for debugging */}
+            <div className="text-xs text-muted-foreground">
+              Current: {appState.theme} | DOM classes: {document.documentElement.className || 'none'}
+            </div>
           </div>
 
           {/* Environment Info */}
@@ -65,6 +120,12 @@ export function SettingsTab() {
               <div className="flex justify-between">
                 <span>Model:</span>
                 <span className="font-mono">{appState.selectedModel}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>System Prefers Dark:</span>
+                <span className="font-mono">
+                  {window.matchMedia('(prefers-color-scheme: dark)').matches ? 'Yes' : 'No'}
+                </span>
               </div>
             </div>
           </div>
@@ -131,4 +192,4 @@ export function SettingsTab() {
       </CardContent>
     </Card>
   )
-} 
+}
