@@ -58,13 +58,17 @@ function AppStateProvider({ children }) {
 
   // Helper to apply theme classes immediately
   const applyTheme = (theme) => {
-    document.documentElement.classList.remove('dark', 'light')
-    if (theme === 'system') {
-      const systemTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
-      document.documentElement.classList.add(systemTheme)
-    } else {
-      document.documentElement.classList.add(theme)
-    }
+    const root = document.documentElement
+    const body = document.body
+    root.classList.remove('dark', 'light')
+    body?.classList.remove('dark', 'light')
+
+    const resolved = theme === 'system'
+      ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+      : theme
+
+    root.classList.add(resolved)
+    body?.classList.add(resolved)
   }
 
   // Initialize theme
