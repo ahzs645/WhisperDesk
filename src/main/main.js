@@ -497,6 +497,12 @@ function setupIpcHandlers() {
   ipcMain.handle('export:subtitle', (event, data, format) => services.exportService.exportSubtitle(data, format));
   ipcMain.handle('export:copy', (event, text) => services.exportService.copyToClipboard(text));
 
+  // Screen recorder
+  ipcMain.handle('screenRecorder:startRecording', (event, opts) => services.screenRecorder.startRecording(opts));
+  ipcMain.handle('screenRecorder:stopRecording', () => services.screenRecorder.stopRecording());
+  ipcMain.handle('screenRecorder:pauseRecording', () => services.screenRecorder.pauseRecording());
+  ipcMain.handle('screenRecorder:resumeRecording', () => services.screenRecorder.resumeRecording());
+
   // App operations
   ipcMain.handle('app:getVersion', () => app.getVersion());
   ipcMain.handle('app:restart', () => autoUpdater.quitAndInstall());
