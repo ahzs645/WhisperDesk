@@ -1,4 +1,4 @@
-// src/renderer/whisperdesk-ui/src/components/EnhancedScreenRecorder.jsx - COMPREHENSIVE FIX
+// src/renderer/whisperdesk-ui/src/components/EnhancedScreenRecorder.jsx - FIXED: App State Sync & FFmpeg
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -29,23 +29,13 @@ import { useAppState } from '@/App';
 import { toast } from 'sonner';
 
 export function EnhancedScreenRecorder() {
+  // 🔴 FIXED: Use app state for recording status
   const { appState, updateAppState } = useAppState();
   
-  // FIXED: Simplified and more reliable state management
-  const [recordingState, setRecordingState] = useState({
-    isRecording: false,
-    isPaused: false,
-    duration: 0,
-    startTime: null,
-    lastPath: null,
-    error: null,
-    recordingValidated: false
-  });
-  
-  // Device management
+  // 🔴 FIXED: Don't hardcode device defaults - let backend provide them
   const [availableDevices, setAvailableDevices] = useState({ screens: [], audio: [] });
-  const [selectedScreen, setSelectedScreen] = useState('1');  // Changed default to '1'
-  const [selectedAudioInput, setSelectedAudioInput] = useState('0');
+  const [selectedScreen, setSelectedScreen] = useState(''); // Start empty
+  const [selectedAudioInput, setSelectedAudioInput] = useState(''); // Start empty
   const [loadingDevices, setLoadingDevices] = useState(true);
   
   // Recording settings
@@ -58,6 +48,7 @@ export function EnhancedScreenRecorder() {
   
   // Status and error handling
   const [apiStatus, setApiStatus] = useState('checking');
+  const [localError, setLocalError] = useState(null);
   
   // Refs for cleanup and timers
   const durationTimer = useRef(null);
@@ -66,7 +57,7 @@ export function EnhancedScreenRecorder() {
   const lastToastRef = useRef(null);
   const syncIntervalRef = useRef(null);
 
-  // NEW: More frequent and reliable state sync
+  // 🔴 FIXED: Better state sync that uses correct device defaults
   const syncStateWithBackend = useCallback(async () => {
     if (!window.electronAPI?.screenRecorder?.getStatus) return;
     
@@ -74,59 +65,64 @@ export function EnhancedScreenRecorder() {
       const backendStatus = await window.electronAPI.screenRecorder.getStatus();
       
       if (isComponentMounted.current) {
-        const frontendRecording = recordingState.isRecording;
+        const frontendRecording = appState.isRecording;
         const backendRecording = backendStatus.isRecording;
         
-        // Detect state mismatches and sync
+        // Sync recording state
         if (backendRecording !== frontendRecording || 
-            backendStatus.isPaused !== recordingState.isPaused ||
-            backendStatus.recordingValidated !== recordingState.recordingValidated) {
+            backendStatus.isPaused !== appState.isPaused ||
+            backendStatus.recordingValidated !== appState.recordingValidated) {
             
           console.log('🔄 Syncing recording state:', { 
             backend: backendStatus, 
-            frontend: recordingState 
+            frontend: { isRecording: frontendRecording, recordingValidated: appState.recordingValidated }
           });
           
-          setRecordingState(prev => ({
-            ...prev,
+          updateAppState({
             isRecording: backendStatus.isRecording,
-            isPaused: backendStatus.isPaused,
-            error: backendStatus.lastError,
             recordingValidated: backendStatus.recordingValidated || false,
-            lastPath: backendStatus.audioPath
-          }));
+            recordingDuration: backendStatus.duration ? Math.floor(backendStatus.duration / 1000) : 0
+          });
           
-          // Update timer if recording state changed
-          if (backendRecording && !frontendRecording && backendStatus.duration) {
-            const calculatedStartTime = Date.now() - backendStatus.duration;
-            setRecordingState(prev => ({
-              ...prev,
-              startTime: calculatedStartTime,
-              duration: Math.floor(backendStatus.duration / 1000)
-            }));
-          }
+          setLocalError(backendStatus.lastError);
         }
         
-        // Update available devices if changed
+        // 🔴 FIXED: Update available devices and set proper defaults
         if (backendStatus.availableDevices && 
             JSON.stringify(backendStatus.availableDevices) !== JSON.stringify(availableDevices)) {
+          
           const devices = backendStatus.availableDevices;
-          setAvailableDevices({
-            screens: devices.screens?.map((id, index) => ({ 
+          const formattedDevices = {
+            screens: devices.screens?.map(id => ({ 
               id, 
-              name: `Screen ${parseInt(id) + 1}` 
+              name: devices.deviceNames?.screens?.[id] || `Screen ${parseInt(id) + 1}` 
             })) || [],
-            audio: devices.audio?.map((id, index) => ({ 
+            audio: devices.audio?.map(id => ({ 
               id, 
-              name: `Audio Input ${parseInt(id) + 1}` 
+              name: devices.deviceNames?.audio?.[id] || `Audio Input ${parseInt(id) + 1}` 
             })) || []
-          });
+          };
+          
+          setAvailableDevices(formattedDevices);
+          
+          // 🔴 CRITICAL FIX: Set defaults to the FIRST available device, not hardcoded values
+          if (!selectedScreen && formattedDevices.screens.length > 0) {
+            const defaultScreen = formattedDevices.screens[0].id;
+            console.log(`🎯 Setting default screen to: ${defaultScreen}`);
+            setSelectedScreen(defaultScreen);
+          }
+          
+          if (!selectedAudioInput && formattedDevices.audio.length > 0) {
+            const defaultAudio = formattedDevices.audio[0].id;
+            console.log(`🎵 Setting default audio to: ${defaultAudio}`);
+            setSelectedAudioInput(defaultAudio);
+          }
         }
       }
     } catch (error) {
       console.warn('Failed to sync state with backend:', error);
     }
-  }, [recordingState.isRecording, recordingState.isPaused, recordingState.recordingValidated, availableDevices]);
+  }, [appState.isRecording, appState.recordingValidated, appState.recordingDuration, availableDevices, updateAppState, selectedScreen, selectedAudioInput]);
 
   useEffect(() => {
     isComponentMounted.current = true;
@@ -145,13 +141,15 @@ export function EnhancedScreenRecorder() {
     };
   }, []);
 
-  // FIXED: Better duration timer that doesn't rely on progress events
+  // 🔴 FIXED: Better duration timer that updates app state
   useEffect(() => {
-    if (recordingState.isRecording && !recordingState.isPaused && recordingState.startTime) {
+    if (appState.isRecording && !appState.isPaused && appState.recordingValidated) {
       durationTimer.current = setInterval(() => {
         if (isComponentMounted.current) {
-          const elapsed = Math.floor((Date.now() - recordingState.startTime) / 1000);
-          setRecordingState(prev => ({ ...prev, duration: elapsed }));
+          updateAppState(prev => ({
+            ...prev,
+            recordingDuration: (prev.recordingDuration || 0) + 1
+          }));
         }
       }, 1000);
     } else {
@@ -159,7 +157,7 @@ export function EnhancedScreenRecorder() {
     }
 
     return () => stopDurationTimer();
-  }, [recordingState.isRecording, recordingState.isPaused, recordingState.startTime]);
+  }, [appState.isRecording, appState.isPaused, appState.recordingValidated, updateAppState]);
 
   const stopDurationTimer = () => {
     if (durationTimer.current) {
@@ -173,10 +171,7 @@ export function EnhancedScreenRecorder() {
     
     if (!window.electronAPI?.screenRecorder) {
       setApiStatus('unavailable');
-      setRecordingState(prev => ({ 
-        ...prev, 
-        error: 'Screen recording API not available - please run in Electron' 
-      }));
+      setLocalError('Screen recording API not available - please run in Electron');
       return;
     }
 
@@ -187,16 +182,51 @@ export function EnhancedScreenRecorder() {
       setupEventHandlers();
       
       // Load available devices and sync initial state
+      console.log('🔄 Initial device refresh...');
       await refreshDevices();
-      await syncStateWithBackend();
+      
+      // Force an immediate sync to ensure we have the latest state
+      console.log('🔄 Initial state sync...');
+      const initialStatus = await window.electronAPI.screenRecorder.getStatus();
+      console.log('📱 Initial device status:', initialStatus);
+      
+      if (initialStatus.availableDevices) {
+        const devices = initialStatus.availableDevices;
+        const formattedDevices = {
+          screens: devices.screens?.map(deviceId => ({
+            id: deviceId,
+            name: devices.deviceNames?.screens?.[deviceId] || `Screen ${parseInt(deviceId) + 1}`,
+            type: 'screen'
+          })) || [],
+          
+          audio: devices.audio?.map(deviceId => ({
+            id: deviceId,
+            name: devices.deviceNames?.audio?.[deviceId] || `Audio Input ${parseInt(deviceId) + 1}`,
+            type: 'input'
+          })) || []
+        };
+        
+        console.log('📱 Setting initial devices:', formattedDevices);
+        setAvailableDevices(formattedDevices);
+        
+        // Set initial device selections
+        if (formattedDevices.screens.length > 0) {
+          const firstScreen = formattedDevices.screens[0].id;
+          console.log(`🎯 Setting initial screen to: ${firstScreen}`);
+          setSelectedScreen(firstScreen);
+        }
+        
+        if (formattedDevices.audio.length > 0) {
+          const firstAudio = formattedDevices.audio[0].id;
+          console.log(`🎵 Setting initial audio to: ${firstAudio}`);
+          setSelectedAudioInput(firstAudio);
+        }
+      }
       
       console.log('✅ EnhancedScreenRecorder: Initialized successfully');
     } catch (error) {
       console.error('❌ EnhancedScreenRecorder: Initialization failed:', error);
-      setRecordingState(prev => ({ 
-        ...prev, 
-        error: 'Failed to initialize screen recorder: ' + error.message 
-      }));
+      setLocalError('Failed to initialize screen recorder: ' + error.message);
       setApiStatus('error');
     } finally {
       setLoadingDevices(false);
@@ -217,16 +247,15 @@ export function EnhancedScreenRecorder() {
       eventCleanupRef.current.started = window.electronAPI.screenRecorder.onRecordingStarted((data) => {
         console.log('📹 Recording started event:', data);
         if (isComponentMounted.current) {
-          setRecordingState(prev => ({
-            ...prev,
+          // 🔴 CRITICAL: Update app state immediately
+          updateAppState({
             isRecording: true,
-            isPaused: false,
-            startTime: Date.now(),
-            duration: 0,
-            error: null,
-            lastPath: data.audioPath,
-            recordingValidated: false  // Will be set to true when first frames captured
-          }));
+            recordingValidated: false,
+            recordingDuration: 0,
+            isPaused: false
+          });
+          
+          setLocalError(null);
           
           // Dismiss any previous error toast
           if (lastToastRef.current) {
@@ -240,16 +269,17 @@ export function EnhancedScreenRecorder() {
       });
     }
 
-    // NEW: Recording validated event
+    // 🔴 NEW: Recording validated event - most important for user feedback
     if (window.electronAPI.screenRecorder.onRecordingValidated) {
       eventCleanupRef.current.validated = window.electronAPI.screenRecorder.onRecordingValidated(() => {
         console.log('✅ Recording validated event');
         if (isComponentMounted.current) {
-          setRecordingState(prev => ({
-            ...prev,
-            recordingValidated: true,
-            error: null
-          }));
+          // 🔴 CRITICAL: Update app state to show validated recording
+          updateAppState({
+            recordingValidated: true
+          });
+          
+          setLocalError(null);
           
           // Update toast
           if (lastToastRef.current) {
@@ -265,16 +295,15 @@ export function EnhancedScreenRecorder() {
       eventCleanupRef.current.completed = window.electronAPI.screenRecorder.onRecordingCompleted((data) => {
         console.log('✅ Recording completed event:', data);
         if (isComponentMounted.current) {
-          setRecordingState(prev => ({
-            ...prev,
+          // 🔴 CRITICAL: Clear app state
+          updateAppState({
             isRecording: false,
-            isPaused: false,
-            duration: 0,
-            startTime: null,
-            lastPath: data.audioPath,
-            error: null,
-            recordingValidated: false
-          }));
+            recordingValidated: false,
+            recordingDuration: 0,
+            isPaused: false
+          });
+          
+          setLocalError(null);
           
           const duration = data.duration ? Math.floor(data.duration / 1000) : 0;
           toast.success(`🎬 Recording saved! Duration: ${formatDuration(duration)}`);
@@ -299,20 +328,20 @@ export function EnhancedScreenRecorder() {
       });
     }
 
-    // IMPROVED: Better error handling with specific messages
+    // 🔴 IMPROVED: Better error handling with app state updates
     if (window.electronAPI.screenRecorder.onRecordingError) {
       eventCleanupRef.current.error = window.electronAPI.screenRecorder.onRecordingError((data) => {
         console.error('❌ Recording error event:', data);
         if (isComponentMounted.current) {
-          setRecordingState(prev => ({
-            ...prev,
+          // 🔴 CRITICAL: Clear app state on error
+          updateAppState({
             isRecording: false,
-            isPaused: false,
-            duration: 0,
-            startTime: null,
-            error: data.error || 'Recording failed',
-            recordingValidated: false
-          }));
+            recordingValidated: false,
+            recordingDuration: 0,
+            isPaused: false
+          });
+          
+          setLocalError(data.error || 'Recording failed');
           
           // Show specific error message with suggestion if available
           let errorMessage = data.error || 'Unknown error';
@@ -332,11 +361,11 @@ export function EnhancedScreenRecorder() {
       eventCleanupRef.current.progress = window.electronAPI.screenRecorder.onRecordingProgress((data) => {
         if (isComponentMounted.current && data.duration) {
           // Update duration from backend if significantly different
-          const backendSeconds = Math.floor(data.duration);
-          const frontendSeconds = recordingState.duration;
+          const backendSeconds = Math.floor(data.duration / 1000);
+          const frontendSeconds = appState.recordingDuration;
           
           if (Math.abs(backendSeconds - frontendSeconds) > 2) {
-            setRecordingState(prev => ({ ...prev, duration: backendSeconds }));
+            updateAppState({ recordingDuration: backendSeconds });
           }
         }
       });
@@ -371,36 +400,48 @@ export function EnhancedScreenRecorder() {
       
       // Get current status which includes available devices
       const status = await window.electronAPI.screenRecorder.getStatus?.() || {};
-      const devices = status.availableDevices || { screens: ['1'], audio: ['0'] };  // Changed default screen to '1'
+      const devices = status.availableDevices || { screens: [], audio: [] };
       
       // Format devices for UI
       const formattedDevices = {
-        screens: devices.screens?.map((deviceId, index) => ({
+        screens: devices.screens?.map(deviceId => ({
           id: deviceId,
-          name: `Screen ${parseInt(deviceId) + 1}`,
+          name: devices.deviceNames?.screens?.[deviceId] || `Screen ${parseInt(deviceId) + 1}`,
           type: 'screen'
-        })) || [{ id: '1', name: 'Primary Display', type: 'screen' }],
+        })) || [],
         
-        audio: devices.audio?.map((deviceId, index) => ({
+        audio: devices.audio?.map(deviceId => ({
           id: deviceId,
-          name: `Audio Input ${parseInt(deviceId) + 1}`,
+          name: devices.deviceNames?.audio?.[deviceId] || `Audio Input ${parseInt(deviceId) + 1}`,
           type: 'input'
-        })) || [{ id: '0', name: 'Default Audio', type: 'input' }]
+        })) || []
       };
 
+      console.log('📱 Formatted devices:', formattedDevices);
       setAvailableDevices(formattedDevices);
 
-      // Set defaults if not already set
-      if (!selectedScreen && formattedDevices.screens.length > 0) {
-        setSelectedScreen(formattedDevices.screens[0].id);
+      // 🔴 CRITICAL FIX: Use the FIRST available device as default, not hardcoded values
+      if (formattedDevices.screens.length > 0) {
+        const firstScreen = formattedDevices.screens[0].id;
+        if (!selectedScreen || !formattedDevices.screens.find(s => s.id === selectedScreen)) {
+          console.log(`🎯 Setting screen to first available: ${firstScreen}`);
+          setSelectedScreen(firstScreen);
+        }
       }
-      if (!selectedAudioInput && formattedDevices.audio.length > 0) {
-        setSelectedAudioInput(formattedDevices.audio[0].id);
+      
+      if (formattedDevices.audio.length > 0) {
+        const firstAudio = formattedDevices.audio[0].id;
+        if (!selectedAudioInput || !formattedDevices.audio.find(a => a.id === selectedAudioInput)) {
+          console.log(`🎵 Setting audio to first available: ${firstAudio}`);
+          setSelectedAudioInput(firstAudio);
+        }
       }
 
       console.log('✅ Devices refreshed:', { 
         screens: formattedDevices.screens.length, 
-        audio: formattedDevices.audio.length 
+        audio: formattedDevices.audio.length,
+        selectedScreen,
+        selectedAudioInput
       });
       
     } catch (error) {
@@ -438,6 +479,7 @@ export function EnhancedScreenRecorder() {
       await window.electronAPI?.settings?.set?.('includeSystemAudio', recordingSettings.includeSystemAudio);
       await window.electronAPI?.settings?.set?.('autoTranscribeRecordings', recordingSettings.autoTranscribe);
       
+      // Also update app state
       updateAppState({
         recordingSettings: recordingSettings
       });
@@ -451,25 +493,33 @@ export function EnhancedScreenRecorder() {
 
   const handleStartRecording = async () => {
     if (!window.electronAPI?.screenRecorder?.startRecording) {
-      setRecordingState(prev => ({ 
-        ...prev, 
-        error: 'Screen recording API not available' 
-      }));
+      setLocalError('Screen recording API not available');
       toast.error('Screen recording only available in Electron app');
       return;
     }
 
     // Check current state before starting
-    if (recordingState.isRecording) {
+    if (appState.isRecording) {
       toast.warning('Recording is already in progress');
       return;
     }
 
+    // 🔴 IMPROVED: Validate device selection
+    if (!selectedScreen) {
+      toast.error('Please select a screen to record');
+      return;
+    }
+
+    if (recordingSettings.includeMicrophone && !selectedAudioInput) {
+      toast.error('Please select an audio input device');
+      return;
+    }
+
     try {
-      setRecordingState(prev => ({ ...prev, error: null }));
+      setLocalError(null);
       console.log('🎬 Starting enhanced screen recording...');
 
-      // Build recording options
+      // 🔴 FIXED: Use the selected devices (which are now properly defaulted)
       const options = {
         screenId: selectedScreen,
         audioInputId: selectedAudioInput,
@@ -480,9 +530,9 @@ export function EnhancedScreenRecorder() {
         recordingDirectory: recordingSettings.recordingDirectory || undefined
       };
 
-      console.log('Recording options:', options);
+      console.log('🎯 Recording with devices - Screen:', selectedScreen, 'Audio:', selectedAudioInput);
+      console.log('📋 Full recording options:', options);
       
-      // NEW: The backend now validates recording before confirming success
       const result = await window.electronAPI.screenRecorder.startRecording(options);
       
       if (!result.success) {
@@ -493,38 +543,45 @@ export function EnhancedScreenRecorder() {
       
     } catch (error) {
       console.error('❌ Failed to start recording:', error);
-      setRecordingState(prev => ({ 
-        ...prev, 
-        error: error.message || 'Failed to start recording',
-        isRecording: false
-      }));
       
-      // Dismiss any loading toast
+      updateAppState({
+        isRecording: false,
+        recordingValidated: false,
+        recordingDuration: 0
+      });
+      
+      setLocalError(error.message || 'Failed to start recording');
+      
       if (lastToastRef.current) {
         toast.dismiss(lastToastRef.current);
       }
       
-      toast.error('Failed to start recording: ' + error.message);
+      // 🔴 IMPROVED: Better error message with device info
+      const errorMsg = error.message || 'Failed to start recording';
+      if (errorMsg.includes('permission')) {
+        toast.error('❌ Permission error: Please check screen recording permissions in System Preferences → Privacy & Security → Screen Recording');
+      } else if (errorMsg.includes('device') || errorMsg.includes('framerate')) {
+        toast.error(`❌ Device error: Try selecting a different screen or audio device. Current: Screen ${selectedScreen}, Audio ${selectedAudioInput}`);
+      } else {
+        toast.error('❌ Recording failed: ' + errorMsg);
+      }
     }
   };
 
   const handleStopRecording = async () => {
     if (!window.electronAPI?.screenRecorder?.stopRecording) {
-      setRecordingState(prev => ({ 
-        ...prev, 
-        error: 'Screen recording API not available' 
-      }));
+      setLocalError('Screen recording API not available');
       return;
     }
 
     // Check if actually recording
-    if (!recordingState.isRecording) {
+    if (!appState.isRecording) {
       toast.warning('No recording in progress');
       return;
     }
 
     try {
-      setRecordingState(prev => ({ ...prev, error: null }));
+      setLocalError(null);
       console.log('⏹️ Stopping enhanced screen recording...');
       
       const result = await window.electronAPI.screenRecorder.stopRecording();
@@ -540,20 +597,16 @@ export function EnhancedScreenRecorder() {
       
       // If error is "No recording in progress", just clean up state
       if (error.message?.includes('No recording in progress')) {
-        setRecordingState(prev => ({
-          ...prev,
+        updateAppState({
           isRecording: false,
-          isPaused: false,
-          duration: 0,
-          startTime: null,
-          error: null
-        }));
+          recordingValidated: false,
+          recordingDuration: 0,
+          isPaused: false
+        });
+        setLocalError(null);
         toast.info('Recording was already stopped');
       } else {
-        setRecordingState(prev => ({ 
-          ...prev, 
-          error: error.message || 'Failed to stop recording' 
-        }));
+        setLocalError(error.message || 'Failed to stop recording');
         toast.error('Failed to stop recording: ' + error.message);
       }
     }
@@ -561,26 +614,23 @@ export function EnhancedScreenRecorder() {
 
   const handlePauseResume = async () => {
     if (!window.electronAPI?.screenRecorder) {
-      setRecordingState(prev => ({ 
-        ...prev, 
-        error: 'Screen recording API not available' 
-      }));
+      setLocalError('Screen recording API not available');
       return;
     }
 
-    if (!recordingState.isRecording || !recordingState.recordingValidated) {
+    if (!appState.isRecording || !appState.recordingValidated) {
       toast.warning('No validated recording in progress');
       return;
     }
 
     try {
-      setRecordingState(prev => ({ ...prev, error: null }));
+      setLocalError(null);
       
-      if (recordingState.isPaused) {
+      if (appState.isPaused) {
         console.log('▶️ Resuming recording...');
         const result = await window.electronAPI.screenRecorder.resumeRecording();
         if (result.success) {
-          setRecordingState(prev => ({ ...prev, isPaused: false }));
+          updateAppState({ isPaused: false });
           toast.success('▶️ Recording resumed');
         } else {
           throw new Error(result.error || 'Failed to resume');
@@ -589,7 +639,7 @@ export function EnhancedScreenRecorder() {
         console.log('⏸️ Pausing recording...');
         const result = await window.electronAPI.screenRecorder.pauseRecording();
         if (result.success) {
-          setRecordingState(prev => ({ ...prev, isPaused: true }));
+          updateAppState({ isPaused: true });
           toast.success('⏸️ Recording paused');
         } else {
           throw new Error(result.error || 'Failed to pause');
@@ -597,10 +647,7 @@ export function EnhancedScreenRecorder() {
       }
     } catch (error) {
       console.error('❌ Failed to pause/resume recording:', error);
-      setRecordingState(prev => ({ 
-        ...prev, 
-        error: error.message || 'Failed to pause/resume recording' 
-      }));
+      setLocalError(error.message || 'Failed to pause/resume recording');
       toast.error('Failed to pause/resume: ' + error.message);
     }
   };
@@ -625,7 +672,7 @@ export function EnhancedScreenRecorder() {
     }
   };
 
-  // NEW: Format duration as MM:SS instead of progress bar
+  // Format duration as MM:SS
   const formatDuration = (seconds) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
@@ -647,15 +694,15 @@ export function EnhancedScreenRecorder() {
     }
   };
 
-  // IMPROVED: Better status indicator with validation state
+  // 🔴 IMPROVED: Better status indicator with app state
   const renderStatusIndicator = () => {
-    if (recordingState.isRecording) {
-      if (!recordingState.recordingValidated) {
+    if (appState.isRecording) {
+      if (!appState.recordingValidated) {
         return (
           <div className="flex items-center space-x-2">
             <div className="w-3 h-3 bg-yellow-500 rounded-full animate-pulse" />
             <span className="text-sm font-medium text-yellow-600">
-              Starting... {formatDuration(recordingState.duration)}
+              Starting... {formatDuration(appState.recordingDuration || 0)}
             </span>
           </div>
         );
@@ -665,13 +712,13 @@ export function EnhancedScreenRecorder() {
         <div className="flex items-center space-x-2">
           <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse" />
           <span className="text-sm font-medium text-red-600">
-            {recordingState.isPaused ? 'Paused' : 'Recording'} - {formatDuration(recordingState.duration)}
+            {appState.isPaused ? 'Paused' : 'Recording'} - {formatDuration(appState.recordingDuration || 0)}
           </span>
         </div>
       );
     }
     
-    if (recordingState.error) {
+    if (localError) {
       return (
         <div className="flex items-center space-x-2">
           <XCircle className="w-4 h-4 text-red-500" />
@@ -725,11 +772,27 @@ export function EnhancedScreenRecorder() {
       <CardContent className="space-y-6">
         
         {/* Error Display */}
-        {recordingState.error && (
+        {localError && (
           <Alert variant="destructive">
             <AlertCircle className="h-4 w-4" />
             <AlertDescription>
-              {recordingState.error}
+              {localError}
+              {localError.includes('permission') && (
+                <div className="mt-2">
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={() => {
+                      // Open system preferences
+                      if (window.electronAPI?.shell?.openExternal) {
+                        window.electronAPI.shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture');
+                      }
+                    }}
+                  >
+                    Open System Preferences
+                  </Button>
+                </div>
+              )}
             </AlertDescription>
           </Alert>
         )}
@@ -742,7 +805,7 @@ export function EnhancedScreenRecorder() {
               variant="outline" 
               size="sm" 
               onClick={refreshDevices}
-              disabled={loadingDevices || recordingState.isRecording}
+              disabled={loadingDevices || appState.isRecording}
             >
               <RefreshCw className={`w-4 h-4 mr-2 ${loadingDevices ? 'animate-spin' : ''}`} />
               Refresh
@@ -755,7 +818,7 @@ export function EnhancedScreenRecorder() {
               <Select 
                 value={selectedScreen} 
                 onValueChange={setSelectedScreen}
-                disabled={recordingState.isRecording || loadingDevices}
+                disabled={appState.isRecording || loadingDevices}
               >
                 <SelectTrigger id="screen-select">
                   <SelectValue placeholder="Select screen" />
@@ -765,12 +828,17 @@ export function EnhancedScreenRecorder() {
                     <SelectItem key={screen.id} value={screen.id}>
                       <div className="flex items-center space-x-2">
                         <Monitor className="w-4 h-4" />
-                        <span>{screen.name}</span>
+                        <span>{screen.name} (ID: {screen.id})</span>
                       </div>
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+              {selectedScreen && (
+                <div className="text-xs text-muted-foreground">
+                  Selected device ID: {selectedScreen}
+                </div>
+              )}
             </div>
             
             <div className="space-y-2">
@@ -778,7 +846,7 @@ export function EnhancedScreenRecorder() {
               <Select 
                 value={selectedAudioInput} 
                 onValueChange={setSelectedAudioInput}
-                disabled={recordingState.isRecording || loadingDevices || !recordingSettings.includeMicrophone}
+                disabled={appState.isRecording || loadingDevices || !recordingSettings.includeMicrophone}
               >
                 <SelectTrigger id="audio-select">
                   <SelectValue placeholder="Select audio input" />
@@ -788,14 +856,40 @@ export function EnhancedScreenRecorder() {
                     <SelectItem key={device.id} value={device.id}>
                       <div className="flex items-center space-x-2">
                         <Mic className="w-4 h-4" />
-                        <span>{device.name}</span>
+                        <span>{device.name} (ID: {device.id})</span>
                       </div>
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+              {selectedAudioInput && (
+                <div className="text-xs text-muted-foreground">
+                  Selected device ID: {selectedAudioInput}
+                </div>
+              )}
             </div>
           </div>
+
+          {/* 🔴 NEW: Device debugging info */}
+          {availableDevices.screens.length > 0 && (
+            <div className="p-3 bg-muted/50 rounded-lg">
+              <h5 className="font-medium text-sm mb-2">Detected Devices</h5>
+              <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
+                <div>
+                  <strong>Screens:</strong> {availableDevices.screens.map(s => s.id).join(', ')}
+                </div>
+                <div>
+                  <strong>Audio:</strong> {availableDevices.audio.map(a => a.id).join(', ')}
+                </div>
+                <div>
+                  <strong>Selected Screen:</strong> {selectedScreen || 'None'}
+                </div>
+                <div>
+                  <strong>Selected Audio:</strong> {selectedAudioInput || 'None'}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         <Separator />
@@ -814,7 +908,7 @@ export function EnhancedScreenRecorder() {
                   onCheckedChange={(checked) => 
                     setRecordingSettings(prev => ({ ...prev, includeMicrophone: checked }))
                   }
-                  disabled={recordingState.isRecording}
+                  disabled={appState.isRecording}
                 />
               </div>
               
@@ -826,7 +920,7 @@ export function EnhancedScreenRecorder() {
                   onCheckedChange={(checked) => 
                     setRecordingSettings(prev => ({ ...prev, includeSystemAudio: checked }))
                   }
-                  disabled={recordingState.isRecording}
+                  disabled={appState.isRecording}
                 />
               </div>
               
@@ -838,7 +932,7 @@ export function EnhancedScreenRecorder() {
                   onCheckedChange={(checked) => 
                     setRecordingSettings(prev => ({ ...prev, autoTranscribe: checked }))
                   }
-                  disabled={recordingState.isRecording}
+                  disabled={appState.isRecording}
                 />
               </div>
             </div>
@@ -851,7 +945,7 @@ export function EnhancedScreenRecorder() {
                     variant="outline" 
                     size="sm" 
                     onClick={selectRecordingDirectory}
-                    disabled={recordingState.isRecording}
+                    disabled={appState.isRecording}
                   >
                     <FolderOpen className="w-4 h-4 mr-2" />
                     Choose
@@ -866,7 +960,7 @@ export function EnhancedScreenRecorder() {
                 variant="outline" 
                 size="sm" 
                 onClick={saveRecordingSettings}
-                disabled={recordingState.isRecording}
+                disabled={appState.isRecording}
               >
                 <Settings className="w-4 h-4 mr-2" />
                 Save Settings
@@ -881,20 +975,15 @@ export function EnhancedScreenRecorder() {
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <h4 className="font-medium">Recording Controls</h4>
-            {recordingState.lastPath && (
-              <Badge variant="secondary" className="text-xs">
-                Last: {recordingState.lastPath.split('/').pop()}
-              </Badge>
-            )}
           </div>
           
           <div className="flex items-center space-x-2">
             <Button
-              className={`flex-1 ${recordingState.isRecording ? 'bg-red-500 hover:bg-red-600' : 'bg-primary hover:bg-primary/90'}`}
-              onClick={recordingState.isRecording ? handleStopRecording : handleStartRecording}
+              className={`flex-1 ${appState.isRecording ? 'bg-red-500 hover:bg-red-600' : 'bg-primary hover:bg-primary/90'}`}
+              onClick={appState.isRecording ? handleStopRecording : handleStartRecording}
               disabled={apiStatus !== 'available' || loadingDevices}
             >
-              {recordingState.isRecording ? (
+              {appState.isRecording ? (
                 <>
                   <Square className="w-4 h-4 mr-2" />
                   Stop Recording
@@ -907,13 +996,13 @@ export function EnhancedScreenRecorder() {
               )}
             </Button>
             
-            {recordingState.isRecording && recordingState.recordingValidated && (
+            {appState.isRecording && appState.recordingValidated && (
               <Button 
                 variant="secondary" 
                 onClick={handlePauseResume}
                 disabled={apiStatus !== 'available'}
               >
-                {recordingState.isPaused ? (
+                {appState.isPaused ? (
                   <>
                     <Play className="w-4 h-4 mr-2" />
                     Resume
@@ -928,17 +1017,17 @@ export function EnhancedScreenRecorder() {
             )}
           </div>
 
-          {/* NEW: Timer display instead of progress bar */}
-          {recordingState.isRecording && (
+          {/* Timer display instead of progress bar */}
+          {appState.isRecording && (
             <div className="flex items-center justify-center space-x-2 p-4 bg-muted/50 rounded-lg">
               <Clock className="w-5 h-5 text-muted-foreground" />
               <div className="text-center">
                 <div className="text-2xl font-mono font-bold">
-                  {formatDuration(recordingState.duration)}
+                  {formatDuration(appState.recordingDuration || 0)}
                 </div>
                 <div className="text-xs text-muted-foreground">
-                  {!recordingState.recordingValidated ? 'Starting...' : 
-                   recordingState.isPaused ? 'Paused' : 'Recording...'}
+                  {!appState.recordingValidated ? 'Starting...' : 
+                   appState.isPaused ? 'Paused' : 'Recording...'}
                 </div>
               </div>
             </div>

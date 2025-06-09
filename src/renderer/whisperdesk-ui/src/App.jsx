@@ -1,4 +1,4 @@
-// src/renderer/whisperdesk-ui/src/App.jsx - Using Enhanced Components
+// src/renderer/whisperdesk-ui/src/App.jsx - FIXED: Added Recording Indicator
 import React, { useState, useEffect, createContext, useContext } from 'react'
 import { Button } from './components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './components/ui/card'
@@ -6,7 +6,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from './components/ui/tabs'
 import { Mic, Package, Clock, Settings, Video, BarChart3 } from 'lucide-react'
 import { ModelMarketplace } from './components/ModelMarketplace-WebCompatible'
 import { AnalyticsTab } from './components/AnalyticsTab'
-// 🔧 CHANGED: Use the more feature-rich enhanced transcription tab
 import { EnhancedTranscriptionTab } from './components/EnhancedTranscriptDisplay'
 import { EnhancedSettingsTab } from './components/EnhancedSettingsTab'
 import { UnifiedWindowControls } from './components/UnifiedWindowControls'
@@ -87,7 +86,10 @@ function AppStateProvider({ children }) {
     activeTranscriptionId: null,
     selectedProvider: 'whisper-native',
     selectedModel: 'whisper-tiny',
+    // 🔴 ADDED: Recording state tracking
     isRecording: false,
+    recordingDuration: 0,
+    recordingValidated: false,
     recordingSettings: {
       includeMicrophone: true,
       includeSystemAudio: true
@@ -131,7 +133,11 @@ function AppStateProvider({ children }) {
       progress: 0,
       progressMessage: '',
       lastTranscriptionResult: null,
-      activeTranscriptionId: null
+      activeTranscriptionId: null,
+      // 🔴 ADDED: Also clear recording state
+      isRecording: false,
+      recordingDuration: 0,
+      recordingValidated: false
     }))
   }
 
@@ -251,7 +257,6 @@ function AppContent() {
 
           {/* Tab Contents */}
           <TabsContent value="transcribe" className="space-y-6">
-            {/* 🔧 CHANGED: Use the enhanced transcription tab */}
             <EnhancedTranscriptionTab />
           </TabsContent>
 
@@ -300,28 +305,50 @@ function FileIndicator() {
   return null
 }
 
+// 🔴 ENHANCED: Added recording status with breathing animation
 function AppStateIndicator() {
   const { appState } = useAppState()
   
   return (
     <div className="flex items-center space-x-2 text-xs text-muted-foreground">
-      {appState.selectedFile && (
+      {/* 🔴 PRIORITY: Recording status - most important */}
+      {appState.isRecording && (
+        <span className="bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 px-2 py-1 rounded animate-pulse flex items-center">
+          <Video className="w-3 h-3 mr-1" />
+          {appState.recordingValidated ? 'Recording' : 'Starting...'}
+          {appState.recordingDuration > 0 && ` ${formatDuration(appState.recordingDuration)}`}
+        </span>
+      )}
+      
+      {/* Selected file indicator */}
+      {appState.selectedFile && !appState.isRecording && (
         <span className="bg-primary/10 text-primary px-2 py-1 rounded">
           {appState.selectedFile.name}
         </span>
       )}
+      
+      {/* Transcribing status */}
       {appState.isTranscribing && (
         <span className="bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400 px-2 py-1 rounded animate-pulse">
           Transcribing...
         </span>
       )}
-      {appState.transcription && !appState.isTranscribing && (
+      
+      {/* Completion status */}
+      {appState.transcription && !appState.isTranscribing && !appState.isRecording && (
         <span className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 px-2 py-1 rounded">
           ✓ Complete
         </span>
       )}
     </div>
   )
+}
+
+// 🔴 ADDED: Duration formatter
+function formatDuration(seconds) {
+  const mins = Math.floor(seconds / 60)
+  const secs = seconds % 60
+  return `${mins}:${secs.toString().padStart(2, '0')}`
 }
 
 function HistoryTab() {

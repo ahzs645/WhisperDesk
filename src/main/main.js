@@ -1,5 +1,5 @@
 // src/main/main-simplified.js - Enhanced version with improved screen recording
-const { app, BrowserWindow, ipcMain, dialog, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, Menu, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { autoUpdater } = require('electron-updater');
@@ -798,6 +798,11 @@ function setupIpcHandlers() {
     }
   });
   ipcMain.on('window:close', () => mainWindow?.close());
+
+  // 🔴 NEW: Add shell access for opening system preferences
+  ipcMain.handle('shell:openExternal', (event, url) => {
+    return shell.openExternal(url);
+  });
 
   ipcMain.handle('window:isMaximized', () => mainWindow?.isMaximized() || false);
   ipcMain.handle('window:isMinimized', () => mainWindow?.isMinimized() || false);
