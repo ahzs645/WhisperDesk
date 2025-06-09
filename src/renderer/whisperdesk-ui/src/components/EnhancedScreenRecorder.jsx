@@ -29,21 +29,6 @@ export function EnhancedScreenRecorder() {
   const recordingSettings = useRecordingSettings();
   const screenRecorder = useScreenRecorder({ deviceManager, recordingSettings });
 
-  // Initialize everything on mount
-  useEffect(() => {
-    const initialize = async () => {
-      await screenRecorder.initializeRecorder();
-      await recordingSettings.loadRecordingSettings();
-    };
-    
-    initialize();
-    
-    return () => {
-      screenRecorder.cleanup();
-      deviceManager.cleanup();
-    };
-  }, []); // Empty dependency array is intentional
-
   // 🔴 NEW: Keyboard shortcut to toggle debug panel
   useEffect(() => {
     const handleKeyPress = (e) => {

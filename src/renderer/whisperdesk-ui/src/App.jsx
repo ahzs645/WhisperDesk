@@ -3,6 +3,7 @@ import React, { useState, useEffect, createContext, useContext } from 'react'
 import { Button } from './components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './components/ui/tabs'
+import { Progress } from './components/ui/progress'
 import { Mic, Package, Clock, Settings, Video, BarChart3 } from 'lucide-react'
 import { ModelMarketplace } from './components/ModelMarketplace-WebCompatible'
 import { AnalyticsTab } from './components/AnalyticsTab'
@@ -10,15 +11,25 @@ import { EnhancedTranscriptionTab } from './components/EnhancedTranscriptDisplay
 import { EnhancedSettingsTab } from './components/EnhancedSettingsTab'
 import { UnifiedWindowControls } from './components/UnifiedWindowControls'
 import { Toaster } from './components/ui/sonner'
+import { appInitializer } from './utils/AppInitializer'
 import './App.css'
 
-// Create context for app-wide state
+// Create contexts for app-wide state and initialization
 const AppStateContext = createContext()
+const InitializationContext = createContext()
 
 export const useAppState = () => {
   const context = useContext(AppStateContext)
   if (!context) {
     throw new Error('useAppState must be used within AppStateProvider')
+  }
+  return context
+}
+
+export const useInitialization = () => {
+  const context = useContext(InitializationContext)
+  if (!context) {
+    throw new Error('useInitialization must be used within InitializationProvider')
   }
   return context
 }
@@ -74,8 +85,71 @@ const useThemeManager = () => {
   return { theme, updateTheme }
 }
 
+function InitializationProvider({ children }) {
+  const [initializationState, setInitializationState] = useState({
+    isInitializing: false,
+    isInitialized: false,
+    progress: 0,
+    step: '',
+    error: null
+  })
+
+  const initialize = async (updateAppState) => {
+    if (initializationState.isInitializing || initializationState.isInitialized) {
+      console.log('🔒 App already initialized/initializing, skipping...')
+      return
+    }
+
+    setInitializationState(prev => ({ ...prev, isInitializing: true }))
+
+    try {
+      await appInitializer.initialize(
+        updateAppState,
+        (progress) => setInitializationState(prev => ({ ...prev, ...progress }))
+      )
+      
+      setInitializationState(prev => ({
+        ...prev,
+        isInitializing: false,
+        isInitialized: true,
+        progress: 100,
+        step: 'Ready!'
+      }))
+    } catch (error) {
+      console.error('❌ App initialization failed:', error)
+      setInitializationState(prev => ({
+        ...prev,
+        isInitializing: false,
+        error: error.message
+      }))
+    }
+  }
+
+  const cleanup = () => {
+    appInitializer.cleanup()
+    setInitializationState({
+      isInitializing: false,
+      isInitialized: false,
+      progress: 0,
+      step: '',
+      error: null
+    })
+  }
+
+  return (
+    <InitializationContext.Provider value={{
+      ...initializationState,
+      initialize,
+      cleanup
+    }}>
+      {children}
+    </InitializationContext.Provider>
+  )
+}
+
 function AppStateProvider({ children }) {
   const { theme, updateTheme } = useThemeManager()
+  const { initialize } = useInitialization()
   
   const [appState, setAppState] = useState({
     selectedFile: null,
@@ -86,7 +160,6 @@ function AppStateProvider({ children }) {
     activeTranscriptionId: null,
     selectedProvider: 'whisper-native',
     selectedModel: 'whisper-tiny',
-    // 🔴 ADDED: Recording state tracking
     isRecording: false,
     recordingDuration: 0,
     recordingValidated: false,
@@ -134,7 +207,6 @@ function AppStateProvider({ children }) {
       progressMessage: '',
       lastTranscriptionResult: null,
       activeTranscriptionId: null,
-      // 🔴 ADDED: Also clear recording state
       isRecording: false,
       recordingDuration: 0,
       recordingValidated: false
@@ -147,6 +219,11 @@ function AppStateProvider({ children }) {
       updateAppState({ isElectron })
     }
   }, [appState.isElectron])
+
+  // Initialize app when mounted
+  useEffect(() => {
+    initialize(updateAppState)
+  }, [])
 
   return (
     <AppStateContext.Provider value={{ 
@@ -163,17 +240,40 @@ function AppStateProvider({ children }) {
 
 // App content component
 function AppContent() {
-  const { appState } = useAppState();
-  const [platform, setPlatform] = useState('unknown');
+  const { appState } = useAppState()
+  const { isInitializing, isInitialized, progress, step, error } = useInitialization()
+  const [platform, setPlatform] = useState('unknown')
 
   useEffect(() => {
     // Detect platform
     window.electronAPI?.window?.getPlatform?.().then(platformInfo => {
-      setPlatform(platformInfo);
-    });
-  }, []);
+      setPlatform(platformInfo)
+    })
+  }, [])
 
-  const isMacOS = platform === 'darwin';
+  const isMacOS = platform === 'darwin'
+
+  // Show loading state while initializing
+  if (isInitializing || !isInitialized) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <Card className="w-[400px]">
+          <CardHeader>
+            <CardTitle>Initializing WhisperDesk</CardTitle>
+            <CardDescription>{step}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Progress value={progress} className="mb-4" />
+            {error && (
+              <div className="text-red-500 text-sm mt-2">
+                Error: {error}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -284,9 +384,11 @@ function AppContent() {
 // Main App component
 const App = () => {
   return (
-    <AppStateProvider>
-      <AppContent />
-    </AppStateProvider>
+    <InitializationProvider>
+      <AppStateProvider>
+        <AppContent />
+      </AppStateProvider>
+    </InitializationProvider>
   )
 }
 

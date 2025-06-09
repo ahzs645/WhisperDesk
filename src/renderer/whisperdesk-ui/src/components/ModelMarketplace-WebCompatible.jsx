@@ -25,13 +25,10 @@ export function ModelMarketplace() {
 
   useEffect(() => {
     const electronAvailable = typeof window !== 'undefined' && window.electronAPI
-
     setIsElectron(electronAvailable)
 
     if (electronAvailable) {
-      initializeElectronAPI()
-    } else {
-      initializeWebAPI()
+      setupEventHandlers()
     }
 
     return () => {
@@ -44,107 +41,74 @@ export function ModelMarketplace() {
     }
   }, [])
 
-  const initializeElectronAPI = async () => {
-    try {
-      setupElectronEventHandlers()
-      await loadModelsFromElectron()
-    } catch (error) {
-      console.error('Failed to initialize Electron API:', error)
-      toast.error('Failed to load models: ' + error.message)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const setupElectronEventHandlers = () => {
+  const setupEventHandlers = () => {
     console.log('Setting up model download event handlers...')
 
-    // Download Progress Handler - REAL-TIME UPDATES
+    // Progress handler
     if (window.electronAPI.model.onDownloadProgress) {
       downloadProgressCleanup.current = window.electronAPI.model.onDownloadProgress((data) => {
-        console.log('Download progress:', data.modelId, Math.round(data.progress) + '%')
-        
-        setDownloads(prev => {
-          const updated = new Map(prev)
-          updated.set(data.modelId, {
-            ...updated.get(data.modelId),
-            progress: Math.round(data.progress),
-            downloadedBytes: data.downloadedBytes,
-            totalBytes: data.totalBytes,
-            speed: data.speed,
-            status: 'downloading'
-          })
-          return updated
-        })
+        console.log('Download progress:', data)
+        setDownloads(prev => new Map(prev).set(data.modelId, {
+          ...prev.get(data.modelId),
+          progress: data.progress,
+          status: 'downloading'
+        }))
       })
-      console.log('✅ Download progress handler set up')
     }
 
-    // Download Complete Handler
+    // Completion handler
     if (window.electronAPI.model.onDownloadComplete) {
       downloadCompleteCleanup.current = window.electronAPI.model.onDownloadComplete((data) => {
-        console.log('Download complete:', data.modelId)
-        
+        console.log('Download complete:', data)
         setDownloads(prev => {
-          const updated = new Map(prev)
-          updated.delete(data.modelId) // Remove from downloads
-          return updated
+          const next = new Map(prev)
+          next.delete(data.modelId)
+          return next
         })
-
-        // Refresh installed models
-        loadInstalledModels()
         
-        toast.success(`✅ Model downloaded successfully!`)
+        // Refresh installed models
+        loadModelsFromElectron()
+        
+        toast.success('Model downloaded successfully!')
       })
-      console.log('✅ Download complete handler set up')
     }
 
-    // Download Error Handler
+    // Error handler
     if (window.electronAPI.model.onDownloadError) {
       downloadErrorCleanup.current = window.electronAPI.model.onDownloadError((data) => {
-        console.error('Download error:', data.modelId, data.error)
-        
+        console.error('Download error:', data)
         setDownloads(prev => {
-          const updated = new Map(prev)
-          updated.delete(data.modelId) // Remove from downloads
-          return updated
+          const next = new Map(prev)
+          next.delete(data.modelId)
+          return next
         })
         
-        toast.error(`❌ Download failed: ${data.error}`)
+        toast.error('Failed to download model: ' + data.error)
       })
-      console.log('✅ Download error handler set up')
     }
 
-    // Download Queued Handler
+    // Queue handler
     if (window.electronAPI.model.onDownloadQueued) {
       downloadQueuedCleanup.current = window.electronAPI.model.onDownloadQueued((data) => {
-        console.log('Download queued:', data.modelId)
-        
-        setDownloads(prev => {
-          const updated = new Map(prev)
-          updated.set(data.modelId, {
-            progress: 0,
-            downloadedBytes: 0,
-            totalBytes: data.model?.sizeBytes || 0,
-            speed: 0,
-            status: 'queued'
-          })
-          return updated
-        })
-        
-        toast.success(`📥 Download started: ${data.model?.name}`)
+        console.log('Download queued:', data)
+        setDownloads(prev => new Map(prev).set(data.modelId, {
+          progress: 0,
+          status: 'queued'
+        }))
       })
-      console.log('✅ Download queued handler set up')
     }
 
+    // Cancellation handler
     if (window.electronAPI.model.onDownloadCancelled) {
       downloadCancelledCleanup.current = window.electronAPI.model.onDownloadCancelled((data) => {
+        console.log('Download cancelled:', data)
         setDownloads(prev => {
-          const updated = new Map(prev)
-          updated.delete(data.modelId)
-          return updated
+          const next = new Map(prev)
+          next.delete(data.modelId)
+          return next
         })
-        toast.warning('Download cancelled')
+        
+        toast.info('Download cancelled')
       })
     }
   }
@@ -176,33 +140,6 @@ export function ModelMarketplace() {
       console.error('Failed to load installed models:', error)
       toast.error('Failed to load installed models')
     }
-  }
-
-  const initializeWebAPI = async () => {
-    // For web interface - you could implement web-based model management here
-    setAvailableModels([
-      {
-        id: 'whisper-tiny',
-        name: 'Whisper Tiny',
-        size: '39 MB',
-        sizeBytes: 39000000,
-        description: 'Fastest model, English only, good for real-time transcription',
-        accuracy: 'Basic',
-        speed: 'Very Fast',
-        isInstalled: false
-      },
-      {
-        id: 'whisper-base',
-        name: 'Whisper Base', 
-        size: '142 MB',
-        sizeBytes: 142000000,
-        description: 'Good balance of speed and accuracy',
-        accuracy: 'Good',
-        speed: 'Fast',
-        isInstalled: false
-      }
-    ])
-    setLoading(false)
   }
 
   const handleDownloadModel = async (modelId) => {

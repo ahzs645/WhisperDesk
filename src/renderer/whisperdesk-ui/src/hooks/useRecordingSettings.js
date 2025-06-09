@@ -13,26 +13,6 @@ export const useRecordingSettings = () => {
     recordingDirectory: ''
   });
 
-  const loadRecordingSettings = useCallback(async () => {
-    try {
-      const directory = await window.electronAPI?.settings?.get?.('recordingDirectory');
-      const micPref = await window.electronAPI?.settings?.get?.('includeMicrophone');
-      const systemPref = await window.electronAPI?.settings?.get?.('includeSystemAudio');
-      const autoTranscribePref = await window.electronAPI?.settings?.get?.('autoTranscribeRecordings');
-      
-      setRecordingSettings(prev => ({
-        ...prev,
-        recordingDirectory: directory || '',
-        includeMicrophone: micPref !== undefined ? micPref : true,
-        includeSystemAudio: systemPref !== undefined ? systemPref : true,
-        autoTranscribe: autoTranscribePref !== undefined ? autoTranscribePref : true
-      }));
-      
-    } catch (error) {
-      console.warn('Could not load recording settings:', error);
-    }
-  }, []);
-
   const updateSetting = useCallback((key, value) => {
     setRecordingSettings(prev => ({ ...prev, [key]: value }));
   }, []);
@@ -96,7 +76,6 @@ export const useRecordingSettings = () => {
   return {
     recordingSettings,
     updateSetting,
-    loadRecordingSettings,
     selectRecordingDirectory,
     saveRecordingSettings,
     triggerAutoTranscription

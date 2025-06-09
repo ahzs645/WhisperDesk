@@ -15,59 +15,88 @@ export const useScreenRecorder = ({ deviceManager, recordingSettings }) => {
   const isComponentMounted = useRef(true);
   const lastToastRef = useRef(null);
   const syncIntervalRef = useRef(null);
-  const hasInitialized = useRef(false); // 🔴 FIXED: Prevent multiple initializations
 
-  // Sync with backend
+  // Define functions before they're used
+  const startDurationTimer = useCallback(() => {
+    if (durationTimer.current) return;
+    
+    durationTimer.current = setInterval(() => {
+      if (isComponentMounted.current) {
+        updateAppState(prev => ({
+          recordingDuration: (prev.recordingDuration || 0) + 1
+        }));
+      }
+    }, 1000);
+  }, [updateAppState]);
+
+  const stopDurationTimer = useCallback(() => {
+    if (durationTimer.current) {
+      clearInterval(durationTimer.current);
+      durationTimer.current = null;
+    }
+  }, []);
+
   const syncStateWithBackend = useCallback(async () => {
-    if (!window.electronAPI?.screenRecorder?.getStatus) return;
+    if (!isComponentMounted.current) return;
     
     try {
-      const backendStatus = await window.electronAPI.screenRecorder.getStatus();
+      const status = await window.electronAPI.screenRecorder.getStatus();
       
-      if (!isComponentMounted.current) return;
-      
-      // 🔴 FIXED: Only sync recording state if there's a meaningful change
-      const frontendRecording = appState.isRecording;
-      const backendRecording = backendStatus.isRecording;
-      const frontendValidated = appState.recordingValidated;
-      const backendValidated = backendStatus.recordingValidated;
-      
-      // Only update recording state if something actually changed
-      if (backendRecording !== frontendRecording || 
-          backendStatus.isPaused !== appState.isPaused ||
-          backendValidated !== frontendValidated) {
-          
-        console.log('🔄 Syncing recording state (meaningful change detected)');
-        console.log('Frontend state:', { recording: frontendRecording, validated: frontendValidated });
-        console.log('Backend state:', { recording: backendRecording, validated: backendValidated });
-        
+      if (isComponentMounted.current) {
         updateAppState({
-          isRecording: backendStatus.isRecording,
-          recordingValidated: backendStatus.recordingValidated || false,
-          recordingDuration: backendStatus.duration ? Math.floor(backendStatus.duration / 1000) : 0,
-          isPaused: backendStatus.isPaused || false
+          isRecording: status.isRecording || false,
+          recordingValidated: status.recordingValidated || false,
+          recordingDuration: status.duration ? Math.floor(status.duration / 1000) : 0,
+          isPaused: status.isPaused || false
         });
-        
-        setLocalError(backendStatus.lastError);
-      }
-      
-      // 🔴 FIXED: Only update devices if they actually changed AND user isn't actively using UI
-      if (backendStatus.availableDevices && deviceManager.shouldUpdateDevices(backendStatus.availableDevices)) {
-        // 🔴 IMPORTANT: Only update devices if not currently recording to prevent dropdown clearing
-        if (!appState.isRecording) {
-          console.log('📱 Device list changed, updating (safe to update)...');
-          deviceManager.updateDevices(backendStatus.availableDevices, true); // Always preserve selections
+
+        // Handle timer state
+        if (status.isRecording && !status.isPaused) {
+          startDurationTimer();
         } else {
-          console.log('📱 Device list changed but recording in progress, skipping update to preserve UI state');
+          stopDurationTimer();
         }
       }
-      
     } catch (error) {
+      console.error('Failed to sync recorder state:', error);
       if (isComponentMounted.current) {
-        console.warn('Sync failed (non-critical):', error.message);
+        setLocalError(error);
       }
     }
-  }, [appState.isRecording, appState.recordingValidated, appState.isPaused, updateAppState, deviceManager]);
+  }, [updateAppState, startDurationTimer, stopDurationTimer]);
+
+  // Setup sync interval
+  useEffect(() => {
+    isComponentMounted.current = true;
+    syncIntervalRef.current = setInterval(syncStateWithBackend, 3000);
+    
+    return () => {
+      isComponentMounted.current = false;
+      if (syncIntervalRef.current) {
+        clearInterval(syncIntervalRef.current);
+      }
+    };
+  }, [syncStateWithBackend]);
+
+  // Cleanup
+  const cleanup = useCallback(() => {
+    console.log('🧹 Screen recorder cleanup');
+    isComponentMounted.current = false;
+    stopDurationTimer();
+    
+    Object.values(eventCleanupRef.current).forEach(cleanup => {
+      if (typeof cleanup === 'function') cleanup();
+    });
+    eventCleanupRef.current = {};
+    
+    if (lastToastRef.current) {
+      toast.dismiss(lastToastRef.current);
+    }
+    
+    if (syncIntervalRef.current) {
+      clearInterval(syncIntervalRef.current);
+    }
+  }, [stopDurationTimer]);
 
   // Setup event handlers
   const setupEventHandlers = useCallback(() => {
@@ -229,91 +258,6 @@ export const useScreenRecorder = ({ deviceManager, recordingSettings }) => {
 
     console.log('✅ Recording event handlers set up');
   }, [updateAppState, recordingSettings]);
-
-  // Duration timer
-  const stopDurationTimer = useCallback(() => {
-    if (durationTimer.current) {
-      clearInterval(durationTimer.current);
-      durationTimer.current = null;
-    }
-  }, []);
-
-  useEffect(() => {
-    if (appState.isRecording && !appState.isPaused && appState.recordingValidated) {
-      durationTimer.current = setInterval(() => {
-        if (isComponentMounted.current) {
-          updateAppState(prev => ({
-            ...prev,
-            recordingDuration: (prev.recordingDuration || 0) + 1
-          }));
-        }
-      }, 1000);
-    } else {
-      stopDurationTimer();
-    }
-
-    return () => stopDurationTimer();
-  }, [appState.isRecording, appState.isPaused, appState.recordingValidated, updateAppState, stopDurationTimer]);
-
-  // Initialize recorder
-  const initializeRecorder = useCallback(async () => {
-    // 🔴 FIXED: Prevent multiple initializations
-    if (hasInitialized.current) {
-      console.log('🔒 Screen recorder already initialized, skipping...');
-      return;
-    }
-    
-    console.log('🔍 ScreenRecorder: Initializing...');
-    
-    if (!window.electronAPI?.screenRecorder) {
-      setApiStatus('unavailable');
-      setLocalError('Screen recording API not available - please run in Electron');
-      return;
-    }
-
-    try {
-      hasInitialized.current = true; // 🔴 FIXED: Mark as initialized early
-      setApiStatus('available');
-      
-      // 🔴 FIXED: Set up IPC event listeners for additional events from main process
-      if (window.electronAPI.screenRecorder.onRecordingValidated) {
-        // This handles the 'screenRecorder:validated' event from main.js
-        window.electronAPI.screenRecorder.onRecordingValidated(() => {
-          console.log('✅ Recording validated via IPC event');
-          if (isComponentMounted.current) {
-            updateAppState({
-              recordingValidated: true
-            });
-            
-            setLocalError(null);
-            
-            if (lastToastRef.current) {
-              toast.dismiss(lastToastRef.current);
-              lastToastRef.current = null;
-            }
-            
-            toast.success('🎬 Recording validated!', {
-              description: 'Screen recording is now active'
-            });
-          }
-        });
-      }
-      
-      setupEventHandlers();
-      
-      console.log('🔄 Initial state sync...');
-      await syncStateWithBackend();
-      
-      console.log('✅ ScreenRecorder: Initialized successfully');
-    } catch (error) {
-      console.error('❌ ScreenRecorder: Initialization failed:', error);
-      hasInitialized.current = false; // 🔴 FIXED: Reset flag on error
-      setLocalError('Failed to initialize screen recorder: ' + error.message);
-      setApiStatus('error');
-    } finally {
-      deviceManager.setLoadingDevices(false);
-    }
-  }, []); // 🔴 FIXED: Empty dependency array to prevent re-runs
 
   // Recording actions
   const handleStartRecording = useCallback(async () => {
@@ -507,52 +451,12 @@ export const useScreenRecorder = ({ deviceManager, recordingSettings }) => {
     }
   }, [appState.isRecording, appState.recordingValidated, appState.isPaused, updateAppState]);
 
-  // Cleanup
-  const cleanup = useCallback(() => {
-    console.log('🧹 Screen recorder cleanup');
-    isComponentMounted.current = false;
-    hasInitialized.current = false; // 🔴 FIXED: Reset initialization flag
-    stopDurationTimer();
-    
-    Object.values(eventCleanupRef.current).forEach(cleanup => {
-      if (typeof cleanup === 'function') cleanup();
-    });
-    eventCleanupRef.current = {};
-    
-    if (lastToastRef.current) {
-      toast.dismiss(lastToastRef.current);
-    }
-    
-    if (syncIntervalRef.current) {
-      clearInterval(syncIntervalRef.current);
-    }
-  }, [stopDurationTimer]);
-
-  // Setup sync interval and event handlers
-  useEffect(() => {
-    isComponentMounted.current = true;
-    
-    // 🔴 FIXED: Only set up sync interval, don't set up events here
-    syncIntervalRef.current = setInterval(syncStateWithBackend, 3000);
-    
-    return cleanup;
-  }, []); // 🔴 FIXED: Empty dependency array to run only once
-
-  // 🔴 FIXED: Separate effect for initialization to prevent re-runs
-  useEffect(() => {
-    if (!hasInitialized.current) {
-      // 🔴 FIXED: Set up event handlers early but only once
-      setupEventHandlers();
-    }
-  }, []); // 🔴 FIXED: Empty dependency array to run only once
-
   return {
     // State
     apiStatus,
     localError,
     
     // Actions
-    initializeRecorder,
     handleStartRecording,
     handleStopRecording,
     handlePauseResume,

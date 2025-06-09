@@ -1,4 +1,4 @@
-// src/renderer/whisperdesk-ui/src/services/AppInitializer.js
+// src/renderer/whisperdesk-ui/src/utils/AppInitializer.js
 class AppInitializer {
   constructor() {
     this.initialized = false;
@@ -150,7 +150,13 @@ class AppInitializer {
         isRecording: status.isRecording || false,
         recordingValidated: status.recordingValidated || false,
         recordingDuration: status.duration ? Math.floor(status.duration / 1000) : 0,
-        isPaused: status.isPaused || false
+        isPaused: status.isPaused || false,
+        recordingSettings: {
+          includeMicrophone: true,
+          includeSystemAudio: true,
+          autoTranscribe: true,
+          recordingDirectory: ''
+        }
       });
 
       console.log(`✅ Screen recorder initialized - Screen: ${defaultScreen}, Audio: ${defaultAudio}`);
@@ -173,6 +179,40 @@ class AppInitializer {
       if (allSettings.theme) {
         updateAppState({ theme: allSettings.theme });
       }
+
+      // Apply recording settings
+      const recordingSettings = {
+        includeMicrophone: allSettings.includeMicrophone !== undefined ? allSettings.includeMicrophone : true,
+        includeSystemAudio: allSettings.includeSystemAudio !== undefined ? allSettings.includeSystemAudio : true,
+        autoTranscribe: allSettings.autoTranscribeRecordings !== undefined ? allSettings.autoTranscribeRecordings : true,
+        recordingDirectory: allSettings.recordingDirectory || '',
+        recordingQuality: allSettings.recordingQuality || 'medium'
+      };
+
+      // Apply transcription settings
+      const transcriptionSettings = {
+        defaultProvider: allSettings.defaultProvider || 'whisper-native',
+        defaultModel: allSettings.defaultModel || 'whisper-tiny',
+        autoDetectLanguage: allSettings.autoDetectLanguage !== undefined ? allSettings.autoDetectLanguage : true,
+        enableTimestamps: allSettings.enableTimestamps !== undefined ? allSettings.enableTimestamps : true,
+        enableSpeakerDiarization: allSettings.enableSpeakerDiarization !== undefined ? allSettings.enableSpeakerDiarization : true
+      };
+
+      // Apply UI settings
+      const uiSettings = {
+        theme: allSettings.theme || 'system',
+        showWaveform: allSettings.showWaveform !== undefined ? allSettings.showWaveform : true,
+        showTimeline: allSettings.showTimeline !== undefined ? allSettings.showTimeline : true,
+        autoScroll: allSettings.autoScroll !== undefined ? allSettings.autoScroll : true,
+        fontSize: allSettings.fontSize || 'medium'
+      };
+
+      // Update app state with all settings
+      updateAppState({
+        recordingSettings,
+        transcriptionSettings,
+        uiSettings
+      });
       
       console.log('✅ Settings loaded:', Object.keys(allSettings).length, 'settings');
 

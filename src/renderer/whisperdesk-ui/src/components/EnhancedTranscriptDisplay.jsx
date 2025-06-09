@@ -329,11 +329,11 @@ export function EnhancedTranscriptionTab() {
   const lastToastRef = useRef(null)
   const hasShownCompletionToast = useRef(false)
 
-  // Initialize
+  // Setup auto-transcription listener
   useEffect(() => {
-    initializeElectronAPIs()
-    setupAutoTranscriptionListener()
+    const cleanup = setupAutoTranscriptionListener()
     return () => {
+      cleanup()
       // Cleanup event handlers
       if (progressCleanupRef.current) progressCleanupRef.current()
       if (completeCleanupRef.current) completeCleanupRef.current()
@@ -370,45 +370,6 @@ export function EnhancedTranscriptionTab() {
     
     return () => {
       window.removeEventListener('autoTranscribe', handleAutoTranscribe)
-    }
-  }
-
-  const initializeElectronAPIs = async () => {
-    if (!window.electronAPI) {
-      console.error('Electron API not available')
-      toast.error('Electron API not available')
-      return
-    }
-
-    try {
-      // Set up event handlers
-      setupEventHandlers()
-      
-      // Get providers
-      const availableProviders = await window.electronAPI.transcription.getProviders()
-      setProviders(availableProviders)
-      console.log('Available providers:', availableProviders)
-
-      // Get installed models
-      const installedModels = await window.electronAPI.model.getInstalled()
-      setModels(installedModels)
-      console.log('Installed models:', installedModels)
-
-      // Set defaults if not already set
-      if (!appState.selectedProvider && availableProviders.length > 0) {
-        const nativeProvider = availableProviders.find(p => p.name === 'Native Whisper')
-        updateAppState({ 
-          selectedProvider: nativeProvider ? 'whisper-native' : availableProviders[0].id 
-        })
-      }
-
-      if (!appState.selectedModel && installedModels.length > 0) {
-        updateAppState({ selectedModel: installedModels[0].id })
-      }
-
-    } catch (error) {
-      console.error('Failed to initialize Electron APIs:', error)
-      toast.error('Failed to initialize: ' + error.message)
     }
   }
 
