@@ -10,8 +10,10 @@ class EnhancedScreenRecorder extends EventEmitter {
     constructor() {
         super();
         this.isRecording = false;
+        this.isPaused = false;
         this.recordingProcess = null;
         this.outputPath = null;
+        this.audioOutputPath = null;
         this.recordingStartTime = null;
         this.platform = os.platform();
         this.recordingsDir = this.getRecordingsDirectory();
@@ -141,7 +143,8 @@ class EnhancedScreenRecorder extends EventEmitter {
             includeMicrophone = true,
             includeSystemAudio = true,
             audioQuality = 'medium',
-            videoQuality = 'medium'
+            videoQuality = 'medium',
+            audioPath = null
         } = options;
 
         try {
@@ -149,6 +152,7 @@ class EnhancedScreenRecorder extends EventEmitter {
 
             const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
             this.outputPath = path.join(this.recordingsDir, `recording-${timestamp}.mp4`);
+            this.audioOutputPath = audioPath;
 
             const ffmpegArgs = await this.buildFFmpegArgs({
                 screenId,
@@ -156,7 +160,8 @@ class EnhancedScreenRecorder extends EventEmitter {
                 includeSystemAudio,
                 audioQuality,
                 videoQuality,
-                outputPath: this.outputPath
+                outputPath: this.outputPath,
+                audioPath: this.audioOutputPath
             });
 
             console.log('Starting screen recording with args:', ffmpegArgs);
@@ -190,7 +195,8 @@ class EnhancedScreenRecorder extends EventEmitter {
             includeSystemAudio,
             audioQuality,
             videoQuality,
-            outputPath
+            outputPath,
+            audioPath
         } = options;
 
         let args = ['-y']; // Overwrite output files
@@ -212,6 +218,10 @@ class EnhancedScreenRecorder extends EventEmitter {
         
         // Add output file
         args.push(outputPath);
+
+        if (audioPath) {
+            args.push('-vn', '-acodec', 'pcm_s16le', audioPath);
+        }
 
         return args;
     }
@@ -370,20 +380,18 @@ class EnhancedScreenRecorder extends EventEmitter {
         this.recordingProcess.on('close', (code) => {
             console.log(`Recording process exited with code ${code}`);
             this.isRecording = false;
-            
+
             if (code === 0) {
-                this.emit('completed', { 
+                this.emit('completed', {
                     outputPath: this.outputPath,
                     duration: Date.now() - this.recordingStartTime
                 });
             } else {
-                this.emit('error', { 
+                this.emit('error', {
                     error: `Recording process failed with code ${code}`,
                     outputPath: this.outputPath
                 });
             }
-            
-            this.cleanup();
         });
 
         this.recordingProcess.on('error', (error) => {
@@ -409,6 +417,36 @@ class EnhancedScreenRecorder extends EventEmitter {
         }
     }
 
+    pauseRecording() {
+        if (!this.isRecording || !this.recordingProcess || this.isPaused) {
+            return { success: false, error: 'Not recording or already paused' };
+        }
+
+        try {
+            this.recordingProcess.stdin.write('p');
+            this.isPaused = true;
+            this.emit('paused');
+            return { success: true };
+        } catch (err) {
+            return { success: false, error: err.message };
+        }
+    }
+
+    resumeRecording() {
+        if (!this.isRecording || !this.recordingProcess || !this.isPaused) {
+            return { success: false, error: 'Not paused' };
+        }
+
+        try {
+            this.recordingProcess.stdin.write('p');
+            this.isPaused = false;
+            this.emit('resumed');
+            return { success: true };
+        } catch (err) {
+            return { success: false, error: err.message };
+        }
+    }
+
     async stopRecording() {
         if (!this.isRecording || !this.recordingProcess) {
             throw new Error('No recording in progress');
@@ -422,15 +460,30 @@ class EnhancedScreenRecorder extends EventEmitter {
 
             this.recordingProcess.once('close', (code) => {
                 clearTimeout(timeout);
-                resolve({
-                    success: true,
-                    outputPath: this.outputPath,
-                    duration: Date.now() - this.recordingStartTime
-                });
+                this.extractAudio()
+                    .then(() => {
+                        resolve({
+                            success: true,
+                            outputPath: this.outputPath,
+                            audioPath: this.audioOutputPath,
+                            duration: Date.now() - this.recordingStartTime
+                        });
+                    })
+                    .catch((err) => {
+                        resolve({
+                            success: true,
+                            outputPath: this.outputPath,
+                            audioPath: this.audioOutputPath,
+                            error: err.message,
+                            duration: Date.now() - this.recordingStartTime
+                        });
+                    });
+                this.cleanup();
             });
 
             this.recordingProcess.once('error', (error) => {
                 clearTimeout(timeout);
+                this.cleanup();
                 reject(error);
             });
 
@@ -440,6 +493,21 @@ class EnhancedScreenRecorder extends EventEmitter {
             } else {
                 this.recordingProcess.kill('SIGTERM');
             }
+        });
+    }
+
+    async extractAudio() {
+        if (!this.audioOutputPath) return Promise.resolve();
+
+        return new Promise((resolve, reject) => {
+            const args = ['-i', this.outputPath, '-vn', '-acodec', 'pcm_s16le', '-y', this.audioOutputPath];
+            const proc = spawn(this.ffmpegPath, args);
+
+            proc.on('close', (code) => {
+                if (code === 0) resolve();
+                else reject(new Error('Audio extraction failed'));
+            });
+            proc.on('error', reject);
         });
     }
 
@@ -492,6 +560,8 @@ class EnhancedScreenRecorder extends EventEmitter {
         this.isRecording = false;
         this.recordingProcess = null;
         this.outputPath = null;
+        this.audioOutputPath = null;
+        this.isPaused = false;
         this.recordingStartTime = null;
     }
 

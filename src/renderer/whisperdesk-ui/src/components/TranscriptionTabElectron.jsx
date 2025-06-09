@@ -23,6 +23,8 @@ export function TranscriptionTabElectron() {
   const [isLoading, setIsLoading] = useState(false)
   const [dragOver, setDragOver] = useState(false)
   const [isRecording, setIsRecording] = useState(false)
+  const [isPaused, setIsPaused] = useState(false)
+  const [audioPath, setAudioPath] = useState(null)
   const [includeMicrophone, setIncludeMicrophone] = useState(true)
   const [includeSystemAudio, setIncludeSystemAudio] = useState(true)
   
@@ -446,13 +448,24 @@ export function TranscriptionTabElectron() {
     }
 
     try {
+      const save = await window.electronAPI.file.showSaveDialog({
+        defaultPath: `recording-${Date.now()}.wav`,
+        filters: [{ name: 'Audio', extensions: ['wav'] }]
+      })
+      if (save.canceled) return
+
+      setAudioPath(save.filePath)
+
       const settings = {
         includeMicrophone: appState.recordingSettings?.includeMicrophone ?? true,
-        includeSystemAudio: appState.recordingSettings?.includeSystemAudio ?? true
+        includeSystemAudio: appState.recordingSettings?.includeSystemAudio ?? true,
+        audioPath: save.filePath
       }
 
       await window.electronAPI.screenRecorder.startRecording(settings)
       updateAppState({ isRecording: true })
+      setIsRecording(true)
+      setIsPaused(false)
       toast.success('🎥 Screen recording started')
     } catch (error) {
       console.error('Failed to start recording:', error)
@@ -468,18 +481,40 @@ export function TranscriptionTabElectron() {
 
     try {
       const result = await window.electronAPI.screenRecorder.stopRecording()
-      updateAppState({ 
+      updateAppState({
         isRecording: false,
         selectedFile: {
-          path: result.filePath,
-          name: result.filePath.split('/').pop() || result.filePath.split('\\').pop(),
+          path: result.audioPath,
+          name: result.audioPath.split('/').pop() || result.audioPath.split('\\').pop(),
           size: 0
         }
       })
+      setIsRecording(false)
+      setIsPaused(false)
       toast.success('🎥 Screen recording saved')
+      await handleStartTranscription()
     } catch (error) {
       console.error('Failed to stop recording:', error)
       toast.error('Failed to stop recording: ' + error.message)
+    }
+  }
+
+  const handlePauseResume = async () => {
+    if (!window.electronAPI?.screenRecorder?.pauseRecording) return
+
+    try {
+      if (isPaused) {
+        await window.electronAPI.screenRecorder.resumeRecording()
+        setIsPaused(false)
+        toast.success('▶️ Recording resumed')
+      } else {
+        await window.electronAPI.screenRecorder.pauseRecording()
+        setIsPaused(true)
+        toast.warning('⏸️ Recording paused')
+      }
+    } catch (err) {
+      console.error(err)
+      toast.error('Failed to toggle pause')
     }
   }
 
@@ -589,6 +624,21 @@ export function TranscriptionTabElectron() {
                   </>
                 )}
               </Button>
+              {isRecording && (
+                <Button className="w-full mt-2" variant="secondary" onClick={handlePauseResume}>
+                  {isPaused ? (
+                    <>
+                      <Play className="w-4 h-4 mr-2" />
+                      Resume
+                    </>
+                  ) : (
+                    <>
+                      <Pause className="w-4 h-4 mr-2" />
+                      Pause
+                    </>
+                  )}
+                </Button>
+              )}
             </div>
           </CardContent>
         </Card>
