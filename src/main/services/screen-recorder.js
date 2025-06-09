@@ -1,6 +1,6 @@
-// src/main/services/screen-recorder.js - Node.js Service for Screen Recording
+// src/main/services/screen-recorder.js - COMPLETELY REWRITTEN for proper Electron integration
 const { EventEmitter } = require('events');
-const { spawn } = require('child_process');
+const { desktopCapturer, systemPreferences } = require('electron');
 const fs = require('fs').promises;
 const path = require('path');
 const os = require('os');
@@ -19,20 +19,116 @@ class ScreenRecorder extends EventEmitter {
     this.durationTimer = null;
     this.hasActiveProcess = false;
     this.lastError = null;
+    this.availableScreens = [];
+    this.availableAudioDevices = [];
   }
 
   async initialize() {
     try {
       // Create temp directory
       await fs.mkdir(this.tempDir, { recursive: true });
-      console.log('✅ Screen recorder service initialized');
+      
+      // Check permissions on macOS
+      if (process.platform === 'darwin') {
+        await this.checkMacOSPermissions();
+      }
+      
+      // Get initial device list
+      await this.refreshDevices();
+      
+      console.log('✅ Enhanced Screen recorder service initialized');
       return true;
     } catch (error) {
       console.error('❌ Failed to initialize screen recorder:', error);
+      this.lastError = error.message;
       throw error;
     }
   }
 
+  async checkMacOSPermissions() {
+    try {
+      const screenAccess = systemPreferences.getMediaAccessStatus('screen');
+      console.log('📱 macOS Screen Recording Permission:', screenAccess);
+      
+      if (screenAccess !== 'granted') {
+        console.warn('⚠️ Screen recording permission not granted on macOS');
+        this.lastError = `Screen recording permission ${screenAccess}. Please grant permission in System Preferences → Privacy & Security → Screen Recording`;
+      }
+      
+      return screenAccess === 'granted';
+    } catch (error) {
+      console.error('❌ Failed to check macOS permissions:', error);
+      return false;
+    }
+  }
+
+  async refreshDevices() {
+    try {
+      console.log('🔄 Refreshing available devices...');
+      
+      // Get available screens and windows using desktopCapturer
+      const sources = await desktopCapturer.getSources({
+        types: ['screen', 'window'],
+        thumbnailSize: { width: 0, height: 0 }, // Don't need thumbnails for performance
+        fetchWindowIcons: false
+      });
+      
+      // Separate screens from windows
+      const screens = sources.filter(source => source.id.startsWith('screen:'));
+      const windows = sources.filter(source => source.id.startsWith('window:'));
+      
+      this.availableScreens = screens.map((screen, index) => ({
+        id: screen.id,
+        name: screen.name || `Screen ${index + 1}`,
+        type: 'screen',
+        displayId: screen.display_id
+      }));
+      
+      // Add windows as capturable sources
+      const windowSources = windows.slice(0, 10).map((window, index) => ({ // Limit to 10 windows for performance
+        id: window.id,
+        name: window.name || `Window ${index + 1}`,
+        type: 'window',
+        appIcon: window.appIcon
+      }));
+      
+      // Combine screens and windows
+      this.availableScreens = [...this.availableScreens, ...windowSources];
+      
+      // Note: Audio device enumeration happens in renderer process
+      // We'll provide a method to request audio devices from renderer
+      
+      console.log(`✅ Found ${screens.length} screens and ${windows.length} windows`);
+      console.log('📱 Available screens:', this.availableScreens);
+      
+      return {
+        screens: this.availableScreens,
+        audio: [] // Will be populated by renderer process
+      };
+      
+    } catch (error) {
+      console.error('❌ Failed to refresh devices:', error);
+      this.lastError = error.message;
+      throw error;
+    }
+  }
+
+  async getAvailableScreens() {
+    try {
+      await this.refreshDevices();
+      return this.availableScreens.map(screen => ({
+        id: screen.id,
+        name: screen.name,
+        type: screen.type
+      }));
+    } catch (error) {
+      console.error('❌ Failed to get available screens:', error);
+      return [];
+    }
+  }
+
+  // This method will be called by renderer process to start recording
+  // The actual recording happens in renderer using MediaRecorder API
   async startRecording(options = {}) {
     if (this.isRecording) {
       return { success: false, error: 'Already recording' };
@@ -40,8 +136,8 @@ class ScreenRecorder extends EventEmitter {
 
     try {
       const {
-        screenId = '1',
-        audioInputId = '0',
+        screenId,
+        audioInputId,
         includeMicrophone = true,
         includeSystemAudio = false,
         videoQuality = 'medium',
@@ -49,41 +145,48 @@ class ScreenRecorder extends EventEmitter {
         recordingDirectory
       } = options;
 
+      // Validate screen source exists
+      if (!screenId) {
+        throw new Error('No screen source specified');
+      }
+
+      const screenSource = this.availableScreens.find(screen => screen.id === screenId);
+      if (!screenSource) {
+        throw new Error(`Screen source ${screenId} not found. Available sources: ${this.availableScreens.map(s => s.id).join(', ')}`);
+      }
+
       // Generate output filename
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
       const outputDir = recordingDirectory || this.tempDir;
-      this.outputPath = path.join(outputDir, `recording-${timestamp}.mp4`);
+      this.outputPath = path.join(outputDir, `recording-${timestamp}.webm`);
 
-      // Build FFmpeg command
-      const ffmpegArgs = this.buildFFmpegArgs(options);
-      
-      console.log('🎬 Starting recording with FFmpeg:', ffmpegArgs.join(' '));
-
-      // Start FFmpeg process
-      this.recordingProcess = spawn('ffmpeg', ffmpegArgs);
-      this.hasActiveProcess = true;
+      // Set recording state
       this.isRecording = true;
       this.recordingValidated = false;
       this.startTime = Date.now();
       this.duration = 0;
       this.lastError = null;
+      this.hasActiveProcess = true;
 
       // Start duration timer
       this.startDurationTimer();
 
-      // Set up process handlers
-      this.setupProcessHandlers();
-
-      // Emit started event
+      // Emit started event with source information
       this.emit('started', {
         outputPath: this.outputPath,
+        screenSource: screenSource,
         options
       });
 
-      // Validate recording after a delay
-      setTimeout(() => this.validateRecording(), 3000);
+      // The actual recording will be handled by the renderer process
+      // This just manages the state and provides the configuration
 
-      return { success: true, outputPath: this.outputPath };
+      console.log(`✅ Recording session started for ${screenSource.name}`);
+      return { 
+        success: true, 
+        outputPath: this.outputPath,
+        screenSource: screenSource
+      };
 
     } catch (error) {
       console.error('❌ Failed to start recording:', error);
@@ -93,105 +196,65 @@ class ScreenRecorder extends EventEmitter {
     }
   }
 
-  buildFFmpegArgs(options) {
-    const {
-      screenId = '1',
-      audioInputId = '0',
-      includeMicrophone = true,
-      includeSystemAudio = false,
-      videoQuality = 'medium'
-    } = options;
-
-    const args = ['-y']; // Overwrite output file
-
-    if (process.platform === 'darwin') {
-      // macOS using avfoundation
-      if (includeMicrophone) {
-        args.push('-f', 'avfoundation', '-i', `${screenId}:${audioInputId}`);
-      } else {
-        args.push('-f', 'avfoundation', '-i', `${screenId}:`);
-      }
-    } else if (process.platform === 'win32') {
-      // Windows using gdigrab and dshow
-      args.push('-f', 'gdigrab', '-i', 'desktop');
-      if (includeMicrophone) {
-        args.push('-f', 'dshow', '-i', `audio="Default Audio Device"`);
-      }
-    } else {
-      // Linux using x11grab and alsa
-      args.push('-f', 'x11grab', '-i', ':0.0');
-      if (includeMicrophone) {
-        args.push('-f', 'alsa', '-i', 'default');
-      }
+  async stopRecording() {
+    if (!this.isRecording) {
+      return { success: true, message: 'No recording in progress', wasAlreadyStopped: true };
     }
 
-    // Video encoding settings
-    args.push('-c:v', 'libx264');
-    args.push('-preset', 'fast');
-    args.push('-crf', '23');
+    try {
+      console.log('⏹️ Stopping recording...');
+      
+      this.isRecording = false;
+      this.hasActiveProcess = false;
+      this.stopDurationTimer();
+      
+      // Emit completion event
+      this.emit('completed', {
+        outputPath: this.outputPath,
+        duration: this.duration,
+        audioPath: this.outputPath // For transcription
+      });
 
-    // Audio encoding settings
-    if (includeMicrophone) {
-      args.push('-c:a', 'aac');
-      args.push('-b:a', '128k');
+      console.log(`✅ Recording stopped successfully. Duration: ${this.duration}ms`);
+      return { success: true };
+
+    } catch (error) {
+      console.error('❌ Failed to stop recording:', error);
+      this.lastError = error.message;
+      return { success: false, error: error.message };
     }
-
-    // Frame rate
-    args.push('-r', '30');
-
-    // Output file
-    args.push(this.outputPath);
-
-    return args;
   }
 
-  setupProcessHandlers() {
-    if (!this.recordingProcess) return;
+  async pauseRecording() {
+    if (!this.isRecording || this.isPaused) {
+      return { success: false, error: 'Cannot pause - not recording or already paused' };
+    }
 
-    this.recordingProcess.stdout.on('data', (data) => {
-      console.log('📹 FFmpeg stdout:', data.toString());
-    });
+    try {
+      this.isPaused = true;
+      this.emit('paused');
+      console.log('⏸️ Recording paused');
+      return { success: true };
+    } catch (error) {
+      console.error('❌ Failed to pause recording:', error);
+      return { success: false, error: error.message };
+    }
+  }
 
-    this.recordingProcess.stderr.on('data', (data) => {
-      const output = data.toString();
-      console.log('📹 FFmpeg stderr:', output);
-      
-      // Parse for errors
-      if (output.includes('Error') || output.includes('failed')) {
-        console.error('❌ FFmpeg error detected:', output);
-      }
-    });
+  async resumeRecording() {
+    if (!this.isRecording || !this.isPaused) {
+      return { success: false, error: 'Cannot resume - not recording or not paused' };
+    }
 
-    this.recordingProcess.on('close', (code) => {
-      console.log(`📹 FFmpeg process closed with code: ${code}`);
-      this.hasActiveProcess = false;
-      
-      if (this.isRecording) {
-        if (code === 0) {
-          this.emit('completed', {
-            outputPath: this.outputPath,
-            duration: this.duration,
-            audioPath: this.outputPath // For transcription
-          });
-        } else {
-          this.lastError = `FFmpeg process exited with code ${code}`;
-          this.emit('error', {
-            error: this.lastError,
-            code
-          });
-        }
-        this.cleanup();
-      }
-    });
-
-    this.recordingProcess.on('error', (error) => {
-      console.error('❌ FFmpeg process error:', error);
-      this.lastError = error.message;
-      this.emit('error', {
-        error: error.message
-      });
-      this.cleanup();
-    });
+    try {
+      this.isPaused = false;
+      this.emit('resumed');
+      console.log('▶️ Recording resumed');
+      return { success: true };
+    } catch (error) {
+      console.error('❌ Failed to resume recording:', error);
+      return { success: false, error: error.message };
+    }
   }
 
   startDurationTimer() {
@@ -212,100 +275,32 @@ class ScreenRecorder extends EventEmitter {
     }
   }
 
-  async validateRecording() {
-    try {
-      if (this.outputPath && await this.fileExists(this.outputPath)) {
-        const stats = await fs.stat(this.outputPath);
-        if (stats.size > 1024) { // File is growing
-          this.recordingValidated = true;
-          this.emit('validated');
-          console.log('✅ Recording validated');
-        }
-      }
-    } catch (error) {
-      console.warn('⚠️ Recording validation failed:', error);
+  // Mark recording as validated (called by renderer when recording actually starts)
+  validateRecording() {
+    if (this.isRecording && !this.recordingValidated) {
+      this.recordingValidated = true;
+      this.emit('validated');
+      console.log('✅ Recording validated');
     }
   }
 
-  async fileExists(filepath) {
-    try {
-      await fs.access(filepath);
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  async stopRecording() {
-    if (!this.isRecording) {
-      return { success: true, message: 'No recording in progress', wasAlreadyStopped: true };
-    }
-
-    try {
-      console.log('⏹️ Stopping recording...');
-      
-      if (this.recordingProcess) {
-        // Send SIGTERM for graceful shutdown
-        this.recordingProcess.kill('SIGTERM');
-        
-        // Force kill after timeout
-        setTimeout(() => {
-          if (this.recordingProcess && !this.recordingProcess.killed) {
-            this.recordingProcess.kill('SIGKILL');
-          }
-        }, 5000);
-      }
-
-      return { success: true };
-
-    } catch (error) {
-      console.error('❌ Failed to stop recording:', error);
-      this.lastError = error.message;
-      return { success: false, error: error.message };
-    }
-  }
-
-  async pauseRecording() {
-    if (!this.isRecording || this.isPaused) {
-      return { success: false, error: 'Cannot pause - not recording or already paused' };
-    }
-
-    try {
-      this.isPaused = true;
-      this.emit('paused');
-      return { success: true };
-    } catch (error) {
-      return { success: false, error: error.message };
-    }
-  }
-
-  async resumeRecording() {
-    if (!this.isRecording || !this.isPaused) {
-      return { success: false, error: 'Cannot resume - not recording or not paused' };
-    }
-
-    try {
-      this.isPaused = false;
-      this.emit('resumed');
-      return { success: true };
-    } catch (error) {
-      return { success: false, error: error.message };
-    }
-  }
-
-  async getAvailableScreens() {
-    // Return mock data - in a real implementation, you'd detect actual screens
-    return [
-      { id: '1', name: 'Display 1 (Primary)' },
-      { id: '2', name: 'Display 2' }
-    ];
+  // Handle recording error (called by renderer if recording fails)
+  handleRecordingError(error) {
+    console.error('❌ Recording error from renderer:', error);
+    this.lastError = error.message || error;
+    this.cleanup();
+    this.emit('error', {
+      error: this.lastError,
+      timestamp: new Date().toISOString(),
+      platform: process.platform
+    });
   }
 
   async getRecordings() {
     try {
       const files = await fs.readdir(this.tempDir);
       const recordings = files
-        .filter(file => file.endsWith('.mp4'))
+        .filter(file => file.endsWith('.webm') || file.endsWith('.mp4'))
         .map(file => ({
           name: file,
           path: path.join(this.tempDir, file),
@@ -336,17 +331,11 @@ class ScreenRecorder extends EventEmitter {
       hasActiveProcess: this.hasActiveProcess,
       lastError: this.lastError,
       availableDevices: {
-        screens: ['1', '2'],
-        audio: ['0', '1'],
+        screens: this.availableScreens.map(s => s.id),
+        audio: [], // Will be populated by renderer
         deviceNames: {
-          screens: {
-            '1': 'Display 1 (Primary)',
-            '2': 'Display 2'
-          },
-          audio: {
-            '0': 'Default Audio Input',
-            '1': 'Secondary Audio Input'
-          }
+          screens: Object.fromEntries(this.availableScreens.map(s => [s.id, s.name])),
+          audio: {} // Will be populated by renderer
         }
       }
     };
@@ -365,14 +354,6 @@ class ScreenRecorder extends EventEmitter {
     this.recordingValidated = false;
     this.hasActiveProcess = false;
     this.stopDurationTimer();
-    
-    if (this.recordingProcess && !this.recordingProcess.killed) {
-      try {
-        this.recordingProcess.kill('SIGKILL');
-      } catch (error) {
-        console.warn('Failed to kill recording process:', error);
-      }
-    }
     this.recordingProcess = null;
   }
 }
