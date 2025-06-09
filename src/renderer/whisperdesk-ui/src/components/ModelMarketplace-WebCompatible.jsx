@@ -1,4 +1,4 @@
-// src/renderer/whisperdesk-ui/src/components/ModelMarketplace-Fixed.jsx
+// src/renderer/whisperdesk-ui/src/components/ModelMarketplace-WebCompatible.jsx - FIXED
 import { useState, useEffect, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -29,6 +29,12 @@ export function ModelMarketplace() {
 
     if (electronAvailable) {
       setupEventHandlers()
+      // 🔴 FIX: Actually call the load functions
+      loadModelsFromElectron()
+    } else {
+      // 🔴 FIX: Set loading to false for web mode
+      setLoading(false)
+      toast.warning('Model downloads only available in Electron app')
     }
 
     return () => {
@@ -67,7 +73,7 @@ export function ModelMarketplace() {
         })
         
         // Refresh installed models
-        loadModelsFromElectron()
+        loadInstalledModels()
         
         toast.success('Model downloaded successfully!')
       })
@@ -113,32 +119,47 @@ export function ModelMarketplace() {
     }
   }
 
+  // 🔴 FIX: Actually implement the loading functions
   const loadModelsFromElectron = async () => {
-    await Promise.all([
-      loadAvailableModels(),
-      loadInstalledModels()
-    ])
+    try {
+      setLoading(true)
+      console.log('🔄 Loading models from Electron...')
+      
+      await Promise.all([
+        loadAvailableModels(),
+        loadInstalledModels()
+      ])
+      
+      console.log('✅ Models loaded successfully')
+    } catch (error) {
+      console.error('❌ Failed to load models:', error)
+      toast.error('Failed to load models: ' + error.message)
+    } finally {
+      setLoading(false)
+    }
   }
 
   const loadAvailableModels = async () => {
     try {
+      console.log('📦 Loading available models...')
       const models = await window.electronAPI.model.getAvailable()
       setAvailableModels(models)
-      console.log('Loaded available models:', models.length)
+      console.log('✅ Loaded available models:', models.length)
     } catch (error) {
-      console.error('Failed to load available models:', error)
-      toast.error('Failed to load available models')
+      console.error('❌ Failed to load available models:', error)
+      throw error
     }
   }
 
   const loadInstalledModels = async () => {
     try {
+      console.log('💾 Loading installed models...')
       const models = await window.electronAPI.model.getInstalled()
       setInstalledModels(models)
-      console.log('Loaded installed models:', models.length)
+      console.log('✅ Loaded installed models:', models.length)
     } catch (error) {
-      console.error('Failed to load installed models:', error)
-      toast.error('Failed to load installed models')
+      console.error('❌ Failed to load installed models:', error)
+      throw error
     }
   }
 
@@ -202,11 +223,6 @@ export function ModelMarketplace() {
     return Math.round(progress)
   }
 
-  const formatSpeed = (bytesPerSecond) => {
-    if (!bytesPerSecond) return ''
-    return formatBytes(bytesPerSecond) + '/s'
-  }
-
   const getModelStatus = (model) => {
     const download = downloads.get(model.id)
     if (download) {
@@ -264,6 +280,7 @@ export function ModelMarketplace() {
     }
   }
 
+  // 🔴 FIX: Show proper loading state and error handling
   if (loading) {
     return (
       <div className="flex items-center justify-center p-8">
@@ -272,6 +289,23 @@ export function ModelMarketplace() {
           <span>Loading models...</span>
         </div>
       </div>
+    )
+  }
+
+  // 🔴 FIX: Show message when no Electron API
+  if (!isElectron) {
+    return (
+      <Card>
+        <CardContent className="flex items-center justify-center p-8">
+          <div className="text-center">
+            <Package className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
+            <h3 className="text-lg font-semibold mb-2">Electron Required</h3>
+            <p className="text-muted-foreground">
+              Model management is only available in the Electron app.
+            </p>
+          </div>
+        </CardContent>
+      </Card>
     )
   }
 
