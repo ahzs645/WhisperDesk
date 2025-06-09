@@ -3,8 +3,9 @@ import React, { useState, useEffect, createContext, useContext } from 'react'
 import { Button } from './components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './components/ui/tabs'
-import { Mic, Package, Clock, Settings, Video } from 'lucide-react'
+import { Mic, Package, Clock, Settings, Video, BarChart3 } from 'lucide-react'
 import { ModelMarketplace } from './components/ModelMarketplace-WebCompatible'
+import { AnalyticsTab } from './components/AnalyticsTab'
 // 🔧 CHANGED: Use the more feature-rich enhanced transcription tab
 import { EnhancedTranscriptionTab } from './components/EnhancedTranscriptDisplay'
 import { EnhancedSettingsTab } from './components/EnhancedSettingsTab'
@@ -224,11 +225,15 @@ function AppContent() {
       {/* Main content */}
       <main className="flex-1 container mx-auto py-6">
         <Tabs defaultValue="transcribe" className="w-full">
-          <TabsList className="grid w-full grid-cols-4">
+          <TabsList className="grid w-full grid-cols-5">
             <TabsTrigger value="transcribe" className="flex items-center space-x-2">
               <Mic className="w-4 h-4" />
               <span>Transcribe</span>
               <FileIndicator />
+            </TabsTrigger>
+            <TabsTrigger value="analytics" className="flex items-center space-x-2">
+              <BarChart3 className="w-4 h-4" />
+              <span>Analytics</span>
             </TabsTrigger>
             <TabsTrigger value="models" className="flex items-center space-x-2">
               <Package className="w-4 h-4" />
@@ -248,6 +253,10 @@ function AppContent() {
           <TabsContent value="transcribe" className="space-y-6">
             {/* 🔧 CHANGED: Use the enhanced transcription tab */}
             <EnhancedTranscriptionTab />
+          </TabsContent>
+
+          <TabsContent value="analytics" className="space-y-6">
+            <AnalyticsTab />
           </TabsContent>
 
           <TabsContent value="models" className="space-y-6">
