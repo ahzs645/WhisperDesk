@@ -1,503 +1,380 @@
-// src/renderer/whisperdesk-ui/src/hooks/useScreenRecorder.js - FIXED
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { toast } from 'sonner';
-import { useAppState } from '@/App';
-import { formatDuration, getErrorMessage } from '../utils/recordingUtils';
+// src/main/services/screen-recorder.js - Node.js Service for Screen Recording
+const { EventEmitter } = require('events');
+const { spawn } = require('child_process');
+const fs = require('fs').promises;
+const path = require('path');
+const os = require('os');
 
-export const useScreenRecorder = ({ deviceManager, recordingSettings }) => {
-  const { appState, updateAppState } = useAppState();
-  
-  const [apiStatus, setApiStatus] = useState('checking');
-  const [localError, setLocalError] = useState(null);
-  
-  const durationTimer = useRef(null);
-  const eventCleanupRef = useRef({});
-  const isComponentMounted = useRef(true);
-  const lastToastRef = useRef(null);
-  const syncIntervalRef = useRef(null);
-  const initializationComplete = useRef(false);
+class ScreenRecorder extends EventEmitter {
+  constructor() {
+    super();
+    this.isRecording = false;
+    this.isPaused = false;
+    this.recordingProcess = null;
+    this.recordingValidated = false;
+    this.startTime = null;
+    this.duration = 0;
+    this.tempDir = path.join(os.tmpdir(), 'whisperdesk-recordings');
+    this.outputPath = null;
+    this.durationTimer = null;
+    this.hasActiveProcess = false;
+    this.lastError = null;
+  }
 
-  // Define functions before they're used
-  const startDurationTimer = useCallback(() => {
-    if (durationTimer.current) return;
-    
-    durationTimer.current = setInterval(() => {
-      if (isComponentMounted.current) {
-        updateAppState(prev => ({
-          recordingDuration: (prev.recordingDuration || 0) + 1
-        }));
-      }
-    }, 1000);
-  }, [updateAppState]);
-
-  const stopDurationTimer = useCallback(() => {
-    if (durationTimer.current) {
-      clearInterval(durationTimer.current);
-      durationTimer.current = null;
-    }
-  }, []);
-
-  // 🔴 FIXED: Actually update apiStatus based on backend state
-  const syncStateWithBackend = useCallback(async () => {
-    if (!isComponentMounted.current) return;
-    
+  async initialize() {
     try {
-      console.log('🔄 Syncing screen recorder state with backend...');
-      
-      // Check if API is available first
-      if (!window.electronAPI?.screenRecorder?.getStatus) {
-        console.warn('❌ Screen recorder API not available');
-        if (isComponentMounted.current) {
-          setApiStatus('unavailable');
-          setLocalError('Screen recorder API not available');
-        }
-        return;
-      }
-
-      const status = await window.electronAPI.screenRecorder.getStatus();
-      console.log('📊 Backend status:', status);
-      
-      if (isComponentMounted.current) {
-        // 🔴 FIXED: Update apiStatus based on backend status
-        if (status.error) {
-          setApiStatus('unavailable');
-          setLocalError(status.error);
-          console.warn('❌ Backend reports error:', status.error);
-        } else {
-          setApiStatus('available');
-          setLocalError(null);
-          console.log('✅ Screen recorder API is available');
-        }
-
-        // Update recording state
-        const wasRecording = appState.isRecording;
-        const newState = {
-          isRecording: status.isRecording || false,
-          recordingValidated: status.recordingValidated || false,
-          isPaused: status.isPaused || false
-        };
-
-        // Only update duration if we have a valid backend duration
-        if (status.duration && status.isRecording) {
-          newState.recordingDuration = Math.floor(status.duration / 1000);
-        } else if (!status.isRecording && wasRecording) {
-          // Recording stopped, reset duration
-          newState.recordingDuration = 0;
-        }
-
-        updateAppState(newState);
-
-        // Handle timer state
-        if (status.isRecording && !status.isPaused) {
-          startDurationTimer();
-        } else {
-          stopDurationTimer();
-        }
-
-        // 🔴 FIXED: Update devices if available and not already initialized
-        if (status.availableDevices && !initializationComplete.current) {
-          console.log('📱 Updating devices from backend status:', status.availableDevices);
-          deviceManager.updateDevices(status.availableDevices, false); // Don't preserve selections on first sync
-          initializationComplete.current = true;
-        }
-      }
+      // Create temp directory
+      await fs.mkdir(this.tempDir, { recursive: true });
+      console.log('✅ Screen recorder service initialized');
+      return true;
     } catch (error) {
-      console.error('❌ Failed to sync recorder state:', error);
-      if (isComponentMounted.current) {
-        setApiStatus('unavailable');
-        setLocalError(error.message);
-      }
+      console.error('❌ Failed to initialize screen recorder:', error);
+      throw error;
     }
-  }, [updateAppState, startDurationTimer, stopDurationTimer, deviceManager, appState.isRecording]);
+  }
 
-  // 🔴 FIXED: Initialize immediately and set up sync interval
-  useEffect(() => {
-    isComponentMounted.current = true;
-    console.log('🚀 Screen recorder hook initializing...');
-    
-    // Do initial sync immediately
-    syncStateWithBackend();
-    
-    // Set up sync interval (less frequent to avoid spam)
-    syncIntervalRef.current = setInterval(syncStateWithBackend, 5000);
-    
-    return () => {
-      isComponentMounted.current = false;
-      if (syncIntervalRef.current) {
-        clearInterval(syncIntervalRef.current);
-      }
-    };
-  }, [syncStateWithBackend]);
-
-  // 🔴 FIXED: Set up event handlers only once and coordinate with global handlers
-  useEffect(() => {
-    if (!window.electronAPI?.screenRecorder || Object.keys(eventCleanupRef.current).length > 0) {
-      return; // API not available or handlers already set up
-    }
-
-    console.log('🔧 Setting up screen recorder event handlers...');
-    
-    // Recording started
-    if (window.electronAPI.screenRecorder.onRecordingStarted) {
-      eventCleanupRef.current.started = window.electronAPI.screenRecorder.onRecordingStarted((data) => {
-        console.log('📹 Recording started event:', data);
-        if (isComponentMounted.current) {
-          updateAppState({
-            isRecording: true,
-            recordingValidated: false,
-            recordingDuration: 0,
-            isPaused: false
-          });
-          
-          setLocalError(null);
-          setApiStatus('available'); // Confirm API is working
-          
-          if (lastToastRef.current) {
-            toast.dismiss(lastToastRef.current);
-          }
-          
-          lastToastRef.current = toast.loading('🎬 Validating recording...', {
-            duration: Infinity,
-            description: 'Checking for video frames...'
-          });
-        }
-      });
-    }
-
-    // Recording validated
-    if (window.electronAPI.screenRecorder.onRecordingValidated) {
-      eventCleanupRef.current.validated = window.electronAPI.screenRecorder.onRecordingValidated(() => {
-        console.log('✅ Recording validated event');
-        if (isComponentMounted.current) {
-          updateAppState({
-            recordingValidated: true
-          });
-          
-          setLocalError(null);
-          
-          if (lastToastRef.current) {
-            toast.dismiss(lastToastRef.current);
-            lastToastRef.current = null;
-          }
-          
-          toast.success('🎬 Recording active!', {
-            description: 'Screen recording is now capturing frames'
-          });
-        }
-      });
-    }
-
-    // Recording completed
-    if (window.electronAPI.screenRecorder.onRecordingCompleted) {
-      eventCleanupRef.current.completed = window.electronAPI.screenRecorder.onRecordingCompleted((data) => {
-        console.log('✅ Recording completed event:', data);
-        if (isComponentMounted.current) {
-          updateAppState({
-            isRecording: false,
-            recordingValidated: false,
-            recordingDuration: 0,
-            isPaused: false
-          });
-          
-          setLocalError(null);
-          
-          const duration = data.duration ? Math.floor(data.duration / 1000) : 0;
-          toast.success(`🎬 Recording saved! Duration: ${formatDuration(duration)}`);
-          
-          // Auto-select the recorded file
-          if (data.audioPath) {
-            const fileInfo = {
-              path: data.audioPath,
-              name: data.audioPath.split('/').pop() || data.audioPath.split('\\').pop(),
-              size: 0
-            };
-            updateAppState({ selectedFile: fileInfo });
-            
-            // Auto-transcribe if enabled
-            if (recordingSettings.recordingSettings.autoTranscribe) {
-              setTimeout(() => {
-                recordingSettings.triggerAutoTranscription(fileInfo);
-              }, 1000);
-            }
-          }
-        }
-      });
-    }
-
-    // Recording error
-    if (window.electronAPI.screenRecorder.onRecordingError) {
-      eventCleanupRef.current.error = window.electronAPI.screenRecorder.onRecordingError((data) => {
-        console.error('❌ Recording error event:', data);
-        if (isComponentMounted.current) {
-          updateAppState({
-            isRecording: false,
-            recordingValidated: false,
-            recordingDuration: 0,
-            isPaused: false
-          });
-          
-          setLocalError(data.error || 'Recording failed');
-          
-          if (lastToastRef.current) {
-            toast.dismiss(lastToastRef.current);
-            lastToastRef.current = null;
-          }
-          
-          let errorMessage = data.error || 'Unknown error';
-          if (data.suggestion) {
-            errorMessage += '. ' + data.suggestion;
-          }
-          
-          if (errorMessage.includes('code null')) {
-            errorMessage = 'Recording process crashed immediately. This usually means invalid device selection or permission issues.';
-          }
-          
-          toast.error('❌ Recording failed: ' + errorMessage, {
-            duration: 8000,
-            description: 'Check device selection and permissions'
-          });
-        }
-      });
-    }
-
-    // Recording progress
-    if (window.electronAPI.screenRecorder.onRecordingProgress) {
-      eventCleanupRef.current.progress = window.electronAPI.screenRecorder.onRecordingProgress((data) => {
-        if (isComponentMounted.current && data.duration) {
-          const backendSeconds = Math.floor(data.duration / 1000);
-          const frontendSeconds = appState.recordingDuration;
-          
-          if (Math.abs(backendSeconds - frontendSeconds) > 2) {
-            updateAppState({ recordingDuration: backendSeconds });
-          }
-        }
-      });
-    }
-
-    console.log('✅ Screen recorder event handlers set up');
-
-    return () => {
-      Object.values(eventCleanupRef.current).forEach(cleanup => {
-        if (typeof cleanup === 'function') cleanup();
-      });
-      eventCleanupRef.current = {};
-    };
-  }, [updateAppState, recordingSettings]);
-
-  // Cleanup
-  const cleanup = useCallback(() => {
-    console.log('🧹 Screen recorder cleanup');
-    isComponentMounted.current = false;
-    stopDurationTimer();
-    
-    Object.values(eventCleanupRef.current).forEach(cleanup => {
-      if (typeof cleanup === 'function') cleanup();
-    });
-    eventCleanupRef.current = {};
-    
-    if (lastToastRef.current) {
-      toast.dismiss(lastToastRef.current);
-    }
-    
-    if (syncIntervalRef.current) {
-      clearInterval(syncIntervalRef.current);
-    }
-  }, [stopDurationTimer]);
-
-  // Recording actions (keeping the same but with better error handling)
-  const handleStartRecording = useCallback(async () => {
-    if (!window.electronAPI?.screenRecorder?.startRecording) {
-      setLocalError('Screen recording API not available');
-      setApiStatus('unavailable');
-      toast.error('Screen recording only available in Electron app');
-      return;
-    }
-
-    if (appState.isRecording) {
-      toast.warning('Recording is already in progress');
-      return;
-    }
-
-    // Validate device selections before starting
-    if (!deviceManager.selectedScreen) {
-      toast.error('Please select a screen to record');
-      return;
-    }
-
-    const screenExists = deviceManager.availableDevices.screens.find(s => s.id === deviceManager.selectedScreen);
-    if (!screenExists) {
-      toast.error(`Selected screen device '${deviceManager.selectedScreen}' is not available. Please refresh devices and select again.`);
-      console.error('❌ Selected screen device not found:', deviceManager.selectedScreen, 'Available:', deviceManager.availableDevices.screens);
-      return;
-    }
-
-    if (recordingSettings.recordingSettings.includeMicrophone) {
-      if (!deviceManager.selectedAudioInput) {
-        toast.error('Please select an audio input device or disable microphone recording');
-        return;
-      }
-      
-      const audioExists = deviceManager.availableDevices.audio.find(a => a.id === deviceManager.selectedAudioInput);
-      if (!audioExists) {
-        toast.error(`Selected audio device '${deviceManager.selectedAudioInput}' is not available. Please refresh devices and select again.`);
-        console.error('❌ Selected audio device not found:', deviceManager.selectedAudioInput, 'Available:', deviceManager.availableDevices.audio);
-        return;
-      }
+  async startRecording(options = {}) {
+    if (this.isRecording) {
+      return { success: false, error: 'Already recording' };
     }
 
     try {
-      setLocalError(null);
-      console.log('🎬 Starting enhanced screen recording...');
-      console.log('🎯 Validated devices - Screen:', deviceManager.selectedScreen, 'Audio:', deviceManager.selectedAudioInput);
+      const {
+        screenId = '1',
+        audioInputId = '0',
+        includeMicrophone = true,
+        includeSystemAudio = false,
+        videoQuality = 'medium',
+        audioQuality = 'medium',
+        recordingDirectory
+      } = options;
 
-      updateAppState({
-        isRecording: true,
-        recordingValidated: false,
-        recordingDuration: 0,
-        isPaused: false
+      // Generate output filename
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const outputDir = recordingDirectory || this.tempDir;
+      this.outputPath = path.join(outputDir, `recording-${timestamp}.mp4`);
+
+      // Build FFmpeg command
+      const ffmpegArgs = this.buildFFmpegArgs(options);
+      
+      console.log('🎬 Starting recording with FFmpeg:', ffmpegArgs.join(' '));
+
+      // Start FFmpeg process
+      this.recordingProcess = spawn('ffmpeg', ffmpegArgs);
+      this.hasActiveProcess = true;
+      this.isRecording = true;
+      this.recordingValidated = false;
+      this.startTime = Date.now();
+      this.duration = 0;
+      this.lastError = null;
+
+      // Start duration timer
+      this.startDurationTimer();
+
+      // Set up process handlers
+      this.setupProcessHandlers();
+
+      // Emit started event
+      this.emit('started', {
+        outputPath: this.outputPath,
+        options
       });
 
-      if (lastToastRef.current) {
-        toast.dismiss(lastToastRef.current);
-      }
-      lastToastRef.current = toast.loading('🎬 Starting recording...', { 
-        duration: Infinity,
-        description: `Screen: ${screenExists.name}, Audio: ${recordingSettings.recordingSettings.includeMicrophone ? 'Enabled' : 'Disabled'}`
-      });
+      // Validate recording after a delay
+      setTimeout(() => this.validateRecording(), 3000);
 
-      const options = {
-        screenId: deviceManager.selectedScreen,
-        audioInputId: deviceManager.selectedAudioInput,
-        includeMicrophone: recordingSettings.recordingSettings.includeMicrophone,
-        includeSystemAudio: recordingSettings.recordingSettings.includeSystemAudio,
-        audioQuality: 'medium',
-        videoQuality: 'medium',
-        recordingDirectory: recordingSettings.recordingSettings.recordingDirectory || undefined
-      };
+      return { success: true, outputPath: this.outputPath };
 
-      console.log('🎯 Recording with validated options:', options);
-      
-      const result = await window.electronAPI.screenRecorder.startRecording(options);
-      
-      if (!result.success) {
-        throw new Error(result.error || 'Failed to start recording');
-      }
-      
-      console.log('✅ Recording API call successful:', result);
-      
     } catch (error) {
       console.error('❌ Failed to start recording:', error);
-      
-      updateAppState({
-        isRecording: false,
-        recordingValidated: false,
-        recordingDuration: 0,
-        isPaused: false
-      });
-      
-      setLocalError(error.message || 'Failed to start recording');
-      
-      if (lastToastRef.current) {
-        toast.dismiss(lastToastRef.current);
-        lastToastRef.current = null;
+      this.cleanup();
+      this.lastError = error.message;
+      return { success: false, error: error.message };
+    }
+  }
+
+  buildFFmpegArgs(options) {
+    const {
+      screenId = '1',
+      audioInputId = '0',
+      includeMicrophone = true,
+      includeSystemAudio = false,
+      videoQuality = 'medium'
+    } = options;
+
+    const args = ['-y']; // Overwrite output file
+
+    if (process.platform === 'darwin') {
+      // macOS using avfoundation
+      if (includeMicrophone) {
+        args.push('-f', 'avfoundation', '-i', `${screenId}:${audioInputId}`);
+      } else {
+        args.push('-f', 'avfoundation', '-i', `${screenId}:`);
       }
+    } else if (process.platform === 'win32') {
+      // Windows using gdigrab and dshow
+      args.push('-f', 'gdigrab', '-i', 'desktop');
+      if (includeMicrophone) {
+        args.push('-f', 'dshow', '-i', `audio="Default Audio Device"`);
+      }
+    } else {
+      // Linux using x11grab and alsa
+      args.push('-f', 'x11grab', '-i', ':0.0');
+      if (includeMicrophone) {
+        args.push('-f', 'alsa', '-i', 'default');
+      }
+    }
+
+    // Video encoding settings
+    args.push('-c:v', 'libx264');
+    args.push('-preset', 'fast');
+    args.push('-crf', '23');
+
+    // Audio encoding settings
+    if (includeMicrophone) {
+      args.push('-c:a', 'aac');
+      args.push('-b:a', '128k');
+    }
+
+    // Frame rate
+    args.push('-r', '30');
+
+    // Output file
+    args.push(this.outputPath);
+
+    return args;
+  }
+
+  setupProcessHandlers() {
+    if (!this.recordingProcess) return;
+
+    this.recordingProcess.stdout.on('data', (data) => {
+      console.log('📹 FFmpeg stdout:', data.toString());
+    });
+
+    this.recordingProcess.stderr.on('data', (data) => {
+      const output = data.toString();
+      console.log('📹 FFmpeg stderr:', output);
       
-      const errorInfo = getErrorMessage(error, deviceManager.selectedScreen, deviceManager.selectedAudioInput);
-      toast.error(errorInfo.message);
-    }
-  }, [appState.isRecording, deviceManager, recordingSettings, updateAppState]);
+      // Parse for errors
+      if (output.includes('Error') || output.includes('failed')) {
+        console.error('❌ FFmpeg error detected:', output);
+      }
+    });
 
-  const handleStopRecording = useCallback(async () => {
-    if (!window.electronAPI?.screenRecorder?.stopRecording) {
-      setLocalError('Screen recording API not available');
-      return;
-    }
+    this.recordingProcess.on('close', (code) => {
+      console.log(`📹 FFmpeg process closed with code: ${code}`);
+      this.hasActiveProcess = false;
+      
+      if (this.isRecording) {
+        if (code === 0) {
+          this.emit('completed', {
+            outputPath: this.outputPath,
+            duration: this.duration,
+            audioPath: this.outputPath // For transcription
+          });
+        } else {
+          this.lastError = `FFmpeg process exited with code ${code}`;
+          this.emit('error', {
+            error: this.lastError,
+            code
+          });
+        }
+        this.cleanup();
+      }
+    });
 
-    if (!appState.isRecording) {
-      toast.warning('No recording in progress');
-      return;
+    this.recordingProcess.on('error', (error) => {
+      console.error('❌ FFmpeg process error:', error);
+      this.lastError = error.message;
+      this.emit('error', {
+        error: error.message
+      });
+      this.cleanup();
+    });
+  }
+
+  startDurationTimer() {
+    if (this.durationTimer) return;
+    
+    this.durationTimer = setInterval(() => {
+      if (this.isRecording && !this.isPaused) {
+        this.duration = Date.now() - this.startTime;
+        this.emit('progress', { duration: this.duration });
+      }
+    }, 1000);
+  }
+
+  stopDurationTimer() {
+    if (this.durationTimer) {
+      clearInterval(this.durationTimer);
+      this.durationTimer = null;
+    }
+  }
+
+  async validateRecording() {
+    try {
+      if (this.outputPath && await this.fileExists(this.outputPath)) {
+        const stats = await fs.stat(this.outputPath);
+        if (stats.size > 1024) { // File is growing
+          this.recordingValidated = true;
+          this.emit('validated');
+          console.log('✅ Recording validated');
+        }
+      }
+    } catch (error) {
+      console.warn('⚠️ Recording validation failed:', error);
+    }
+  }
+
+  async fileExists(filepath) {
+    try {
+      await fs.access(filepath);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async stopRecording() {
+    if (!this.isRecording) {
+      return { success: true, message: 'No recording in progress', wasAlreadyStopped: true };
     }
 
     try {
-      setLocalError(null);
-      console.log('⏹️ Stopping enhanced screen recording...');
+      console.log('⏹️ Stopping recording...');
       
-      const result = await window.electronAPI.screenRecorder.stopRecording();
-      
-      if (!result.success && !result.wasAlreadyStopped) {
-        throw new Error(result.error || 'Failed to stop recording');
+      if (this.recordingProcess) {
+        // Send SIGTERM for graceful shutdown
+        this.recordingProcess.kill('SIGTERM');
+        
+        // Force kill after timeout
+        setTimeout(() => {
+          if (this.recordingProcess && !this.recordingProcess.killed) {
+            this.recordingProcess.kill('SIGKILL');
+          }
+        }, 5000);
       }
-      
-      console.log('✅ Recording stopped successfully:', result);
-      
+
+      return { success: true };
+
     } catch (error) {
       console.error('❌ Failed to stop recording:', error);
-      
-      if (error.message?.includes('No recording in progress')) {
-        updateAppState({
-          isRecording: false,
-          recordingValidated: false,
-          recordingDuration: 0,
-          isPaused: false
-        });
-        setLocalError(null);
-        toast.info('Recording was already stopped');
-      } else {
-        setLocalError(error.message || 'Failed to stop recording');
-        toast.error('Failed to stop recording: ' + error.message);
-      }
+      this.lastError = error.message;
+      return { success: false, error: error.message };
     }
-  }, [appState.isRecording, updateAppState]);
+  }
 
-  const handlePauseResume = useCallback(async () => {
-    if (!window.electronAPI?.screenRecorder) {
-      setLocalError('Screen recording API not available');
-      return;
-    }
-
-    if (!appState.isRecording || !appState.recordingValidated) {
-      toast.warning('No validated recording in progress');
-      return;
+  async pauseRecording() {
+    if (!this.isRecording || this.isPaused) {
+      return { success: false, error: 'Cannot pause - not recording or already paused' };
     }
 
     try {
-      setLocalError(null);
-      
-      if (appState.isPaused) {
-        console.log('▶️ Resuming recording...');
-        const result = await window.electronAPI.screenRecorder.resumeRecording();
-        if (result.success) {
-          updateAppState({ isPaused: false });
-          toast.success('▶️ Recording resumed');
-        } else {
-          throw new Error(result.error || 'Failed to resume');
-        }
-      } else {
-        console.log('⏸️ Pausing recording...');
-        const result = await window.electronAPI.screenRecorder.pauseRecording();
-        if (result.success) {
-          updateAppState({ isPaused: true });
-          toast.success('⏸️ Recording paused');
-        } else {
-          throw new Error(result.error || 'Failed to pause');
+      this.isPaused = true;
+      this.emit('paused');
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  }
+
+  async resumeRecording() {
+    if (!this.isRecording || !this.isPaused) {
+      return { success: false, error: 'Cannot resume - not recording or not paused' };
+    }
+
+    try {
+      this.isPaused = false;
+      this.emit('resumed');
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  }
+
+  async getAvailableScreens() {
+    // Return mock data - in a real implementation, you'd detect actual screens
+    return [
+      { id: '1', name: 'Display 1 (Primary)' },
+      { id: '2', name: 'Display 2' }
+    ];
+  }
+
+  async getRecordings() {
+    try {
+      const files = await fs.readdir(this.tempDir);
+      const recordings = files
+        .filter(file => file.endsWith('.mp4'))
+        .map(file => ({
+          name: file,
+          path: path.join(this.tempDir, file),
+          createdAt: new Date().toISOString()
+        }));
+      return recordings;
+    } catch (error) {
+      console.error('Failed to get recordings:', error);
+      return [];
+    }
+  }
+
+  async deleteRecording(filePath) {
+    try {
+      await fs.unlink(filePath);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  }
+
+  getStatus() {
+    return {
+      isRecording: this.isRecording,
+      isPaused: this.isPaused,
+      recordingValidated: this.recordingValidated,
+      duration: this.duration,
+      hasActiveProcess: this.hasActiveProcess,
+      lastError: this.lastError,
+      availableDevices: {
+        screens: ['1', '2'],
+        audio: ['0', '1'],
+        deviceNames: {
+          screens: {
+            '1': 'Display 1 (Primary)',
+            '2': 'Display 2'
+          },
+          audio: {
+            '0': 'Default Audio Input',
+            '1': 'Secondary Audio Input'
+          }
         }
       }
-    } catch (error) {
-      console.error('❌ Failed to pause/resume recording:', error);
-      setLocalError(error.message || 'Failed to pause/resume recording');
-      toast.error('Failed to pause/resume: ' + error.message);
-    }
-  }, [appState.isRecording, appState.recordingValidated, appState.isPaused, updateAppState]);
+    };
+  }
 
-  return {
-    // State
-    apiStatus,
-    localError,
+  forceCleanup() {
+    console.log('🧹 Force cleanup requested');
+    this.cleanup();
+    return { success: true, message: 'Cleanup completed' };
+  }
+
+  cleanup() {
+    console.log('🧹 Cleaning up screen recorder');
+    this.isRecording = false;
+    this.isPaused = false;
+    this.recordingValidated = false;
+    this.hasActiveProcess = false;
+    this.stopDurationTimer();
     
-    // Actions
-    handleStartRecording,
-    handleStopRecording,
-    handlePauseResume,
-    cleanup
-  };
-};
+    if (this.recordingProcess && !this.recordingProcess.killed) {
+      try {
+        this.recordingProcess.kill('SIGKILL');
+      } catch (error) {
+        console.warn('Failed to kill recording process:', error);
+      }
+    }
+    this.recordingProcess = null;
+  }
+}
+
+module.exports = ScreenRecorder;
