@@ -133,10 +133,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
     startRecording: createSafeIPC('audio:startRecording'),
     stopRecording: createSafeIPC('audio:stopRecording'),
     getWaveform: createSafeIPC('audio:getWaveform'),
-    
+
     // Audio events
     onData: createEventListener('audio:data'),
     onLevel: createEventListener('audio:level')
+  },
+
+  screenRecorder: {
+    startRecording: createSafeIPC('screenRecorder:startRecording'),
+    stopRecording: createSafeIPC('screenRecorder:stopRecording'),
+    pauseRecording: createSafeIPC('screenRecorder:pauseRecording'),
+    resumeRecording: createSafeIPC('screenRecorder:resumeRecording')
   },
 
   // Settings

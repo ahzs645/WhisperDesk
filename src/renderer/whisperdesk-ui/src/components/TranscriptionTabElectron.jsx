@@ -778,28 +778,6 @@ export function TranscriptionTabElectron() {
     }
   }
 
-  const handlePauseResume = async () => {
-    if (!window.electronAPI?.screenRecorder?.pauseRecording) {
-      toast.error('Screen recording API not available')
-      return
-    }
-
-    try {
-      if (isPaused) {
-        await window.electronAPI.screenRecorder.resumeRecording()
-        setIsPaused(false)
-        toast.success('▶️ Recording resumed')
-      } else {
-        await window.electronAPI.screenRecorder.pauseRecording()
-        setIsPaused(true)
-        toast.warning('⏸️ Recording paused')
-      }
-    } catch (err) {
-      console.error(err)
-      toast.error('Failed to toggle pause: ' + err.message)
-    }
-  }
-
   const handleDragOver = (e) => {
     e.preventDefault()
     setDragOver(true)
