@@ -4,6 +4,7 @@ const path = require('path');
 const fs = require('fs');
 const { autoUpdater } = require('electron-updater');
 const Store = require('electron-store');
+const DeviceManager = require('./services/device-manager');
 
 console.log('🚀 WhisperDesk Enhanced starting...');
 console.log('🚀 Platform:', process.platform);
@@ -51,8 +52,8 @@ function setupAllIpcHandlers() {
   // Basic IPC handlers that should always work
   setupBasicIpcHandlers();
   
-  // 🔴 CRITICAL FIX: Always setup screen recorder handlers, even with fallbacks
-  setupScreenRecorderHandlersAlways();
+  // 🔴 UPDATED: Setup enhanced screen recorder handlers
+  setupEnhancedScreenRecorderHandlers();
   
   console.log('✅ All IPC handlers set up');
 }
@@ -87,50 +88,185 @@ function setupBasicIpcHandlers() {
   ipcMain.handle('debug:test', () => ({ success: true, message: 'Enhanced IPC working!' }));
 }
 
-// 🔴 CRITICAL FIX: Setup screen recorder handlers with fallbacks
-function setupScreenRecorderHandlersAlways() {
-  console.log('🔧 Setting up screen recorder IPC handlers (with fallbacks)...');
+// ENHANCED Screen Recorder IPC Handlers - REPLACE existing ones
+function setupEnhancedScreenRecorderHandlers() {
+  console.log('🔧 Setting up ENHANCED screen recorder IPC handlers...');
 
-  // Create fallback responses for when service is not available
-  const createFallbackResponse = (operation) => {
-    return {
-      success: false,
-      error: `Screen recorder service not initialized. Try refreshing the page or restart the app.`,
-      operation
-    };
-  };
+  ipcMain.handle('screenRecorder:getAvailableScreens', async () => {
+    try {
+      if (services.deviceManager) {
+        return await services.deviceManager.getAvailableScreens();
+      } else {
+        const { desktopCapturer } = require('electron');
+        const sources = await desktopCapturer.getSources({ types: ['screen'] });
+        return sources.map((source, index) => ({
+          id: source.id,
+          name: source.name || `Screen ${index + 1}`,
+          type: 'screen'
+        }));
+      }
+    } catch (error) {
+      console.error('❌ Failed to get available screens:', error);
+      return [{ id: 'screen:0', name: 'Primary Display', type: 'screen' }];
+    }
+  });
 
-  const createFallbackStatus = () => {
-    return {
-      isRecording: false,
-      isPaused: false,
-      duration: 0,
-      error: 'Screen recorder service not available',
-      availableDevices: { 
-        screens: ['2'], // Provide default fallback
-        audio: ['0'],
-        deviceNames: {
-          screens: { '2': 'Default Screen' },
-          audio: { '0': 'Default Audio' }
-        }
-      },
-      hasActiveProcess: false,
-      recordingValidated: false
-    };
-  };
+  ipcMain.handle('screenRecorder:updateAudioDevices', async (event, audioDevices) => {
+    try {
+      if (services.deviceManager) {
+        services.deviceManager.updateAudioDevices(audioDevices);
+      }
+      return { success: true };
+    } catch (error) {
+      console.error('❌ Failed to update audio devices:', error);
+      return { success: false, error: error.message };
+    }
+  });
 
-  // 🔴 ALWAYS register these handlers, with service checks
-  ipcMain.handle('screenRecorder:startRecording', async (event, opts) => {
+  ipcMain.handle('screenRecorder:validateDevices', async (event, screenId, audioId) => {
+    try {
+      if (services.deviceManager) {
+        return services.deviceManager.validateDeviceSelection(screenId, audioId);
+      }
+      return { valid: true, issues: [] };
+    } catch (error) {
+      console.error('❌ Failed to validate devices:', error);
+      return { valid: false, issues: [error.message] };
+    }
+  });
+
+  ipcMain.handle('screenRecorder:checkPermissions', async () => {
+    try {
+      if (services.deviceManager) {
+        return await services.deviceManager.checkPermissions();
+      }
+      return { screen: 'unknown', microphone: 'unknown' };
+    } catch (error) {
+      console.error('❌ Failed to check permissions:', error);
+      return { screen: 'unknown', microphone: 'unknown' };
+    }
+  });
+
+  ipcMain.handle('screenRecorder:requestPermissions', async () => {
+    try {
+      if (services.deviceManager) {
+        return await services.deviceManager.requestPermissions();
+      }
+      return { screen: 'granted', microphone: 'granted' };
+    } catch (error) {
+      console.error('❌ Failed to request permissions:', error);
+      return { screen: 'unknown', microphone: 'unknown' };
+    }
+  });
+
+  ipcMain.handle('screenRecorder:startRecording', async (event, options) => {
     try {
       if (services.screenRecorder && typeof services.screenRecorder.startRecording === 'function') {
-        return await services.screenRecorder.startRecording(opts);
+        if (services.deviceManager) {
+          const validation = services.deviceManager.validateDeviceSelection(
+            options.screenId,
+            options.audioInputId
+          );
+
+          if (!validation.valid) {
+            return {
+              success: false,
+              error: `Device validation failed: ${validation.issues.join(', ')}`,
+              type: 'validation_error'
+            };
+          }
+        }
+
+        return await services.screenRecorder.startRecording(options);
       } else {
-        console.warn('⚠️ Screen recorder service not available for startRecording');
-        return createFallbackResponse('start');
+        console.warn('⚠️ Screen recorder service not available');
+        return {
+          success: false,
+          error: 'Screen recorder service not available. Please restart the application.',
+          type: 'service_unavailable'
+        };
       }
     } catch (error) {
       console.error('❌ Failed to start recording:', error);
-      return { success: false, error: error.message, type: 'start_error' };
+      return {
+        success: false,
+        error: error.message,
+        type: 'start_error',
+        details: {
+          platform: process.platform,
+          timestamp: new Date().toISOString()
+        }
+      };
+    }
+  });
+
+  ipcMain.handle('screenRecorder:validateRecording', async () => {
+    try {
+      if (services.screenRecorder && typeof services.screenRecorder.validateRecording === 'function') {
+        services.screenRecorder.validateRecording();
+        return { success: true };
+      }
+      return { success: false, error: 'Screen recorder service not available' };
+    } catch (error) {
+      console.error('❌ Failed to validate recording:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('screenRecorder:handleError', async (event, errorData) => {
+    try {
+      if (services.screenRecorder && typeof services.screenRecorder.handleRecordingError === 'function') {
+        services.screenRecorder.handleRecordingError(errorData);
+        return { success: true };
+      }
+      return { success: false, error: 'Screen recorder service not available' };
+    } catch (error) {
+      console.error('❌ Failed to handle recording error:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('screenRecorder:getStatus', () => {
+    try {
+      if (services.screenRecorder && typeof services.screenRecorder.getStatus === 'function') {
+        const status = services.screenRecorder.getStatus();
+        if (services.deviceManager) {
+          const deviceInfo = services.deviceManager.getFormattedDevices();
+          status.availableDevices = deviceInfo;
+        }
+        console.log('📊 Enhanced screen recorder status requested:', status);
+        return status;
+      } else {
+        console.warn('⚠️ Screen recorder service not available, returning fallback status');
+        const fallbackStatus = {
+          isRecording: false,
+          isPaused: false,
+          duration: 0,
+          error: 'Screen recorder service not available',
+          availableDevices: {
+            screens: ['screen:0'],
+            audio: ['default'],
+            deviceNames: {
+              screens: { 'screen:0': 'Primary Display' },
+              audio: { 'default': 'Default Audio Input' }
+            }
+          },
+          hasActiveProcess: false,
+          recordingValidated: false
+        };
+        return fallbackStatus;
+      }
+    } catch (error) {
+      console.error('❌ Failed to get recording status:', error);
+      return {
+        isRecording: false,
+        isPaused: false,
+        duration: 0,
+        error: error.message,
+        availableDevices: { screens: [], audio: [] },
+        hasActiveProcess: false,
+        recordingValidated: false
+      };
     }
   });
 
@@ -139,7 +275,6 @@ function setupScreenRecorderHandlersAlways() {
       if (services.screenRecorder && typeof services.screenRecorder.stopRecording === 'function') {
         return await services.screenRecorder.stopRecording();
       } else {
-        console.warn('⚠️ Screen recorder service not available for stopRecording');
         return { success: true, message: 'No recording was in progress' };
       }
     } catch (error) {
@@ -148,7 +283,7 @@ function setupScreenRecorderHandlersAlways() {
     }
   });
 
-  ipcMain.handle('screenRecorder:pauseRecording', async (event) => {
+  ipcMain.handle('screenRecorder:pauseRecording', async () => {
     try {
       if (services.screenRecorder && typeof services.screenRecorder.pauseRecording === 'function') {
         return services.screenRecorder.pauseRecording();
@@ -161,7 +296,7 @@ function setupScreenRecorderHandlersAlways() {
     }
   });
 
-  ipcMain.handle('screenRecorder:resumeRecording', async (event) => {
+  ipcMain.handle('screenRecorder:resumeRecording', async () => {
     try {
       if (services.screenRecorder && typeof services.screenRecorder.resumeRecording === 'function') {
         return services.screenRecorder.resumeRecording();
@@ -174,39 +309,7 @@ function setupScreenRecorderHandlersAlways() {
     }
   });
 
-  // 🔴 MOST IMPORTANT: Always provide getStatus, even with fallback
-  ipcMain.handle('screenRecorder:getStatus', (event) => {
-    try {
-      if (services.screenRecorder && typeof services.screenRecorder.getStatus === 'function') {
-        const status = services.screenRecorder.getStatus();
-        console.log('📊 Screen recorder status requested:', status);
-        return status;
-      } else {
-        console.warn('⚠️ Screen recorder service not available, returning fallback status');
-        const fallbackStatus = createFallbackStatus();
-        console.log('📊 Fallback status returned:', fallbackStatus);
-        return fallbackStatus;
-      }
-    } catch (error) {
-      console.error('❌ Failed to get recording status:', error);
-      return createFallbackStatus();
-    }
-  });
-
-  ipcMain.handle('screenRecorder:getAvailableScreens', async (event) => {
-    try {
-      if (services.screenRecorder && typeof services.screenRecorder.getAvailableScreens === 'function') {
-        return await services.screenRecorder.getAvailableScreens();
-      } else {
-        return [{ id: '2', name: 'Default Screen' }];
-      }
-    } catch (error) {
-      console.error('❌ Failed to get available screens:', error);
-      return [{ id: '2', name: 'Default Screen' }];
-    }
-  });
-
-  ipcMain.handle('screenRecorder:getRecordings', async (event) => {
+  ipcMain.handle('screenRecorder:getRecordings', async () => {
     try {
       if (services.screenRecorder && typeof services.screenRecorder.getRecordings === 'function') {
         return await services.screenRecorder.getRecordings();
@@ -232,7 +335,7 @@ function setupScreenRecorderHandlersAlways() {
     }
   });
 
-  ipcMain.handle('screenRecorder:forceCleanup', (event) => {
+  ipcMain.handle('screenRecorder:forceCleanup', () => {
     try {
       if (services.screenRecorder && typeof services.screenRecorder.forceCleanup === 'function') {
         services.screenRecorder.forceCleanup();
@@ -246,7 +349,7 @@ function setupScreenRecorderHandlersAlways() {
     }
   });
 
-  console.log('✅ Screen recorder IPC handlers set up (with fallbacks)');
+  console.log('✅ Enhanced screen recorder IPC handlers set up');
 }
 
 // Initialize services with graceful error handling
@@ -260,8 +363,11 @@ async function initializeServices() {
     await initializeAudioService();
     await initializeSettingsService();
     await initializeExportService();
-    
-    // 🔴 FIXED: Initialize screen recorder last, and don't fail if it doesn't work
+
+    // 🔴 NEW: Initialize enhanced device manager FIRST
+    await initializeEnhancedDeviceManager();
+
+    // 🔴 FIXED: Initialize screen recorder AFTER device manager
     await initializeEnhancedScreenRecorderSafe();
     
     console.log('✅ Services initialization completed');
@@ -470,6 +576,20 @@ async function initializeExportService() {
       },
       initialize: () => Promise.resolve()
     };
+  }
+}
+
+async function initializeEnhancedDeviceManager() {
+  try {
+    console.log('🔧 Initializing Enhanced Device Manager...');
+    const DeviceManagerClass = require('./services/device-manager');
+    services.deviceManager = new DeviceManagerClass();
+    await services.deviceManager.initialize();
+
+    console.log('✅ Enhanced Device Manager initialized successfully');
+  } catch (error) {
+    console.error('❌ Enhanced Device Manager failed to initialize:', error);
+    console.warn('⚠️ Device manager will use fallback mode');
   }
 }
 
