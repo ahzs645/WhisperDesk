@@ -778,6 +778,52 @@ export function TranscriptionTabElectron() {
     }
   }
 
+  const handlePauseResume = async () => {
+    if (!window.electronAPI?.screenRecorder) {
+      toast.error('Screen recording API not available')
+      return
+    }
+
+    try {
+      if (isPaused) {
+        const result = await window.electronAPI.screenRecorder.resumeRecording()
+        if (result.success) {
+          setIsPaused(false)
+          toast.success('▶️ Recording resumed')
+        } else {
+          toast.error('Failed to resume: ' + result.error)
+        }
+      } else {
+        const result = await window.electronAPI.screenRecorder.pauseRecording()
+        if (result.success) {
+          setIsPaused(true)
+          toast.success('⏸️ Recording paused')
+        } else {
+          toast.error('Failed to pause: ' + result.error)
+        }
+      }
+    } catch (error) {
+      console.error('Failed to pause/resume recording:', error)
+      toast.error('Failed to pause/resume recording: ' + error.message)
+    }
+  }
+
+  const updateRecordingSettings = (key, value) => {
+    updateAppState({
+      recordingSettings: {
+        ...appState.recordingSettings,
+        [key]: value
+      }
+    })
+    
+    // Update local state too
+    if (key === 'includeMicrophone') {
+      setIncludeMicrophone(value)
+    } else if (key === 'includeSystemAudio') {
+      setIncludeSystemAudio(value)
+    }
+  }
+
   const handleDragOver = (e) => {
     e.preventDefault()
     setDragOver(true)
@@ -854,7 +900,7 @@ export function TranscriptionTabElectron() {
                   <Switch
                     id="microphone"
                     checked={includeMicrophone}
-                    onCheckedChange={setIncludeMicrophone}
+                    onCheckedChange={(checked) => updateRecordingSettings('includeMicrophone', checked)}
                   />
                   <Label htmlFor="microphone">Include Microphone</Label>
                 </div>
@@ -862,7 +908,7 @@ export function TranscriptionTabElectron() {
                   <Switch
                     id="system-audio"
                     checked={includeSystemAudio}
-                    onCheckedChange={setIncludeSystemAudio}
+                    onCheckedChange={(checked) => updateRecordingSettings('includeSystemAudio', checked)}
                   />
                   <Label htmlFor="system-audio">Include System Audio</Label>
                 </div>
