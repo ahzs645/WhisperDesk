@@ -84,42 +84,26 @@ function EnhancedTranscriptDisplay({
 
   // Get speaker initials for avatar
   const getSpeakerInitials = (speakerId, speakerLabel) => {
-    if (speakerLabel) {
-      return speakerLabel.split(' ').map(word => word[0]).join('').substring(0, 2).toUpperCase()
-    }
-    if (!speakerId) return 'U'
-    if (speakerId.includes('Speaker') || speakerId.includes('speaker')) {
-      const num = speakerId.match(/\d+/)
-      return num ? `S${num[0]}` : 'S'
-    }
-    return speakerId.substring(0, 2).toUpperCase()
+    if (speakerLabel) return speakerLabel.slice(0, 2).toUpperCase()
+    if (!speakerId) return '??'
+    return speakerId.slice(0, 2).toUpperCase()
   }
 
-  // Get speaker display name
+  // Get speaker name for display
   const getSpeakerName = (speakerId, speakerLabel) => {
     if (speakerLabel) return speakerLabel
     if (!speakerId) return 'Unknown Speaker'
-    if (speakerId.includes('Speaker') || speakerId.includes('speaker')) {
-      const num = speakerId.match(/\d+/)
-      return num ? `Speaker ${num[0]}` : 'Speaker'
-    }
-    return speakerId
+    return `Speaker ${speakerId}`
   }
 
+  // Handle copy all text
   const handleCopyAll = () => {
-    if (!transcriptionResult?.text && !transcriptionResult?.segments) {
-      toast.error('No text to copy')
-      return
-    }
-    
-    const textToCopy = transcriptionResult.text || 
-      transcriptionResult.segments?.map(s => s.text).join(' ') || ''
-    
     if (onCopy) {
-      onCopy(textToCopy)
+      onCopy()
     }
   }
 
+  // Get segments from result
   const segments = transcriptionResult?.segments || []
   const hasContent = segments.length > 0 || transcriptionResult?.text
 
@@ -319,30 +303,15 @@ export function EnhancedTranscriptionTab() {
   const [dragOver, setDragOver] = useState(false)
   
   // Refs for cleanup and toast management
-  const progressCleanupRef = useRef(null)
-  const completeCleanupRef = useRef(null)
-  const errorCleanupRef = useRef(null)
-  const startCleanupRef = useRef(null)
-  const cancelledCleanupRef = useRef(null)
-  const modelUpdateCleanupRef = useRef(null)
-  const modelDeleteCleanupRef = useRef(null)
   const lastToastRef = useRef(null)
   const hasShownCompletionToast = useRef(false)
 
   // Setup auto-transcription listener
   useEffect(() => {
     const cleanup = setupAutoTranscriptionListener()
+    
     return () => {
       cleanup()
-      // Cleanup event handlers
-      if (progressCleanupRef.current) progressCleanupRef.current()
-      if (completeCleanupRef.current) completeCleanupRef.current()
-      if (errorCleanupRef.current) errorCleanupRef.current()
-      if (startCleanupRef.current) startCleanupRef.current()
-      if (cancelledCleanupRef.current) cancelledCleanupRef.current()
-      if (modelUpdateCleanupRef.current) modelUpdateCleanupRef.current()
-      if (modelDeleteCleanupRef.current) modelDeleteCleanupRef.current()
-      
       // Dismiss any active toasts
       if (lastToastRef.current) {
         toast.dismiss(lastToastRef.current)
@@ -373,138 +342,67 @@ export function EnhancedTranscriptionTab() {
     }
   }
 
-  const setupEventHandlers = () => {
-    console.log('Setting up enhanced event handlers...')
-    
-    // Progress handler
-    if (window.electronAPI.transcription.onProgress) {
-      progressCleanupRef.current = window.electronAPI.transcription.onProgress((data) => {
-        console.log('🎯 Enhanced progress received:', data)
-        
-        updateAppState({
-          progress: data.progress || 0,
-          progressMessage: data.message || data.stage || 'Processing...'
-        })
-        
-        // Only show ONE toast when starting
-        if (data.progress === 0 && data.stage === 'starting') {
-          if (lastToastRef.current) {
-            toast.dismiss(lastToastRef.current)
-          }
-          
-          lastToastRef.current = toast.loading('🎵 Transcribing audio...', {
-            duration: Infinity
-          })
-          hasShownCompletionToast.current = false
-        }
-      })
+  const handleStartTranscription = async (isAutoTranscribe = false) => {
+    if (!appState.selectedFile) {
+      toast.error('Please select an audio file first')
+      return
     }
 
-    // Completion handler
-    if (window.electronAPI.transcription.onComplete) {
-      completeCleanupRef.current = window.electronAPI.transcription.onComplete((data) => {
-        console.log('Enhanced completion received:', data)
-        
-        // Dismiss loading toast
-        if (lastToastRef.current) {
-          toast.dismiss(lastToastRef.current)
-          lastToastRef.current = null
-        }
-        
-        if (data.result) {
-          updateAppState({
-            transcription: data.result.text || '',
-            lastTranscriptionResult: data.result,
-            isTranscribing: false,
-            progress: 100,
-            progressMessage: 'Complete!'
-          })
-          
-          // Show success toast with enhanced info
-          if (!hasShownCompletionToast.current) {
-            const segmentCount = data.result.segments?.length || 0
-            const duration = data.result.metadata?.duration
-            
-            let message = `✅ Transcription completed!`
-            if (segmentCount > 0) message += ` ${segmentCount} segments found.`
-            if (duration) message += ` Duration: ${Math.floor(duration)}s.`
-            
-            toast.success(message, { duration: 4000 })
-            hasShownCompletionToast.current = true
-          }
-        } else {
-          updateAppState({
-            isTranscribing: false,
-            progress: 100,
-            progressMessage: 'Completed with no result'
-          })
-          
-          if (!hasShownCompletionToast.current) {
-            toast.warning('Transcription completed but no result received')
-            hasShownCompletionToast.current = true
-          }
-        }
-      })
+    if (!window.electronAPI?.transcription?.processFile) {
+      toast.error('Transcription API not available')
+      return
     }
 
-    // Error handler
-    if (window.electronAPI.transcription.onError) {
-      errorCleanupRef.current = window.electronAPI.transcription.onError((data) => {
-        console.error('Enhanced transcription error:', data)
-        
-        // Dismiss loading toast
-        if (lastToastRef.current) {
-          toast.dismiss(lastToastRef.current)
-          lastToastRef.current = null
-        }
-        
-        updateAppState({
-          isTranscribing: false,
-          progress: 0,
-          progressMessage: 'Error occurred'
-        })
-        
-        toast.error('❌ Transcription failed: ' + (data.error || 'Unknown error'))
-        hasShownCompletionToast.current = true
+    try {
+      setIsLoading(true)
+      
+      // Reset transcription state but keep file
+      updateAppState({
+        transcription: '',
+        isTranscribing: true,
+        progress: 0,
+        progressMessage: isAutoTranscribe ? 'Auto-transcribing...' : 'Starting transcription...',
+        lastTranscriptionResult: null
       })
-    }
+      
+      // Reset completion toast flag
+      hasShownCompletionToast.current = false
 
-    if (window.electronAPI.transcription.onStart) {
-      startCleanupRef.current = window.electronAPI.transcription.onStart((data) => {
-        updateAppState({ activeTranscriptionId: data.transcriptionId, isTranscribing: true })
-      })
-    }
+      const options = {
+        provider: appState.selectedProvider,
+        model: appState.selectedModel,
+        language: 'auto',
+        enableTimestamps: true
+      }
 
-    if (window.electronAPI.transcription.onCancelled) {
-      cancelledCleanupRef.current = window.electronAPI.transcription.onCancelled(() => {
-        updateAppState({ isTranscribing: false, progress: 0, progressMessage: 'Cancelled', activeTranscriptionId: null })
-        if (lastToastRef.current) {
-          toast.dismiss(lastToastRef.current)
-          lastToastRef.current = null
-        }
-        toast.warning('⏹️ Transcription cancelled')
-      })
-    }
+      console.log('Starting enhanced transcription with options:', options)
+      console.log('File path:', appState.selectedFile.path)
 
-    // Model event handlers
-    if (window.electronAPI.model.onDownloadComplete) {
-      modelUpdateCleanupRef.current = window.electronAPI.model.onDownloadComplete(async () => {
-        const installedModels = await window.electronAPI.model.getInstalled()
-        setModels(installedModels)
-        if (!installedModels.some(m => m.id === appState.selectedModel)) {
-          updateAppState({ selectedModel: installedModels[0]?.id || null })
-        }
-      })
-    }
+      if (isAutoTranscribe) {
+        toast.info('🤖 Auto-transcription started from recording')
+      }
 
-    if (window.electronAPI.model.onModelDeleted) {
-      modelDeleteCleanupRef.current = window.electronAPI.model.onModelDeleted(async () => {
-        const installedModels = await window.electronAPI.model.getInstalled()
-        setModels(installedModels)
-        if (!installedModels.some(m => m.id === appState.selectedModel)) {
-          updateAppState({ selectedModel: installedModels[0]?.id || null })
-        }
+      // Process the file
+      await window.electronAPI.transcription.processFile(appState.selectedFile.path, options)
+
+    } catch (error) {
+      console.error('Enhanced transcription failed:', error)
+      
+      // Dismiss any loading toast
+      if (lastToastRef.current) {
+        toast.dismiss(lastToastRef.current)
+        lastToastRef.current = null
+      }
+      
+      updateAppState({
+        isTranscribing: false,
+        progress: 0,
+        progressMessage: 'Failed'
       })
+      
+      toast.error('Transcription failed: ' + error.message)
+    } finally {
+      setIsLoading(false)
     }
   }
 
@@ -586,70 +484,6 @@ export function EnhancedTranscriptionTab() {
 
     updateAppState({ selectedFile: fileInfo })
     toast.success(`📁 File selected: ${file.name}`)
-  }
-
-  const handleStartTranscription = async (isAutoTranscribe = false) => {
-    if (!appState.selectedFile) {
-      toast.error('Please select an audio file first')
-      return
-    }
-
-    if (!window.electronAPI?.transcription?.processFile) {
-      toast.error('Transcription API not available')
-      return
-    }
-
-    try {
-      setIsLoading(true)
-      
-      // Reset transcription state but keep file
-      updateAppState({
-        transcription: '',
-        isTranscribing: true,
-        progress: 0,
-        progressMessage: isAutoTranscribe ? 'Auto-transcribing...' : 'Starting transcription...',
-        lastTranscriptionResult: null
-      })
-      
-      // Reset completion toast flag
-      hasShownCompletionToast.current = false
-
-      const options = {
-        provider: appState.selectedProvider,
-        model: appState.selectedModel,
-        language: 'auto',
-        enableTimestamps: true
-      }
-
-      console.log('Starting enhanced transcription with options:', options)
-      console.log('File path:', appState.selectedFile.path)
-
-      if (isAutoTranscribe) {
-        toast.info('🤖 Auto-transcription started from recording')
-      }
-
-      // Process the file
-      await window.electronAPI.transcription.processFile(appState.selectedFile.path, options)
-
-    } catch (error) {
-      console.error('Enhanced transcription failed:', error)
-      
-      // Dismiss any loading toast
-      if (lastToastRef.current) {
-        toast.dismiss(lastToastRef.current)
-        lastToastRef.current = null
-      }
-      
-      updateAppState({
-        isTranscribing: false,
-        progress: 0,
-        progressMessage: 'Failed'
-      })
-      
-      toast.error('Transcription failed: ' + error.message)
-    } finally {
-      setIsLoading(false)
-    }
   }
 
   const handleStopTranscription = async () => {

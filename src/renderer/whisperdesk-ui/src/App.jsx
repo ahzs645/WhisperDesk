@@ -1,5 +1,5 @@
 // src/renderer/whisperdesk-ui/src/App.jsx - FIXED: Added Recording Indicator
-import React, { useState, useEffect, createContext, useContext } from 'react'
+import React, { useState, useEffect, createContext, useContext, useCallback } from 'react'
 import { Button } from './components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './components/ui/tabs'
@@ -173,20 +173,28 @@ function AppStateProvider({ children }) {
   })
 
   useEffect(() => {
-    setAppState(prev => ({ ...prev, theme }))
-  }, [theme])
+    if (appState.theme !== theme) {
+      setAppState(prev => ({ ...prev, theme }))
+    }
+  }, [theme, appState.theme])
 
-  const updateAppState = (updates) => {
+  const updateAppState = useCallback((updates) => {
+    console.log('🔄 App state update:', updates)
+    
     if (typeof updates.theme !== 'undefined') {
       updateTheme(updates.theme)
       const { theme: _, ...otherUpdates } = updates
       updates = otherUpdates
     }
     
-    setAppState(prev => ({ ...prev, ...updates }))
-  }
+    setAppState(prev => {
+      const newState = { ...prev, ...updates }
+      console.log('📊 New app state:', newState)
+      return newState
+    })
+  }, [updateTheme])
 
-  const resetTranscription = () => {
+  const resetTranscription = useCallback(() => {
     updateAppState({
       transcription: '',
       isTranscribing: false,
@@ -195,9 +203,9 @@ function AppStateProvider({ children }) {
       lastTranscriptionResult: null,
       activeTranscriptionId: null
     })
-  }
+  }, [updateAppState])
 
-  const clearAll = () => {
+  const clearAll = useCallback(() => {
     setAppState(prev => ({
       ...prev,
       selectedFile: null,
@@ -211,19 +219,19 @@ function AppStateProvider({ children }) {
       recordingDuration: 0,
       recordingValidated: false
     }))
-  }
+  }, [])
 
   useEffect(() => {
     const isElectron = typeof window !== 'undefined' && !!window.electronAPI
     if (isElectron !== appState.isElectron) {
       updateAppState({ isElectron })
     }
-  }, [appState.isElectron])
+  }, [appState.isElectron, updateAppState])
 
   // Initialize app when mounted
   useEffect(() => {
     initialize(updateAppState)
-  }, [])
+  }, [initialize, updateAppState])
 
   return (
     <AppStateContext.Provider value={{ 

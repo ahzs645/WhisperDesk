@@ -348,6 +348,31 @@ function setupScreenRecorderEvents() {
   }
 }
 
+function setupTranscriptionEvents() {
+  if (!services.transcriptionService) return;
+
+  try {
+    services.transcriptionService.on('progress', (data) => {
+      mainWindow?.webContents.send('transcription:progress', data);
+    });
+    services.transcriptionService.on('complete', (data) => {
+      mainWindow?.webContents.send('transcription:complete', data);
+    });
+    services.transcriptionService.on('error', (data) => {
+      mainWindow?.webContents.send('transcription:error', data);
+    });
+    services.transcriptionService.on('start', (data) => {
+      mainWindow?.webContents.send('transcription:start', data);
+    });
+    services.transcriptionService.on('cancelled', (data) => {
+      mainWindow?.webContents.send('transcription:cancelled', data);
+    });
+    console.log('✅ Transcription events set up');
+  } catch (error) {
+    console.error('❌ Failed to set up transcription events:', error);
+  }
+}
+
 // Rest of initialization functions (simplified for brevity)
 async function initializeModelManager() {
   try {
@@ -578,6 +603,8 @@ function createWindow() {
   // Window event handlers
   mainWindow.webContents.on('did-finish-load', () => {
     console.log('✅ Renderer finished loading');
+    // Setup transcription events after mainWindow is ready
+    setupTranscriptionEvents();
   });
 
   mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL) => {
