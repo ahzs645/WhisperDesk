@@ -1,4 +1,4 @@
-// src/main/services/screen-recorder.js - FIXED VERSION 2
+// src/main/services/screen-recorder.js - COMPREHENSIVE FIX
 const { desktopCapturer, systemPreferences } = require('electron');
 const path = require('path');
 const fs = require('fs').promises;
@@ -19,6 +19,12 @@ class EnhancedScreenRecorder extends EventEmitter {
         this.recordingsDir = this.getRecordingsDirectory();
         this.ffmpegPath = this.getFFmpegPath();
         this.availableDevices = null;
+        this.lastError = null;
+        
+        // NEW: Add process monitoring
+        this.processMonitorInterval = null;
+        this.recordingValidated = false;
+        this.startupTimeout = null;
     }
 
     async initialize() {
@@ -27,7 +33,7 @@ class EnhancedScreenRecorder extends EventEmitter {
             await this.checkPermissions();
             await this.verifyFFmpeg();
             
-            // FIXED: Get available devices during initialization
+            // Get available devices during initialization
             await this.detectAvailableDevices();
             
             console.log('Enhanced screen recorder initialized');
@@ -112,7 +118,6 @@ class EnhancedScreenRecorder extends EventEmitter {
         });
     }
 
-    // FIXED: Properly detect available devices
     async detectAvailableDevices() {
         if (this.platform !== 'darwin') {
             this.availableDevices = { screens: ['0'], audio: ['0'] };
@@ -120,7 +125,6 @@ class EnhancedScreenRecorder extends EventEmitter {
         }
 
         return new Promise((resolve, reject) => {
-            // List all available AVFoundation devices
             const listProcess = spawn(this.ffmpegPath, [
                 '-f', 'avfoundation', 
                 '-list_devices', 'true', 
@@ -141,7 +145,6 @@ class EnhancedScreenRecorder extends EventEmitter {
             listProcess.on('close', (code) => {
                 console.log('Device detection output:', errorOutput);
                 
-                // Parse the device list from stderr (FFmpeg outputs device list to stderr)
                 const devices = this.parseAVFoundationDevices(errorOutput);
                 this.availableDevices = devices;
                 
@@ -151,7 +154,6 @@ class EnhancedScreenRecorder extends EventEmitter {
 
             listProcess.on('error', (error) => {
                 console.error('Device detection failed:', error);
-                // Fallback to default devices
                 this.availableDevices = { screens: ['0'], audio: ['0'] };
                 resolve(this.availableDevices);
             });
@@ -179,7 +181,6 @@ class EnhancedScreenRecorder extends EventEmitter {
                 continue;
             }
 
-            // Parse device lines like: [0] Capture screen 0
             const deviceMatch = line.match(/\[(\d+)\]\s+(.+)/);
             if (deviceMatch && currentSection) {
                 const deviceId = deviceMatch[1];
@@ -193,7 +194,6 @@ class EnhancedScreenRecorder extends EventEmitter {
             }
         }
 
-        // Ensure we have at least default devices
         if (devices.screens.length === 0) devices.screens.push('0');
         if (devices.audio.length === 0) devices.audio.push('0');
 
@@ -219,14 +219,20 @@ class EnhancedScreenRecorder extends EventEmitter {
     }
 
     async startRecording(options = {}) {
+        // Check if already recording and clean state
         if (this.isRecording) {
             throw new Error('Recording is already in progress');
         }
 
+        // Clear any previous state
+        this.forceCleanup();
+        this.lastError = null;
+        this.recordingValidated = false;
+
         const {
             screenId = 'default',
             includeMicrophone = true,
-            includeSystemAudio = false, // Default to false as it's complex
+            includeSystemAudio = false,
             audioQuality = 'medium',
             videoQuality = 'medium',
             audioPath = null
@@ -255,28 +261,64 @@ class EnhancedScreenRecorder extends EventEmitter {
                 stdio: ['pipe', 'pipe', 'pipe']
             });
 
-            // FIXED: Proper event handler setup
+            // Set up event handlers before setting state
             this.setupRecordingHandlers();
             
-            // FIXED: Set state immediately after starting process
-            this.isRecording = true;
-            this.isPaused = false;
-            this.recordingStartTime = Date.now();
+            // NEW: Wait for recording validation before confirming success
+            return new Promise((resolve, reject) => {
+                // Set up validation timeout
+                this.startupTimeout = setTimeout(() => {
+                    if (!this.recordingValidated) {
+                        const error = this.lastError || 'Recording failed to start - no frames captured within 10 seconds';
+                        console.error('❌ Recording startup timeout:', error);
+                        this.forceCleanup();
+                        reject(new Error(error));
+                    }
+                }, 10000);
 
-            this.emit('started', { 
-                outputPath: this.outputPath,
-                audioPath: this.audioOutputPath 
+                // Handle early process exit
+                const handleEarlyExit = (code) => {
+                    if (!this.recordingValidated) {
+                        clearTimeout(this.startupTimeout);
+                        const error = this.lastError || `FFmpeg exited early with code ${code}`;
+                        console.error('❌ Early FFmpeg exit:', error);
+                        this.forceCleanup();
+                        reject(new Error(error));
+                    }
+                };
+
+                // Handle startup success
+                const handleValidation = () => {
+                    clearTimeout(this.startupTimeout);
+                    this.recordingProcess.off('close', handleEarlyExit);
+                    
+                    // NOW set the recording state
+                    this.isRecording = true;
+                    this.isPaused = false;
+                    this.recordingStartTime = Date.now();
+
+                    this.emit('started', { 
+                        outputPath: this.outputPath,
+                        audioPath: this.audioOutputPath 
+                    });
+
+                    resolve({
+                        success: true,
+                        outputPath: this.outputPath,
+                        audioPath: this.audioOutputPath,
+                        message: 'Screen recording started successfully'
+                    });
+                };
+
+                // Monitor for early exit
+                this.recordingProcess.once('close', handleEarlyExit);
+                
+                // Monitor for validation
+                this.once('recording-validated', handleValidation);
             });
 
-            return {
-                success: true,
-                outputPath: this.outputPath,
-                audioPath: this.audioOutputPath,
-                message: 'Screen recording started successfully'
-            };
-
         } catch (error) {
-            this.cleanup();
+            this.forceCleanup();
             throw error;
         }
     }
@@ -312,7 +354,7 @@ class EnhancedScreenRecorder extends EventEmitter {
         // Main video output
         args.push(outputPath);
 
-        // FIXED: Only add audio output if we have microphone
+        // Only add audio output if we have microphone
         if (audioPath && includeMicrophone) {
             args.push('-map', '0:a', '-c:a', 'pcm_s16le', '-ar', '16000', '-ac', '1', audioPath);
         }
@@ -324,27 +366,28 @@ class EnhancedScreenRecorder extends EventEmitter {
         const { screenId, includeMicrophone, includeSystemAudio } = options;
         let args = [];
 
-        // Use detected devices or fallback
-        const screenDevice = this.availableDevices?.screens?.[0] || '0';
+        // NEW: Better device selection
+        const screenDevice = this.availableDevices?.screens?.[0] || '1';  // Changed from '0' to '1'
         const audioDevice = this.availableDevices?.audio?.[0] || '0';
 
         args.push('-f', 'avfoundation');
         
         if (includeMicrophone) {
-            // FIXED: Use detected screen and audio device
             args.push('-i', `${screenDevice}:${audioDevice}`);
             console.log(`Using screen device ${screenDevice} and audio device ${audioDevice}`);
         } else {
-            // Screen only, no audio
             args.push('-i', `${screenDevice}:none`);
             console.log(`Using screen device ${screenDevice} with no audio`);
         }
 
-        // FIXED: Proper video settings for macOS
+        // NEW: More conservative video settings
         args.push('-c:v', 'libx264');
         args.push('-pix_fmt', 'yuv420p');
-        args.push('-r', '30'); // Fixed framerate to exactly 30
-        args.push('-video_size', '1920x1080'); // Set explicit video size
+        args.push('-framerate', '15');  // Reduced from 30 to be more reliable
+        args.push('-preset', 'ultrafast');  // Faster encoding
+        
+        // Let FFmpeg auto-detect resolution
+        // Don't specify video_size to avoid resolution conflicts
 
         return args;
     }
@@ -354,7 +397,7 @@ class EnhancedScreenRecorder extends EventEmitter {
         let args = [];
 
         args.push('-f', 'gdigrab');
-        args.push('-framerate', '30');
+        args.push('-framerate', '15');  // Reduced for reliability
         args.push('-offset_x', '0');
         args.push('-offset_y', '0');
         args.push('-video_size', '1920x1080');
@@ -375,7 +418,7 @@ class EnhancedScreenRecorder extends EventEmitter {
         const display = process.env.DISPLAY || ':0';
         
         args.push('-f', 'x11grab');
-        args.push('-framerate', '30');
+        args.push('-framerate', '15');  // Reduced for reliability
         args.push('-video_size', '1920x1080');
         args.push('-i', display + '+0,0');
 
@@ -390,7 +433,6 @@ class EnhancedScreenRecorder extends EventEmitter {
     getQualitySettings(videoQuality, audioQuality) {
         const settings = [];
 
-        // Video quality settings
         switch (videoQuality) {
             case 'low':
                 settings.push('-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '28');
@@ -405,64 +447,155 @@ class EnhancedScreenRecorder extends EventEmitter {
                 settings.push('-c:v', 'libx264', '-preset', 'fast', '-crf', '23');
         }
 
-        // Audio quality settings
-        switch (audioQuality) {
-            case 'low':
-                settings.push('-c:a', 'aac', '-b:a', '128k');
-                break;
-            case 'medium':
-                settings.push('-c:a', 'aac', '-b:a', '192k');
-                break;
-            case 'high':
-                settings.push('-c:a', 'aac', '-b:a', '256k');
-                break;
-            default:
-                settings.push('-c:a', 'aac', '-b:a', '192k');
+        if (audioQuality) {
+            switch (audioQuality) {
+                case 'low':
+                    settings.push('-c:a', 'aac', '-b:a', '128k');
+                    break;
+                case 'medium':
+                    settings.push('-c:a', 'aac', '-b:a', '192k');
+                    break;
+                case 'high':
+                    settings.push('-c:a', 'aac', '-b:a', '256k');
+                    break;
+                default:
+                    settings.push('-c:a', 'aac', '-b:a', '192k');
+            }
         }
 
         return settings;
     }
 
-    // FIXED: Proper event handler setup with error handling
+    // NEW: Improved event handler setup with validation
     setupRecordingHandlers() {
+        if (!this.recordingProcess) return;
+
+        let frameCount = 0;
+        let errorBuffer = '';
+
         this.recordingProcess.stdout.on('data', (data) => {
             console.log('FFmpeg stdout:', data.toString());
         });
 
         this.recordingProcess.stderr.on('data', (data) => {
             const output = data.toString();
+            errorBuffer += output;
             console.log('FFmpeg stderr:', output);
+            
+            // NEW: Check for validation (first frame captured)
+            if (!this.recordingValidated) {
+                if (output.includes('frame=') || output.includes('time=')) {
+                    frameCount++;
+                    if (frameCount >= 3) {  // Wait for a few frames to confirm
+                        console.log('✅ Recording validated - frames are being captured');
+                        this.recordingValidated = true;
+                        this.emit('recording-validated');
+                    }
+                }
+                
+                // Check for specific startup errors
+                if (output.includes('Input/output error') || 
+                    output.includes('Selected framerate') && output.includes('is not supported') ||
+                    output.includes('does not support') ||
+                    output.includes('No such file or directory') ||
+                    output.includes('Device or resource busy')) {
+                    
+                    this.lastError = this.extractDetailedError(errorBuffer);
+                    console.error('❌ FFmpeg startup error detected:', this.lastError);
+                }
+            }
+            
             this.parseProgress(output);
         });
 
         this.recordingProcess.on('close', (code) => {
             console.log(`Recording process exited with code ${code}`);
             const wasRecording = this.isRecording;
+            
+            // Clear monitoring
+            if (this.processMonitorInterval) {
+                clearInterval(this.processMonitorInterval);
+                this.processMonitorInterval = null;
+            }
+            
+            // Always clean state on close
             this.isRecording = false;
             this.isPaused = false;
 
-            if (code === 0) {
+            if (code === 0 && wasRecording && this.recordingValidated) {
                 this.emit('completed', {
                     outputPath: this.outputPath,
                     audioPath: this.audioOutputPath,
-                    duration: Date.now() - this.recordingStartTime
+                    duration: this.recordingStartTime ? Date.now() - this.recordingStartTime : 0
                 });
-            } else if (wasRecording) {
-                // Only emit error if we were actually recording
+            } else if (wasRecording || !this.recordingValidated) {
+                // Error occurred
+                const errorMsg = this.lastError || `Recording process failed with code ${code}`;
                 this.emit('error', {
-                    error: `Recording process failed with code ${code}`,
-                    outputPath: this.outputPath
+                    error: errorMsg,
+                    outputPath: this.outputPath,
+                    code: code
                 });
             }
+            
+            this.recordingProcess = null;
         });
 
         this.recordingProcess.on('error', (error) => {
             console.error('Recording process error:', error);
-            this.isRecording = false;
-            this.isPaused = false;
-            this.emit('error', { error: error.message });
-            this.cleanup();
+            this.lastError = error.message;
+            this.forceCleanup();
+            this.emit('error', { 
+                error: error.message,
+                type: 'process_error'
+            });
         });
+
+        // NEW: Monitor process health
+        this.startProcessMonitoring();
+    }
+
+    // NEW: Extract more detailed error information
+    extractDetailedError(errorOutput) {
+        const lines = errorOutput.split('\n');
+        
+        // Look for specific error patterns
+        for (const line of lines) {
+            if (line.includes('Input/output error')) {
+                return 'Device access error - please check screen recording permissions and try a different screen/audio device';
+            }
+            if (line.includes('Selected framerate') && line.includes('is not supported')) {
+                return 'Framerate not supported by device - try refreshing devices or using a different display';
+            }
+            if (line.includes('does not support')) {
+                return 'Device configuration not supported - try different audio/video settings';
+            }
+            if (line.includes('No such file or directory')) {
+                return 'Device not found - please refresh devices and try again';
+            }
+            if (line.includes('Device or resource busy')) {
+                return 'Device is busy - close other recording apps and try again';
+            }
+        }
+        
+        return 'Device configuration error - try refreshing devices or check permissions';
+    }
+
+    // NEW: Process health monitoring
+    startProcessMonitoring() {
+        this.processMonitorInterval = setInterval(() => {
+            if (this.recordingProcess && this.isRecording) {
+                // Check if process is still alive
+                if (this.recordingProcess.killed || this.recordingProcess.exitCode !== null) {
+                    console.warn('⚠️ Recording process died unexpectedly');
+                    this.forceCleanup();
+                    this.emit('error', { 
+                        error: 'Recording process died unexpectedly',
+                        type: 'process_died'
+                    });
+                }
+            }
+        }, 5000);
     }
 
     parseProgress(output) {
@@ -480,30 +613,33 @@ class EnhancedScreenRecorder extends EventEmitter {
         }
     }
 
-    // FIXED: Better pause/resume implementation
+    // FIXED: Better pause/resume with process validation
     pauseRecording() {
-        console.log('Pause requested - isRecording:', this.isRecording, 'isPaused:', this.isPaused);
+        console.log('Pause requested - isRecording:', this.isRecording, 'isPaused:', this.isPaused, 'process exists:', !!this.recordingProcess);
         
-        if (!this.isRecording || !this.recordingProcess) {
-            return { success: false, error: 'Not recording' };
+        if (!this.isRecording || !this.recordingProcess || !this.recordingValidated) {
+            return { success: false, error: 'Not recording or recording not validated' };
         }
         
         if (this.isPaused) {
             return { success: false, error: 'Already paused' };
         }
 
+        // Check if process is still alive
+        if (this.recordingProcess.killed || this.recordingProcess.exitCode !== null) {
+            this.forceCleanup();
+            return { success: false, error: 'Recording process has ended' };
+        }
+
         try {
-            // For macOS/Linux: Use SIGSTOP to pause the process
             if (this.platform !== 'win32') {
                 this.recordingProcess.kill('SIGSTOP');
+                this.isPaused = true;
+                this.emit('paused');
+                return { success: true };
             } else {
-                // For Windows: We can't easily pause FFmpeg, so return error
                 return { success: false, error: 'Pause not supported on Windows' };
             }
-            
-            this.isPaused = true;
-            this.emit('paused');
-            return { success: true };
         } catch (err) {
             console.error('Pause failed:', err);
             return { success: false, error: err.message };
@@ -511,27 +647,31 @@ class EnhancedScreenRecorder extends EventEmitter {
     }
 
     resumeRecording() {
-        console.log('Resume requested - isRecording:', this.isRecording, 'isPaused:', this.isPaused);
+        console.log('Resume requested - isRecording:', this.isRecording, 'isPaused:', this.isPaused, 'process exists:', !!this.recordingProcess);
         
-        if (!this.isRecording || !this.recordingProcess) {
-            return { success: false, error: 'Not recording' };
+        if (!this.isRecording || !this.recordingProcess || !this.recordingValidated) {
+            return { success: false, error: 'Not recording or recording not validated' };
         }
         
         if (!this.isPaused) {
             return { success: false, error: 'Not paused' };
         }
 
+        // Check if process is still alive
+        if (this.recordingProcess.killed || this.recordingProcess.exitCode !== null) {
+            this.forceCleanup();
+            return { success: false, error: 'Recording process has ended' };
+        }
+
         try {
-            // For macOS/Linux: Use SIGCONT to resume the process
             if (this.platform !== 'win32') {
                 this.recordingProcess.kill('SIGCONT');
+                this.isPaused = false;
+                this.emit('resumed');
+                return { success: true };
             } else {
                 return { success: false, error: 'Resume not supported on Windows' };
             }
-            
-            this.isPaused = false;
-            this.emit('resumed');
-            return { success: true };
         } catch (err) {
             console.error('Resume failed:', err);
             return { success: false, error: err.message };
@@ -550,11 +690,10 @@ class EnhancedScreenRecorder extends EventEmitter {
                 if (this.recordingProcess) {
                     this.recordingProcess.kill('SIGKILL');
                 }
-                this.cleanup();
+                this.forceCleanup();
                 reject(new Error('Recording stop timeout'));
             }, 10000);
 
-            // FIXED: Better completion handling
             const handleClose = (code) => {
                 clearTimeout(timeout);
                 const result = {
@@ -563,25 +702,23 @@ class EnhancedScreenRecorder extends EventEmitter {
                     audioPath: this.audioOutputPath,
                     duration: this.recordingStartTime ? Date.now() - this.recordingStartTime : 0
                 };
-                this.cleanup();
+                this.forceCleanup();
                 resolve(result);
             };
 
             const handleError = (error) => {
                 clearTimeout(timeout);
-                this.cleanup();
+                this.forceCleanup();
                 reject(error);
             };
 
             this.recordingProcess.once('close', handleClose);
             this.recordingProcess.once('error', handleError);
 
-            // Send graceful termination signal
             try {
                 if (this.platform === 'win32') {
                     this.recordingProcess.stdin.write('q\n');
                 } else {
-                    // If paused, resume first
                     if (this.isPaused) {
                         this.recordingProcess.kill('SIGCONT');
                     }
@@ -594,6 +731,41 @@ class EnhancedScreenRecorder extends EventEmitter {
         });
     }
 
+    // IMPROVED: Force cleanup method
+    forceCleanup() {
+        console.log('🧹 Force cleanup called');
+        
+        // Clear timeouts
+        if (this.startupTimeout) {
+            clearTimeout(this.startupTimeout);
+            this.startupTimeout = null;
+        }
+        
+        if (this.processMonitorInterval) {
+            clearInterval(this.processMonitorInterval);
+            this.processMonitorInterval = null;
+        }
+        
+        // Kill process if still running
+        if (this.recordingProcess && !this.recordingProcess.killed) {
+            try {
+                this.recordingProcess.kill('SIGKILL');
+            } catch (err) {
+                console.warn('Failed to kill recording process:', err);
+            }
+        }
+        
+        // Reset state
+        this.isRecording = false;
+        this.isPaused = false;
+        this.recordingProcess = null;
+        this.outputPath = null;
+        this.audioOutputPath = null;
+        this.recordingStartTime = null;
+        this.lastError = null;
+        this.recordingValidated = false;
+    }
+
     getStatus() {
         return {
             isRecording: this.isRecording,
@@ -602,20 +774,17 @@ class EnhancedScreenRecorder extends EventEmitter {
             outputPath: this.outputPath,
             audioPath: this.audioOutputPath,
             recordingsDirectory: this.recordingsDir,
-            availableDevices: this.availableDevices
+            availableDevices: this.availableDevices,
+            lastError: this.lastError,
+            hasActiveProcess: !!this.recordingProcess,
+            recordingValidated: this.recordingValidated
         };
     }
 
     cleanup() {
-        this.isRecording = false;
-        this.isPaused = false;
-        this.recordingProcess = null;
-        this.outputPath = null;
-        this.audioOutputPath = null;
-        this.recordingStartTime = null;
+        this.forceCleanup();
     }
 
-    // Additional methods remain the same...
     async getRecordings() {
         try {
             const files = await fs.readdir(this.recordingsDir);

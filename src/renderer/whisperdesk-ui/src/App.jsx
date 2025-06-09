@@ -1,18 +1,16 @@
-// src/renderer/whisperdesk-ui/src/App.jsx - Fixed theme handling
+// src/renderer/whisperdesk-ui/src/App.jsx - Using Enhanced Components
 import React, { useState, useEffect, createContext, useContext } from 'react'
 import { Button } from './components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './components/ui/tabs'
 import { Mic, Package, Clock, Settings, Video } from 'lucide-react'
 import { ModelMarketplace } from './components/ModelMarketplace-WebCompatible'
-import { TranscriptionTabElectron } from './components/TranscriptionTabElectron'
-import { ScreenRecorder } from './components/ScreenRecorder'
-import { SettingsTab } from './components/SettingsTab'
+// 🔧 CHANGED: Use the more feature-rich enhanced transcription tab
+import { EnhancedTranscriptionTab } from './components/EnhancedTranscriptDisplay'
+import { EnhancedSettingsTab } from './components/EnhancedSettingsTab'
 import { UnifiedWindowControls } from './components/UnifiedWindowControls'
 import { Toaster } from './components/ui/sonner'
 import './App.css'
-import { Label } from './components/ui/label'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './components/ui/select'
 
 // Create context for app-wide state
 const AppStateContext = createContext()
@@ -25,55 +23,36 @@ export const useAppState = () => {
   return context
 }
 
-// FIXED: Improved theme management
+// Theme management
 const useThemeManager = () => {
   const [theme, setTheme] = useState(() => {
     return localStorage.getItem('theme') || 'system'
   })
 
-  // Helper to apply theme classes to DOM - FIXED VERSION
   const applyThemeToDOM = (themeValue) => {
-    console.log('🎨 Applying theme to DOM:', themeValue)
-    
-    // Remove existing theme classes
     document.documentElement.classList.remove('dark', 'light')
     
     let effectiveTheme = themeValue
     
     if (themeValue === 'system') {
-      // Check system preference
       const systemPrefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
       effectiveTheme = systemPrefersDark ? 'dark' : 'light'
-      console.log('🎨 System theme detected:', effectiveTheme)
     }
     
-    // Only add dark class - light is the default (no class needed)
     if (effectiveTheme === 'dark') {
       document.documentElement.classList.add('dark')
-      console.log('🎨 Added dark class to document')
-    } else {
-      console.log('🎨 Using light theme (no class needed)')
     }
-    
-    // Force a small delay to ensure CSS is applied
-    setTimeout(() => {
-      console.log('🎨 Theme applied, current classes:', document.documentElement.className)
-    }, 10)
   }
 
-  // Apply theme immediately when it changes
   useEffect(() => {
-    console.log('🎨 Theme changing to:', theme)
     applyThemeToDOM(theme)
   }, [theme])
 
-  // Listen for system theme changes
   useEffect(() => {
     if (theme !== 'system') return
 
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
-    const handleSystemThemeChange = (e) => {
-      console.log('🎨 System theme changed, dark mode:', e.matches)
+    const handleSystemThemeChange = () => {
       if (theme === 'system') {
         applyThemeToDOM('system')
       }
@@ -83,13 +62,10 @@ const useThemeManager = () => {
     return () => mediaQuery.removeEventListener('change', handleSystemThemeChange)
   }, [theme])
 
-  // Update theme function
   const updateTheme = (newTheme) => {
-    console.log('🎨 Theme update requested:', newTheme)
     setTheme(newTheme)
     localStorage.setItem('theme', newTheme)
     
-    // Send to Electron main process if available
     if (window.electronAPI?.window?.setTheme) {
       window.electronAPI.window.setTheme(newTheme)
     }
@@ -102,46 +78,31 @@ function AppStateProvider({ children }) {
   const { theme, updateTheme } = useThemeManager()
   
   const [appState, setAppState] = useState({
-    // File selection state
     selectedFile: null,
-    
-    // Transcription state
     transcription: '',
     isTranscribing: false,
     progress: 0,
     progressMessage: '',
     activeTranscriptionId: null,
-    
-    // Settings state
     selectedProvider: 'whisper-native',
     selectedModel: 'whisper-tiny',
-    
-    // Recording state
     isRecording: false,
     recordingSettings: {
       includeMicrophone: true,
       includeSystemAudio: true
     },
-    
-    // Results state
     lastTranscriptionResult: null,
-    
-    // Environment
     isElectron: false,
-    theme: theme // Use theme from theme manager
+    theme: theme
   })
 
-  // Update app state when theme changes
   useEffect(() => {
     setAppState(prev => ({ ...prev, theme }))
   }, [theme])
 
-  // FIXED: Simplified update function that doesn't handle theme directly
   const updateAppState = (updates) => {
-    // Handle theme updates specially
     if (typeof updates.theme !== 'undefined') {
       updateTheme(updates.theme)
-      // Remove theme from updates to avoid state conflicts
       const { theme: _, ...otherUpdates } = updates
       updates = otherUpdates
     }
@@ -149,7 +110,6 @@ function AppStateProvider({ children }) {
     setAppState(prev => ({ ...prev, ...updates }))
   }
 
-  // Reset transcription state (but keep file and settings)
   const resetTranscription = () => {
     updateAppState({
       transcription: '',
@@ -161,7 +121,6 @@ function AppStateProvider({ children }) {
     })
   }
 
-  // Clear everything (new session)
   const clearAll = () => {
     setAppState(prev => ({
       ...prev,
@@ -175,7 +134,6 @@ function AppStateProvider({ children }) {
     }))
   }
 
-  // Detect Electron environment
   useEffect(() => {
     const isElectron = typeof window !== 'undefined' && !!window.electronAPI
     if (isElectron !== appState.isElectron) {
@@ -183,22 +141,20 @@ function AppStateProvider({ children }) {
     }
   }, [appState.isElectron])
 
-  // REMOVED: The problematic Electron theme listener that was causing conflicts
-
   return (
     <AppStateContext.Provider value={{ 
       appState, 
       updateAppState, 
       resetTranscription, 
       clearAll,
-      updateTheme // Expose theme updater directly
+      updateTheme
     }}>
       {children}
     </AppStateContext.Provider>
   )
 }
 
-// App content component (unchanged)
+// App content component
 function AppContent() {
   const { appState } = useAppState();
   const [platform, setPlatform] = useState('unknown');
@@ -212,18 +168,15 @@ function AppContent() {
 
   const isMacOS = platform === 'darwin';
 
-  // Choose the appropriate transcription component
-  const TranscriptionComponent = TranscriptionTabElectron
-
   return (
     <div className="min-h-screen bg-background flex flex-col">
       <Toaster 
         position="bottom-right"
-        expand={false}  // 🔑 KEY FIX: Prevents baseline shifting
+        expand={false}
         richColors={true}
         closeButton={true}
         duration={4000}
-        visibleToasts={4}  // 🔑 KEY FIX: Limits visible toasts
+        visibleToasts={4}
         gap={12}
         offset={16}
       />
@@ -257,7 +210,6 @@ function AppContent() {
           {/* Right side: Status indicator and controls */}
           <div className="header-section header-right">
             <div className="flex items-center space-x-3">
-              {/* Add back the status indicator */}
               <AppStateIndicator />
               
               {/* Windows/Linux: Controls on the right */}
@@ -294,7 +246,8 @@ function AppContent() {
 
           {/* Tab Contents */}
           <TabsContent value="transcribe" className="space-y-6">
-            <TranscriptionComponent />
+            {/* 🔧 CHANGED: Use the enhanced transcription tab */}
+            <EnhancedTranscriptionTab />
           </TabsContent>
 
           <TabsContent value="models" className="space-y-6">
@@ -306,7 +259,7 @@ function AppContent() {
           </TabsContent>
 
           <TabsContent value="settings" className="space-y-6">
-            <SettingsTab />
+            <EnhancedSettingsTab />
           </TabsContent>
         </Tabs>
       </main>
@@ -374,7 +327,6 @@ function HistoryTab() {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        {/* Current Session */}
         {appState.selectedFile || appState.transcription ? (
           <div className="space-y-4">
             <h3 className="font-medium">Current Session</h3>
@@ -412,11 +364,10 @@ function HistoryTab() {
           <p className="text-muted-foreground">No transcriptions yet in this session</p>
         )}
         
-        {/* Placeholder for persistent history */}
         <div className="pt-4 border-t">
           <h3 className="font-medium mb-2">Saved History</h3>
           <p className="text-sm text-muted-foreground">
-            Persisteçnt history across sessions coming soon...
+            Persistent history across sessions coming soon...
           </p>
         </div>
       </CardContent>

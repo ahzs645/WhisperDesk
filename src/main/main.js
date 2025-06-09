@@ -1,4 +1,4 @@
-// src/main/main-simplified.js - Fixed version without glass header and traffic lights
+// src/main/main-simplified.js - Enhanced version with improved screen recording
 const { app, BrowserWindow, ipcMain, dialog, Menu } = require('electron');
 const path = require('path');
 const fs = require('fs');
@@ -55,7 +55,7 @@ async function initializeServices() {
     await initializeAudioService();
     await initializeSettingsService();
     await initializeExportService();
-    await initializeScreenRecorder();
+    await initializeEnhancedScreenRecorder();
     
     console.log('✅ All services initialized successfully');
     return true;
@@ -259,9 +259,10 @@ async function initializeExportService() {
   }
 }
 
-async function initializeScreenRecorder() {
+// ENHANCED: Screen recorder initialization with better error handling
+async function initializeEnhancedScreenRecorder() {
   try {
-    console.log('🔧 Initializing Screen Recorder...');
+    console.log('🔧 Initializing Enhanced Screen Recorder...');
     const ScreenRecorder = require('./services/screen-recorder');
     services.screenRecorder = new ScreenRecorder();
     await services.screenRecorder.initialize();
@@ -279,7 +280,22 @@ async function initializeScreenRecorder() {
     
     services.screenRecorder.on('error', (data) => {
       console.error('❌ Recording error event:', data);
-      mainWindow?.webContents.send('screenRecorder:error', data);
+      
+      // Enhanced error handling - try to provide more context
+      const enhancedError = {
+        ...data,
+        timestamp: new Date().toISOString(),
+        platform: process.platform
+      };
+      
+      // Add suggestions based on error type
+      if (data.error?.includes('Selected framerate') || data.error?.includes('Input/output error')) {
+        enhancedError.suggestion = 'Try refreshing devices or check screen recording permissions';
+      } else if (data.error?.includes('permission')) {
+        enhancedError.suggestion = 'Please grant screen recording and microphone permissions';
+      }
+      
+      mainWindow?.webContents.send('screenRecorder:error', enhancedError);
     });
     
     services.screenRecorder.on('paused', () => {
@@ -296,25 +312,325 @@ async function initializeScreenRecorder() {
       mainWindow?.webContents.send('screenRecorder:progress', data);
     });
     
-    console.log('✅ Screen Recorder initialized');
+    // Set up the enhanced IPC handlers
+    setupEnhancedScreenRecorderHandlers();
+    
+    console.log('✅ Enhanced Screen Recorder initialized successfully');
+    
   } catch (error) {
-    console.error('❌ Screen Recorder failed:', error);
+    console.error('❌ Enhanced Screen Recorder failed to initialize:', error);
     console.warn('⚠️ Using fallback screen recorder');
     
+    // Fallback screen recorder that returns errors
     services.screenRecorder = {
-      startRecording: () => Promise.resolve({ success: false, error: 'Screen recorder not available' }),
-      stopRecording: () => Promise.resolve({ success: false, error: 'Screen recorder not available' }),
-      pauseRecording: () => ({ success: false, error: 'Screen recorder not available' }),
-      resumeRecording: () => ({ success: false, error: 'Screen recorder not available' }),
+      startRecording: () => Promise.resolve({ 
+        success: false, 
+        error: 'Screen recorder initialization failed: ' + error.message 
+      }),
+      stopRecording: () => Promise.resolve({ 
+        success: false, 
+        error: 'Screen recorder not available' 
+      }),
+      pauseRecording: () => ({ 
+        success: false, 
+        error: 'Screen recorder not available' 
+      }),
+      resumeRecording: () => ({ 
+        success: false, 
+        error: 'Screen recorder not available' 
+      }),
       getStatus: () => ({ 
         isRecording: false, 
         isPaused: false, 
         duration: 0, 
-        error: 'Screen recorder not available' 
+        error: 'Screen recorder not available',
+        availableDevices: { screens: ['0'], audio: ['0'] },
+        hasActiveProcess: false
       }),
+      getAvailableScreens: () => Promise.resolve([{ id: '0', name: 'Default Screen' }]),
+      getRecordings: () => Promise.resolve([]),
+      deleteRecording: () => Promise.resolve({ success: false, error: 'Not available' }),
+      forceCleanup: () => {},
       initialize: () => Promise.resolve()
     };
+    
+    // Still set up IPC handlers even with fallback
+    setupEnhancedScreenRecorderHandlers();
   }
+}
+
+// ENHANCED: Screen recorder IPC handlers with proper error handling and state validation
+function setupEnhancedScreenRecorderHandlers() {
+  console.log('🔧 Setting up enhanced screen recorder IPC handlers...');
+
+  // NEW: Add this event handler for recording validation
+  if (services.screenRecorder) {
+    services.screenRecorder.on('recording-validated', (data) => {
+      console.log('✅ Recording validated event');
+      mainWindow?.webContents.send('screenRecorder:validated', data);
+    });
+  }
+
+  ipcMain.handle('screenRecorder:startRecording', async (event, opts) => {
+    try {
+      console.log('🎬 Starting screen recording with options:', opts);
+      
+      // Check if service is available
+      if (!services.screenRecorder) {
+        throw new Error('Screen recorder service not available');
+      }
+      
+      // Check current status first - IMPROVED validation
+      const currentStatus = services.screenRecorder.getStatus();
+      if (currentStatus.isRecording && !currentStatus.lastError) {
+        console.warn('⚠️ Recording already in progress, ignoring start request');
+        return { 
+          success: false, 
+          error: 'Recording already in progress',
+          currentStatus 
+        };
+      }
+      
+      // NEW: Force cleanup any stale state before starting
+      if (currentStatus.hasActiveProcess || currentStatus.lastError) {
+        console.log('🧹 Cleaning up stale recording state before starting');
+        services.screenRecorder.forceCleanup();
+      }
+      
+      const result = await services.screenRecorder.startRecording(opts);
+      console.log('✅ Recording started successfully:', result);
+      return result;
+      
+    } catch (error) {
+      console.error('❌ Failed to start recording:', error);
+      
+      // Ensure clean state after error
+      if (services.screenRecorder) {
+        services.screenRecorder.forceCleanup();
+      }
+      
+      // NEW: Enhanced error response with more context
+      return { 
+        success: false, 
+        error: error.message,
+        type: 'start_error',
+        suggestion: getErrorSuggestion(error.message)
+      };
+    }
+  });
+
+  ipcMain.handle('screenRecorder:stopRecording', async (event) => {
+    try {
+      console.log('⏹️ Stopping screen recording...');
+      
+      if (!services.screenRecorder) {
+        throw new Error('Screen recorder service not available');
+      }
+      
+      // IMPROVED: Check current status with better validation
+      const currentStatus = services.screenRecorder.getStatus();
+      console.log('📊 Current recording status:', currentStatus);
+      
+      if (!currentStatus.isRecording && !currentStatus.hasActiveProcess) {
+        console.warn('⚠️ No recording in progress, cleaning up state');
+        
+        // Force cleanup to ensure clean state
+        services.screenRecorder.forceCleanup();
+        
+        return { 
+          success: true, 
+          message: 'No recording was in progress',
+          wasAlreadyStopped: true 
+        };
+      }
+      
+      const result = await services.screenRecorder.stopRecording();
+      console.log('✅ Recording stopped successfully:', result);
+      return result;
+      
+    } catch (error) {
+      console.error('❌ Failed to stop recording:', error);
+      
+      // Force cleanup on any error
+      if (services.screenRecorder) {
+        services.screenRecorder.forceCleanup();
+      }
+      
+      // If the error is about no recording in progress, return success
+      if (error.message?.includes('No recording in progress')) {
+        return { 
+          success: true, 
+          message: 'Recording was already stopped',
+          wasAlreadyStopped: true 
+        };
+      }
+      
+      return { 
+        success: false, 
+        error: error.message,
+        type: 'stop_error' 
+      };
+    }
+  });
+
+  ipcMain.handle('screenRecorder:pauseRecording', async (event) => {
+    try {
+      console.log('⏸️ Pausing screen recording...');
+      
+      if (!services.screenRecorder) {
+        return { success: false, error: 'Screen recorder service not available' };
+      }
+      
+      // Check current status
+      const currentStatus = services.screenRecorder.getStatus();
+      if (!currentStatus.isRecording) {
+        console.warn('⚠️ Cannot pause: no recording in progress');
+        return { success: false, error: 'No recording in progress' };
+      }
+      
+      if (currentStatus.isPaused) {
+        console.warn('⚠️ Cannot pause: already paused');
+        return { success: false, error: 'Recording is already paused' };
+      }
+      
+      const result = services.screenRecorder.pauseRecording();
+      console.log('Pause result:', result);
+      return result;
+      
+    } catch (error) {
+      console.error('❌ Failed to pause recording:', error);
+      return { 
+        success: false, 
+        error: error.message,
+        type: 'pause_error' 
+      };
+    }
+  });
+
+  ipcMain.handle('screenRecorder:resumeRecording', async (event) => {
+    try {
+      console.log('▶️ Resuming screen recording...');
+      
+      if (!services.screenRecorder) {
+        return { success: false, error: 'Screen recorder service not available' };
+      }
+      
+      // Check current status
+      const currentStatus = services.screenRecorder.getStatus();
+      if (!currentStatus.isRecording) {
+        console.warn('⚠️ Cannot resume: no recording in progress');
+        return { success: false, error: 'No recording in progress' };
+      }
+      
+      if (!currentStatus.isPaused) {
+        console.warn('⚠️ Cannot resume: not paused');
+        return { success: false, error: 'Recording is not paused' };
+      }
+      
+      const result = services.screenRecorder.resumeRecording();
+      console.log('Resume result:', result);
+      return result;
+      
+    } catch (error) {
+      console.error('❌ Failed to resume recording:', error);
+      return { 
+        success: false, 
+        error: error.message,
+        type: 'resume_error' 
+      };
+    }
+  });
+
+  ipcMain.handle('screenRecorder:getStatus', (event) => {
+    try {
+      if (!services.screenRecorder) {
+        return { 
+          isRecording: false, 
+          isPaused: false, 
+          error: 'Screen recorder service not available',
+          availableDevices: { screens: ['0'], audio: ['0'] }
+        };
+      }
+      
+      const status = services.screenRecorder.getStatus();
+      console.log('📊 Screen recorder status requested:', status);
+      return status;
+      
+    } catch (error) {
+      console.error('❌ Failed to get recording status:', error);
+      return { 
+        isRecording: false, 
+        isPaused: false, 
+        error: error.message,
+        availableDevices: { screens: ['0'], audio: ['0'] }
+      };
+    }
+  });
+
+  // ENHANCED: Additional helper handlers
+  ipcMain.handle('screenRecorder:getAvailableScreens', async (event) => {
+    try {
+      if (!services.screenRecorder) {
+        return [{ id: '0', name: 'Default Screen' }];
+      }
+      
+      const screens = await services.screenRecorder.getAvailableScreens();
+      return screens;
+      
+    } catch (error) {
+      console.error('❌ Failed to get available screens:', error);
+      return [{ id: '0', name: 'Default Screen' }];
+    }
+  });
+
+  ipcMain.handle('screenRecorder:getRecordings', async (event) => {
+    try {
+      if (!services.screenRecorder) {
+        return [];
+      }
+      
+      const recordings = await services.screenRecorder.getRecordings();
+      return recordings;
+      
+    } catch (error) {
+      console.error('❌ Failed to get recordings:', error);
+      return [];
+    }
+  });
+
+  ipcMain.handle('screenRecorder:deleteRecording', async (event, filePath) => {
+    try {
+      if (!services.screenRecorder) {
+        throw new Error('Screen recorder service not available');
+      }
+      
+      const result = await services.screenRecorder.deleteRecording(filePath);
+      return result;
+      
+    } catch (error) {
+      console.error('❌ Failed to delete recording:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  // ENHANCED: Force cleanup handler for emergency situations
+  ipcMain.handle('screenRecorder:forceCleanup', (event) => {
+    try {
+      console.log('🧹 Force cleanup requested');
+      
+      if (services.screenRecorder) {
+        services.screenRecorder.forceCleanup();
+      }
+      
+      return { success: true, message: 'Cleanup completed' };
+      
+    } catch (error) {
+      console.error('❌ Failed to force cleanup:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  console.log('✅ Enhanced screen recorder IPC handlers set up successfully');
 }
 
 function initializeFallbackServices() {
@@ -468,7 +784,7 @@ function loadFallback() {
   mainWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(fallbackHTML)}`);
 }
 
-// IPC Handlers (same as simplified version)
+// IPC Handlers with enhanced screen recorder functionality
 function setupIpcHandlers() {
   console.log('🔧 Setting up IPC handlers...');
 
@@ -492,7 +808,7 @@ function setupIpcHandlers() {
     return true;
   });
 
-  // Model management - now using real service
+  // Model management
   ipcMain.handle('model:getAvailable', () => services.modelManager.getAvailableModels());
   ipcMain.handle('model:getInstalled', () => services.modelManager.getInstalledModels());
   ipcMain.handle('model:download', (event, modelId) => services.modelManager.downloadModel(modelId));
@@ -500,7 +816,7 @@ function setupIpcHandlers() {
   ipcMain.handle('model:getInfo', (event, modelId) => services.modelManager.getModelInfo(modelId));
   ipcMain.handle('model:cancelDownload', (event, modelId) => services.modelManager.cancelDownload(modelId));
 
-  // Transcription - now using real service
+  // Transcription
   ipcMain.handle('transcription:getProviders', () => services.transcriptionService.getProviders());
   ipcMain.handle('transcription:processFile', async (event, filePath, options) => {
     try {
@@ -519,7 +835,7 @@ function setupIpcHandlers() {
   });
   ipcMain.handle('transcription:stop', (event, transcriptionId) => services.transcriptionService.cancelTranscription(transcriptionId));
 
-  // Settings - now using real service
+  // Settings
   ipcMain.handle('settings:get', (event, key) => services.settingsService.get(key));
   ipcMain.handle('settings:set', (event, key, value) => services.settingsService.set(key, value));
   ipcMain.handle('settings:getAll', () => services.settingsService.getAll());
@@ -528,72 +844,10 @@ function setupIpcHandlers() {
   ipcMain.handle('file:showOpenDialog', (event, options) => dialog.showOpenDialog(mainWindow, options));
   ipcMain.handle('file:showSaveDialog', (event, options) => dialog.showSaveDialog(mainWindow, options));
 
-  // Export - now using real service
+  // Export
   ipcMain.handle('export:text', (event, data, format) => services.exportService.exportText(data, format));
   ipcMain.handle('export:subtitle', (event, data, format) => services.exportService.exportSubtitle(data, format));
   ipcMain.handle('export:copy', (event, text) => services.exportService.copyToClipboard(text));
-
-  // FIXED: Screen recorder IPC handlers with proper error handling
-  ipcMain.handle('screenRecorder:startRecording', async (event, opts) => {
-    try {
-      console.log('🎬 Starting screen recording with options:', opts);
-      const result = await services.screenRecorder.startRecording(opts);
-      console.log('✅ Recording started successfully:', result);
-      return result;
-    } catch (error) {
-      console.error('❌ Failed to start recording:', error);
-      return { success: false, error: error.message };
-    }
-  });
-
-  ipcMain.handle('screenRecorder:stopRecording', async () => {
-    try {
-      console.log('⏹️ Stopping screen recording...');
-      const result = await services.screenRecorder.stopRecording();
-      console.log('✅ Recording stopped successfully:', result);
-      return result;
-    } catch (error) {
-      console.error('❌ Failed to stop recording:', error);
-      return { success: false, error: error.message };
-    }
-  });
-
-  ipcMain.handle('screenRecorder:pauseRecording', async () => {
-    try {
-      console.log('⏸️ Pausing screen recording...');
-      const result = services.screenRecorder.pauseRecording();
-      console.log('Pause result:', result);
-      return result;
-    } catch (error) {
-      console.error('❌ Failed to pause recording:', error);
-      return { success: false, error: error.message };
-    }
-  });
-
-  ipcMain.handle('screenRecorder:resumeRecording', async () => {
-    try {
-      console.log('▶️ Resuming screen recording...');
-      const result = services.screenRecorder.resumeRecording();
-      console.log('Resume result:', result);
-      return result;
-    } catch (error) {
-      console.error('❌ Failed to resume recording:', error);
-      return { success: false, error: error.message };
-    }
-  });
-
-  ipcMain.handle('screenRecorder:getStatus', () => {
-    try {
-      return services.screenRecorder.getStatus();
-    } catch (error) {
-      console.error('❌ Failed to get recording status:', error);
-      return { 
-        isRecording: false, 
-        isPaused: false, 
-        error: error.message 
-      };
-    }
-  });
 
   // App operations
   ipcMain.handle('app:getVersion', () => app.getVersion());
@@ -603,6 +857,34 @@ function setupIpcHandlers() {
   ipcMain.handle('debug:test', () => ({ success: true, message: 'Enhanced IPC working!' }));
 
   console.log('✅ IPC handlers set up successfully');
+  
+  // Note: Enhanced screen recorder IPC handlers are set up in setupEnhancedScreenRecorderHandlers()
+  // which is called from initializeEnhancedScreenRecorder()
+}
+
+// Helper function to provide error suggestions
+function getErrorSuggestion(errorMessage) {
+  if (!errorMessage) return null;
+  
+  const errorLower = errorMessage.toLowerCase();
+  
+  if (errorLower.includes('permission') || errorLower.includes('denied')) {
+    return 'Please check your screen recording and microphone permissions in System Preferences';
+  }
+  
+  if (errorLower.includes('device') && errorLower.includes('busy')) {
+    return 'Another application may be using the recording devices. Try closing other recording applications';
+  }
+  
+  if (errorLower.includes('not supported') || errorLower.includes('configuration')) {
+    return 'Try selecting a different screen or audio device, or adjust the quality settings';
+  }
+  
+  if (errorLower.includes('no frames captured') || errorLower.includes('failed to start')) {
+    return 'Try refreshing the available devices and select a different screen to record';
+  }
+  
+  return 'Try refreshing devices or check screen recording permissions';
 }
 
 // App initialization
@@ -614,10 +896,10 @@ app.whenReady().then(async () => {
     console.error('❌ Failed to initialize stores, continuing anyway...');
   }
   
-  // Initialize services
+  // Initialize services (includes enhanced screen recorder)
   await initializeServices();
   
-  // Set up IPC handlers
+  // Set up IPC handlers (basic handlers, screen recorder handlers set up in service init)
   setupIpcHandlers();
   
   // Create window

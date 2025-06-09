@@ -1,17 +1,38 @@
-import React, { useState, useEffect, useRef } from 'react'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
-import { ScrollArea } from '@/components/ui/scroll-area'
-import { Separator } from '@/components/ui/separator'
+// src/renderer/whisperdesk-ui/src/components/EnhancedTranscriptionDisplay.jsx
+import { useState, useEffect, useRef } from 'react'
 import { Button } from '@/components/ui/button'
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Progress } from '@/components/ui/progress'
-import { Clock, User, Copy, Play, Pause, Download, Mic, Square } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
+import { Separator } from '@/components/ui/separator'
+import { ScrollArea } from '@/components/ui/scroll-area'
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { 
+  Upload, 
+  FileAudio, 
+  Mic, 
+  Square, 
+  Play, 
+  Pause, 
+  Copy, 
+  Download, 
+  AlertCircle, 
+  FileUp, 
+  Video, 
+  User, 
+  Clock,
+  RefreshCw,
+  Settings,
+  Zap
+} from 'lucide-react'
+import { useAppState } from '@/App'
 import { toast } from 'sonner'
-import { EnhancedTranscriptDisplay } from './EnhancedTranscriptDisplay'
+import { EnhancedScreenRecorder } from './EnhancedScreenRecorder'
 
-// Enhanced Transcript Display Component for real-time transcription
-export function EnhancedTranscriptDisplay({ 
+// Enhanced Transcript Display Component (same as before but with improvements)
+function EnhancedTranscriptDisplay({ 
   transcriptionResult, 
   isTranscribing = false, 
   progress = 0,
@@ -39,9 +60,7 @@ export function EnhancedTranscriptDisplay({
       'bg-purple-100 text-purple-800 border-purple-200 dark:bg-purple-900/30 dark:text-purple-400 dark:border-purple-800',
       'bg-orange-100 text-orange-800 border-orange-200 dark:bg-orange-900/30 dark:text-orange-400 dark:border-orange-800',
       'bg-pink-100 text-pink-800 border-pink-200 dark:bg-pink-900/30 dark:text-pink-400 dark:border-pink-800',
-      'bg-cyan-100 text-cyan-800 border-cyan-200 dark:bg-cyan-900/30 dark:text-cyan-400 dark:border-cyan-800',
-      'bg-yellow-100 text-yellow-800 border-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-400 dark:border-yellow-800',
-      'bg-indigo-100 text-indigo-800 border-indigo-200 dark:bg-indigo-900/30 dark:text-indigo-400 dark:border-indigo-800'
+      'bg-cyan-100 text-cyan-800 border-cyan-200 dark:bg-cyan-900/30 dark:text-cyan-400 dark:border-cyan-800'
     ]
     
     if (!speakerId) return colors[0]
@@ -98,10 +117,6 @@ export function EnhancedTranscriptDisplay({
     
     if (onCopy) {
       onCopy(textToCopy)
-    } else if (navigator.clipboard) {
-      navigator.clipboard.writeText(textToCopy)
-        .then(() => toast.success('📋 Text copied to clipboard'))
-        .catch(() => toast.error('Failed to copy text'))
     }
   }
 
@@ -215,7 +230,7 @@ export function EnhancedTranscriptDisplay({
   )
 }
 
-// Individual transcript segment component
+// Individual transcript segment component (same as before)
 function TranscriptSegment({ 
   segment, 
   speakerColor, 
@@ -229,7 +244,6 @@ function TranscriptSegment({
 
   const handlePlaySegment = () => {
     setIsPlaying(!isPlaying)
-    // This would integrate with audio playback in the future
     toast.info('Audio playback coming soon!')
   }
 
@@ -295,190 +309,805 @@ function TranscriptSegment({
   )
 }
 
-// Demo Component showing different use cases
-export default function TranscriptDemo() {
-  const [isTranscribing, setIsTranscribing] = useState(false)
-  const [progress, setProgress] = useState(0)
+export function EnhancedTranscriptionTab() {
+  const { appState, updateAppState, resetTranscription } = useAppState()
   
-  // Sample transcript data with multiple speakers
-  const sampleTranscript = {
-    text: "Hello everyone, welcome to today's quarterly business review meeting. I'm excited to share our progress and discuss the path forward. Thank you, John. Let's start with the quarterly review and dive into our performance metrics.",
-    segments: [
-      {
-        id: 0,
-        start: 0,
-        end: 4.8,
-        text: "Good morning everyone, and welcome to today's quarterly business review meeting. I'm excited to share our progress and discuss the path forward.",
-        speakerId: "speaker_1",
-        speakerLabel: "John Smith",
-        confidence: 0.95
-      },
-      {
-        id: 1,
-        start: 5.2,
-        end: 8.7,
-        text: "Thank you, John. Let's start with the quarterly review and dive into our performance metrics. Sarah, could you begin with the financial overview?",
-        speakerId: "speaker_2", 
-        speakerLabel: "Sarah Johnson",
-        confidence: 0.92
-      },
-      {
-        id: 2,
-        start: 9.1,
-        end: 16.8,
-        text: "Absolutely. I've prepared comprehensive financial reports that show significant growth in Q3. Our revenue increased by twenty-eight percent compared to the same quarter last year, reaching four point two million dollars.",
-        speakerId: "speaker_3",
-        speakerLabel: "Sarah Williams", 
-        confidence: 0.88
-      },
-      {
-        id: 3,
-        start: 17.2,
-        end: 22.5,
-        text: "That's excellent news, Sarah. Can you break down the revenue by product line? I'm particularly interested in how our new software products performed.",
-        speakerId: "speaker_2",
-        speakerLabel: "Sarah Johnson",
-        confidence: 0.91
-      },
-      {
-        id: 4,
-        start: 23.1,
-        end: 31.4,
-        text: "Certainly. Our software division led the growth with a forty-two percent increase, generating one point eight million in revenue. The hardware division grew by fifteen percent, and our services division maintained steady growth at twelve percent.",
-        speakerId: "speaker_3",
-        speakerLabel: "Sarah Williams",
-        confidence: 0.93
+  // Local state for UI only
+  const [providers, setProviders] = useState([])
+  const [models, setModels] = useState([])
+  const [isLoading, setIsLoading] = useState(false)
+  const [dragOver, setDragOver] = useState(false)
+  
+  // Refs for cleanup and toast management
+  const progressCleanupRef = useRef(null)
+  const completeCleanupRef = useRef(null)
+  const errorCleanupRef = useRef(null)
+  const startCleanupRef = useRef(null)
+  const cancelledCleanupRef = useRef(null)
+  const modelUpdateCleanupRef = useRef(null)
+  const modelDeleteCleanupRef = useRef(null)
+  const lastToastRef = useRef(null)
+  const hasShownCompletionToast = useRef(false)
+
+  // Initialize
+  useEffect(() => {
+    initializeElectronAPIs()
+    setupAutoTranscriptionListener()
+    return () => {
+      // Cleanup event handlers
+      if (progressCleanupRef.current) progressCleanupRef.current()
+      if (completeCleanupRef.current) completeCleanupRef.current()
+      if (errorCleanupRef.current) errorCleanupRef.current()
+      if (startCleanupRef.current) startCleanupRef.current()
+      if (cancelledCleanupRef.current) cancelledCleanupRef.current()
+      if (modelUpdateCleanupRef.current) modelUpdateCleanupRef.current()
+      if (modelDeleteCleanupRef.current) modelDeleteCleanupRef.current()
+      
+      // Dismiss any active toasts
+      if (lastToastRef.current) {
+        toast.dismiss(lastToastRef.current)
       }
-    ],
-    metadata: {
-      duration: 31.4,
-      createdAt: new Date().toISOString()
+    }
+  }, [])
+
+  // Auto-transcription listener for recordings
+  const setupAutoTranscriptionListener = () => {
+    const handleAutoTranscribe = (event) => {
+      console.log('🤖 Auto-transcription triggered:', event.detail)
+      
+      if (event.detail?.file) {
+        // Set the file and start transcription
+        updateAppState({ selectedFile: event.detail.file })
+        
+        // Wait a moment for state to update, then start transcription
+        setTimeout(() => {
+          handleStartTranscription(true) // Pass flag to indicate auto-transcription
+        }, 500)
+      }
+    }
+
+    window.addEventListener('autoTranscribe', handleAutoTranscribe)
+    
+    return () => {
+      window.removeEventListener('autoTranscribe', handleAutoTranscribe)
     }
   }
 
-  const toggleTranscribing = () => {
-    setIsTranscribing(!isTranscribing)
-    if (!isTranscribing) {
-      // Simulate progress
-      let currentProgress = 0
-      const interval = setInterval(() => {
-        currentProgress += Math.random() * 10
-        if (currentProgress >= 100) {
-          currentProgress = 100
-          clearInterval(interval)
-          setIsTranscribing(false)
+  const initializeElectronAPIs = async () => {
+    if (!window.electronAPI) {
+      console.error('Electron API not available')
+      toast.error('Electron API not available')
+      return
+    }
+
+    try {
+      // Set up event handlers
+      setupEventHandlers()
+      
+      // Get providers
+      const availableProviders = await window.electronAPI.transcription.getProviders()
+      setProviders(availableProviders)
+      console.log('Available providers:', availableProviders)
+
+      // Get installed models
+      const installedModels = await window.electronAPI.model.getInstalled()
+      setModels(installedModels)
+      console.log('Installed models:', installedModels)
+
+      // Set defaults if not already set
+      if (!appState.selectedProvider && availableProviders.length > 0) {
+        const nativeProvider = availableProviders.find(p => p.name === 'Native Whisper')
+        updateAppState({ 
+          selectedProvider: nativeProvider ? 'whisper-native' : availableProviders[0].id 
+        })
+      }
+
+      if (!appState.selectedModel && installedModels.length > 0) {
+        updateAppState({ selectedModel: installedModels[0].id })
+      }
+
+    } catch (error) {
+      console.error('Failed to initialize Electron APIs:', error)
+      toast.error('Failed to initialize: ' + error.message)
+    }
+  }
+
+  const setupEventHandlers = () => {
+    console.log('Setting up enhanced event handlers...')
+    
+    // Progress handler
+    if (window.electronAPI.transcription.onProgress) {
+      progressCleanupRef.current = window.electronAPI.transcription.onProgress((data) => {
+        console.log('🎯 Enhanced progress received:', data)
+        
+        updateAppState({
+          progress: data.progress || 0,
+          progressMessage: data.message || data.stage || 'Processing...'
+        })
+        
+        // Only show ONE toast when starting
+        if (data.progress === 0 && data.stage === 'starting') {
+          if (lastToastRef.current) {
+            toast.dismiss(lastToastRef.current)
+          }
+          
+          lastToastRef.current = toast.loading('🎵 Transcribing audio...', {
+            duration: Infinity
+          })
+          hasShownCompletionToast.current = false
         }
-        setProgress(currentProgress)
-      }, 500)
-    } else {
-      setProgress(0)
+      })
+    }
+
+    // Completion handler
+    if (window.electronAPI.transcription.onComplete) {
+      completeCleanupRef.current = window.electronAPI.transcription.onComplete((data) => {
+        console.log('Enhanced completion received:', data)
+        
+        // Dismiss loading toast
+        if (lastToastRef.current) {
+          toast.dismiss(lastToastRef.current)
+          lastToastRef.current = null
+        }
+        
+        if (data.result) {
+          updateAppState({
+            transcription: data.result.text || '',
+            lastTranscriptionResult: data.result,
+            isTranscribing: false,
+            progress: 100,
+            progressMessage: 'Complete!'
+          })
+          
+          // Show success toast with enhanced info
+          if (!hasShownCompletionToast.current) {
+            const segmentCount = data.result.segments?.length || 0
+            const duration = data.result.metadata?.duration
+            
+            let message = `✅ Transcription completed!`
+            if (segmentCount > 0) message += ` ${segmentCount} segments found.`
+            if (duration) message += ` Duration: ${Math.floor(duration)}s.`
+            
+            toast.success(message, { duration: 4000 })
+            hasShownCompletionToast.current = true
+          }
+        } else {
+          updateAppState({
+            isTranscribing: false,
+            progress: 100,
+            progressMessage: 'Completed with no result'
+          })
+          
+          if (!hasShownCompletionToast.current) {
+            toast.warning('Transcription completed but no result received')
+            hasShownCompletionToast.current = true
+          }
+        }
+      })
+    }
+
+    // Error handler
+    if (window.electronAPI.transcription.onError) {
+      errorCleanupRef.current = window.electronAPI.transcription.onError((data) => {
+        console.error('Enhanced transcription error:', data)
+        
+        // Dismiss loading toast
+        if (lastToastRef.current) {
+          toast.dismiss(lastToastRef.current)
+          lastToastRef.current = null
+        }
+        
+        updateAppState({
+          isTranscribing: false,
+          progress: 0,
+          progressMessage: 'Error occurred'
+        })
+        
+        toast.error('❌ Transcription failed: ' + (data.error || 'Unknown error'))
+        hasShownCompletionToast.current = true
+      })
+    }
+
+    if (window.electronAPI.transcription.onStart) {
+      startCleanupRef.current = window.electronAPI.transcription.onStart((data) => {
+        updateAppState({ activeTranscriptionId: data.transcriptionId, isTranscribing: true })
+      })
+    }
+
+    if (window.electronAPI.transcription.onCancelled) {
+      cancelledCleanupRef.current = window.electronAPI.transcription.onCancelled(() => {
+        updateAppState({ isTranscribing: false, progress: 0, progressMessage: 'Cancelled', activeTranscriptionId: null })
+        if (lastToastRef.current) {
+          toast.dismiss(lastToastRef.current)
+          lastToastRef.current = null
+        }
+        toast.warning('⏹️ Transcription cancelled')
+      })
+    }
+
+    // Model event handlers
+    if (window.electronAPI.model.onDownloadComplete) {
+      modelUpdateCleanupRef.current = window.electronAPI.model.onDownloadComplete(async () => {
+        const installedModels = await window.electronAPI.model.getInstalled()
+        setModels(installedModels)
+        if (!installedModels.some(m => m.id === appState.selectedModel)) {
+          updateAppState({ selectedModel: installedModels[0]?.id || null })
+        }
+      })
+    }
+
+    if (window.electronAPI.model.onModelDeleted) {
+      modelDeleteCleanupRef.current = window.electronAPI.model.onModelDeleted(async () => {
+        const installedModels = await window.electronAPI.model.getInstalled()
+        setModels(installedModels)
+        if (!installedModels.some(m => m.id === appState.selectedModel)) {
+          updateAppState({ selectedModel: installedModels[0]?.id || null })
+        }
+      })
     }
   }
 
-  const handleCopy = (text) => {
-    navigator.clipboard.writeText(text)
-    toast.success('📋 Text copied to clipboard')
+  const refreshProviders = async () => {
+    try {
+      setIsLoading(true)
+      const availableProviders = await window.electronAPI.transcription.getProviders()
+      setProviders(availableProviders)
+      toast.success('🔄 Providers refreshed')
+    } catch (error) {
+      console.error('Failed to refresh providers:', error)
+      toast.error('Failed to refresh providers: ' + error.message)
+    } finally {
+      setIsLoading(false)
+    }
   }
 
-  const handleExport = () => {
-    toast.success('💾 Export functionality would be implemented here')
+  const refreshModels = async () => {
+    try {
+      setIsLoading(true)
+      const installedModels = await window.electronAPI.model.getInstalled()
+      setModels(installedModels)
+      toast.success('🔄 Models refreshed')
+    } catch (error) {
+      console.error('Failed to refresh models:', error)
+      toast.error('Failed to refresh models: ' + error.message)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleFileSelect = async () => {
+    if (!window.electronAPI?.file?.showOpenDialog) {
+      toast.error('File API not available')
+      return
+    }
+
+    try {
+      const result = await window.electronAPI.file.showOpenDialog({
+        properties: ['openFile'],
+        filters: [
+          { name: 'Audio Files', extensions: ['mp3', 'wav', 'flac', 'm4a', 'aac', 'ogg'] },
+          { name: 'Video Files', extensions: ['mp4', 'avi', 'mov', 'mkv', 'webm'] },
+          { name: 'All Files', extensions: ['*'] }
+        ]
+      })
+
+      if (!result.canceled && result.filePaths && result.filePaths.length > 0) {
+        const filePath = result.filePaths[0]
+        
+        const fileInfo = {
+          path: filePath,
+          name: filePath.split('/').pop() || filePath.split('\\').pop(),
+          size: 0
+        }
+        
+        updateAppState({ selectedFile: fileInfo })
+        toast.success(`📁 File selected: ${fileInfo.name}`)
+      }
+    } catch (error) {
+      console.error('File selection failed:', error)
+      toast.error('Failed to select file: ' + error.message)
+    }
+  }
+
+  const handleDrop = async (e) => {
+    e.preventDefault()
+    setDragOver(false)
+
+    const files = Array.from(e.dataTransfer.files)
+    if (files.length === 0) return
+
+    const file = files[0]
+    const fileInfo = {
+      path: file.path,
+      name: file.name,
+      size: file.size
+    }
+
+    updateAppState({ selectedFile: fileInfo })
+    toast.success(`📁 File selected: ${file.name}`)
+  }
+
+  const handleStartTranscription = async (isAutoTranscribe = false) => {
+    if (!appState.selectedFile) {
+      toast.error('Please select an audio file first')
+      return
+    }
+
+    if (!window.electronAPI?.transcription?.processFile) {
+      toast.error('Transcription API not available')
+      return
+    }
+
+    try {
+      setIsLoading(true)
+      
+      // Reset transcription state but keep file
+      updateAppState({
+        transcription: '',
+        isTranscribing: true,
+        progress: 0,
+        progressMessage: isAutoTranscribe ? 'Auto-transcribing...' : 'Starting transcription...',
+        lastTranscriptionResult: null
+      })
+      
+      // Reset completion toast flag
+      hasShownCompletionToast.current = false
+
+      const options = {
+        provider: appState.selectedProvider,
+        model: appState.selectedModel,
+        language: 'auto',
+        enableTimestamps: true
+      }
+
+      console.log('Starting enhanced transcription with options:', options)
+      console.log('File path:', appState.selectedFile.path)
+
+      if (isAutoTranscribe) {
+        toast.info('🤖 Auto-transcription started from recording')
+      }
+
+      // Process the file
+      await window.electronAPI.transcription.processFile(appState.selectedFile.path, options)
+
+    } catch (error) {
+      console.error('Enhanced transcription failed:', error)
+      
+      // Dismiss any loading toast
+      if (lastToastRef.current) {
+        toast.dismiss(lastToastRef.current)
+        lastToastRef.current = null
+      }
+      
+      updateAppState({
+        isTranscribing: false,
+        progress: 0,
+        progressMessage: 'Failed'
+      })
+      
+      toast.error('Transcription failed: ' + error.message)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleStopTranscription = async () => {
+    if (!appState.activeTranscriptionId) return
+    if (!window.electronAPI?.transcription?.stop) {
+      toast.error('Stop API not available')
+      return
+    }
+
+    try {
+      await window.electronAPI.transcription.stop(appState.activeTranscriptionId)
+      updateAppState({ isTranscribing: false, progress: 0, progressMessage: 'Cancelled', activeTranscriptionId: null })
+      if (lastToastRef.current) {
+        toast.dismiss(lastToastRef.current)
+        lastToastRef.current = null
+      }
+      toast.warning('⏹️ Transcription cancelled')
+    } catch (error) {
+      console.error('Failed to stop transcription:', error)
+      toast.error('Failed to stop transcription: ' + error.message)
+    }
+  }
+
+  const handleCopyText = (text) => {
+    const textToCopy = text || appState.transcription
+    if (!textToCopy) {
+      toast.error('No text to copy')
+      return
+    }
+
+    if (window.electronAPI?.export?.copy) {
+      window.electronAPI.export.copy(textToCopy)
+        .then(() => toast.success('📋 Text copied to clipboard'))
+        .catch(err => toast.error('Copy failed: ' + err.message))
+    } else if (navigator.clipboard) {
+      navigator.clipboard.writeText(textToCopy)
+        .then(() => toast.success('📋 Text copied to clipboard'))
+        .catch(err => toast.error('Copy failed: ' + err.message))
+    } else {
+      toast.error('Copy not supported')
+    }
+  }
+
+  const handleExport = async () => {
+    if (!appState.lastTranscriptionResult) {
+      toast.error('No transcription to export')
+      return
+    }
+
+    if (!window.electronAPI?.file?.showSaveDialog || !window.electronAPI?.export?.text) {
+      toast.error('Export API not available')
+      return
+    }
+
+    try {
+      const result = await window.electronAPI.file.showSaveDialog({
+        defaultPath: `transcription-${Date.now()}.txt`,
+        filters: [
+          { name: 'Text Files', extensions: ['txt'] },
+          { name: 'JSON Files', extensions: ['json'] },
+          { name: 'Subtitle Files', extensions: ['srt'] },
+          { name: 'WebVTT Files', extensions: ['vtt'] }
+        ]
+      })
+
+      if (!result.canceled && result.filePath) {
+        const format = result.filePath.split('.').pop()
+        
+        await window.electronAPI.export.text(appState.lastTranscriptionResult, format)
+        toast.success('💾 Transcription exported successfully')
+      }
+    } catch (error) {
+      console.error('Export failed:', error)
+      toast.error('Export failed: ' + error.message)
+    }
+  }
+
+  const handleNewTranscription = () => {
+    // Dismiss any active toasts
+    if (lastToastRef.current) {
+      toast.dismiss(lastToastRef.current)
+      lastToastRef.current = null
+    }
+    
+    resetTranscription()
+    hasShownCompletionToast.current = false
+    toast.success('🆕 Ready for new transcription')
+  }
+
+  const handleDragOver = (e) => {
+    e.preventDefault()
+    setDragOver(true)
+  }
+
+  const handleDragLeave = () => {
+    setDragOver(false)
   }
 
   return (
-    <div className="space-y-6 p-6 max-w-4xl mx-auto">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold">Enhanced Transcript Display</h2>
-          <p className="text-muted-foreground">Real-time transcription with speaker identification</p>
-        </div>
-        <Button 
-          variant="outline"
-          onClick={toggleTranscribing}
-        >
-          {isTranscribing ? (
-            <>
-              <Square className="w-4 h-4 mr-2" />
-              Stop
-            </>
-          ) : (
-            <>
-              <Mic className="w-4 h-4 mr-2" />
-              Simulate
-            </>
-          )}
-        </Button>
+    <div className="space-y-6">
+      {/* Enhanced Input Section */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        
+        {/* File Upload */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center space-x-2">
+              <FileUp className="w-5 h-5" />
+              <span>File Upload</span>
+              {appState.selectedFile && (
+                <Badge variant="secondary" className="ml-2">
+                  <FileAudio className="w-3 h-3 mr-1" />
+                  Selected
+                </Badge>
+              )}
+            </CardTitle>
+            <CardDescription>
+              Upload an audio or video file for transcription
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div
+              className={`border-2 border-dashed rounded-lg p-6 text-center cursor-pointer hover:border-primary/50 transition-colors ${
+                dragOver ? 'border-primary bg-primary/5' : 'border-muted-foreground/25'
+              }`}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+              onClick={handleFileSelect}
+            >
+              <div className="space-y-2">
+                <Upload className="w-8 h-8 mx-auto text-muted-foreground" />
+                <div className="text-sm text-muted-foreground">
+                  Drag and drop your file here, or click to browse
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  Supports: MP3, WAV, MP4, AVI, MOV, and more
+                </div>
+                {appState.selectedFile && (
+                  <div className="mt-2 p-2 bg-muted rounded text-sm">
+                    <strong>Selected:</strong> {appState.selectedFile.name}
+                    {appState.selectedFile.size > 0 && (
+                      <div className="text-xs text-muted-foreground">
+                        Size: {(appState.selectedFile.size / 1024 / 1024).toFixed(2)} MB
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Enhanced Recording */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center space-x-2">
+              <Video className="w-5 h-5" />
+              <span>Quick Record</span>
+              <Badge variant="outline" className="ml-2">
+                <Zap className="w-3 h-3 mr-1" />
+                Auto-transcribe
+              </Badge>
+            </CardTitle>
+            <CardDescription>
+              Record screen with audio and automatically transcribe
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="text-sm text-muted-foreground mb-3">
+              Recording will automatically start transcription when complete.
+              For advanced recording options, see the dedicated recording section below.
+            </div>
+            <Button 
+              variant="outline" 
+              className="w-full" 
+              onClick={() => {
+                // Scroll to enhanced recorder or switch to recording tab
+                document.getElementById('enhanced-recorder')?.scrollIntoView({ behavior: 'smooth' })
+                toast.info('📹 See enhanced recording options below')
+              }}
+            >
+              <Video className="w-4 h-4 mr-2" />
+              Use Enhanced Recorder
+            </Button>
+          </CardContent>
+        </Card>
       </div>
 
+      {/* Enhanced Transcription Settings */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center space-x-2">
+                <Settings className="w-5 h-5" />
+                <span>Transcription Settings</span>
+              </CardTitle>
+              <CardDescription>
+                Configure provider, model, and transcription options
+              </CardDescription>
+            </div>
+            <div className="flex items-center space-x-2">
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={refreshProviders}
+                disabled={isLoading}
+              >
+                <RefreshCw className={`w-4 h-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
+                Providers
+              </Button>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={refreshModels}
+                disabled={isLoading}
+              >
+                <RefreshCw className={`w-4 h-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
+                Models
+              </Button>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="provider">Transcription Provider</Label>
+              <Select
+                id="provider"
+                value={appState.selectedProvider}
+                onValueChange={(value) => updateAppState({ selectedProvider: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select provider" />
+                </SelectTrigger>
+                <SelectContent>
+                  {providers.map((provider) => (
+                    <SelectItem 
+                      key={provider.id} 
+                      value={provider.id}
+                      disabled={!provider.isAvailable}
+                    >
+                      <div className="flex items-center space-x-2">
+                        <span>{provider.name}</span>
+                        {!provider.isAvailable && (
+                          <Badge variant="destructive" className="text-xs">
+                            Unavailable
+                          </Badge>
+                        )}
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {providers.length === 0 && (
+                <div className="text-xs text-muted-foreground">
+                  No providers available. Check your configuration.
+                </div>
+              )}
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="model">Model</Label>
+              <Select
+                id="model"
+                value={appState.selectedModel}
+                onValueChange={(value) => updateAppState({ selectedModel: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select model" />
+                </SelectTrigger>
+                <SelectContent>
+                  {models.map((model) => (
+                    <SelectItem key={model.id} value={model.id}>
+                      <div className="flex items-center space-x-2">
+                        <span>{model.name}</span>
+                        {model.size && (
+                          <Badge variant="outline" className="text-xs">
+                            {typeof model.size === 'number' 
+                              ? `${(model.size / 1024 / 1024).toFixed(0)}MB`
+                              : model.size
+                            }
+                          </Badge>
+                        )}
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {models.length === 0 && (
+                <div className="text-xs text-muted-foreground">
+                  No models installed. Visit the Models tab to download.
+                </div>
+              )}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Enhanced Transcription Controls */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle>Transcription Control</CardTitle>
+              <CardDescription>
+                Process your audio file with enhanced progress tracking
+              </CardDescription>
+            </div>
+            <div className="flex items-center space-x-2">
+              {appState.lastTranscriptionResult && (
+                <Badge variant="outline" className="text-green-600">
+                  <Download className="w-3 h-3 mr-1" />
+                  Ready to export
+                </Badge>
+              )}
+              {appState.isTranscribing && (
+                <Badge variant="default" className="animate-pulse">
+                  <Mic className="w-3 h-3 mr-1" />
+                  Processing...
+                </Badge>
+              )}
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            {/* Action Buttons */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                {appState.isTranscribing && (
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={handleStopTranscription}
+                    disabled={!appState.activeTranscriptionId}
+                  >
+                    <Square className="w-4 h-4 mr-2" />
+                    Stop
+                  </Button>
+                )}
+                <Button
+                  onClick={() => handleStartTranscription(false)}
+                  disabled={!appState.selectedFile || appState.isTranscribing || !appState.selectedProvider || !appState.selectedModel}
+                >
+                  {appState.isTranscribing ? (
+                    <>
+                      <Pause className="w-4 h-4 mr-2" />
+                      Processing...
+                    </>
+                  ) : (
+                    <>
+                      <Play className="w-4 h-4 mr-2" />
+                      Start Transcription
+                    </>
+                  )}
+                </Button>
+              </div>
+              
+              <div className="flex items-center space-x-2">
+                {appState.lastTranscriptionResult && (
+                  <>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleCopyText()}
+                    >
+                      <Copy className="w-4 h-4 mr-2" />
+                      Copy
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleExport}
+                    >
+                      <Download className="w-4 h-4 mr-2" />
+                      Export
+                    </Button>
+                  </>
+                )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleNewTranscription}
+                >
+                  <RefreshCw className="w-4 h-4 mr-2" />
+                  New
+                </Button>
+              </div>
+            </div>
+
+            {/* Progress Info */}
+            {appState.isTranscribing && (
+              <div className="p-3 bg-muted/50 rounded-lg">
+                <div className="flex justify-between text-sm mb-2">
+                  <span>{appState.progressMessage || 'Processing...'}</span>
+                  <span>{Math.round(appState.progress || 0)}%</span>
+                </div>
+                <Progress value={appState.progress || 0} className="h-2" />
+              </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Enhanced Transcript Display */}
       <EnhancedTranscriptDisplay 
-        transcriptionResult={sampleTranscript}
-        isTranscribing={isTranscribing}
-        progress={progress}
-        progressMessage={isTranscribing ? "Processing audio..." : ""}
-        onCopy={handleCopy}
+        transcriptionResult={appState.lastTranscriptionResult}
+        isTranscribing={appState.isTranscribing}
+        progress={appState.progress}
+        progressMessage={appState.progressMessage}
+        onCopy={handleCopyText}
         onExport={handleExport}
       />
-      
-      {/* Additional Examples */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Features</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2 text-sm">
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 bg-green-500 rounded-full" />
-              <span>Real-time progress tracking</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 bg-blue-500 rounded-full" />
-              <span>Speaker identification with colors</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 bg-purple-500 rounded-full" />
-              <span>Timestamp display</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 bg-orange-500 rounded-full" />
-              <span>Confidence scores</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 bg-pink-500 rounded-full" />
-              <span>Auto-scroll functionality</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 bg-cyan-500 rounded-full" />
-              <span>Copy and export options</span>
-            </div>
-          </CardContent>
-        </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Speaker Colors</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {['John Smith', 'Sarah Johnson', 'Mike Chen', 'Lisa Rodriguez'].map((name, index) => {
-              const colors = [
-                'bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400',
-                'bg-green-100 text-green-800 border-green-200 dark:bg-green-900/30 dark:text-green-400',
-                'bg-purple-100 text-purple-800 border-purple-200 dark:bg-purple-900/30 dark:text-purple-400',
-                'bg-orange-100 text-orange-800 border-orange-200 dark:bg-orange-900/30 dark:text-orange-400'
-              ]
-              return (
-                <div key={name} className="flex items-center gap-2">
-                  <Avatar className="w-6 h-6">
-                    <AvatarFallback className={`text-xs ${colors[index]}`}>
-                      {name.split(' ').map(n => n[0]).join('')}
-                    </AvatarFallback>
-                  </Avatar>
-                  <Badge variant="outline" className={`text-xs ${colors[index]}`}>
-                    {name}
-                  </Badge>
-                </div>
-              )
-            })}
-          </CardContent>
-        </Card>
+      {/* Enhanced Screen Recorder */}
+      <div id="enhanced-recorder">
+        <EnhancedScreenRecorder />
       </div>
     </div>
   )
