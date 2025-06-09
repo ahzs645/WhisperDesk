@@ -1,4 +1,4 @@
-// src/main/preload.js - Complete preload script with window controls
+// src/main/preload.js - Enhanced preload script for screen recording
 const { contextBridge, ipcRenderer } = require('electron');
 
 // Enhanced IPC wrapper with error handling and logging
@@ -89,6 +89,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     }
   },
 
+  // 🔴 ADDED: Shell operations (needed for system preferences)
+  shell: {
+    openExternal: createSafeIPC('shell:openExternal')
+  },
+
   // Model management
   model: {
     getAvailable: createSafeIPC('model:getAvailable'),
@@ -139,18 +144,31 @@ contextBridge.exposeInMainWorld('electronAPI', {
     onLevel: createEventListener('audio:level')
   },
 
+  // 🔴 ENHANCED: Complete screen recorder API with all missing methods
   screenRecorder: {
+    // Recording operations
     startRecording: createSafeIPC('screenRecorder:startRecording'),
     stopRecording: createSafeIPC('screenRecorder:stopRecording'),
     pauseRecording: createSafeIPC('screenRecorder:pauseRecording'),
     resumeRecording: createSafeIPC('screenRecorder:resumeRecording'),
     getStatus: createSafeIPC('screenRecorder:getStatus'),
+    
+    // 🔴 ADDED: Missing device and recording management APIs
+    getAvailableScreens: createSafeIPC('screenRecorder:getAvailableScreens'),
+    getRecordings: createSafeIPC('screenRecorder:getRecordings'),
+    deleteRecording: createSafeIPC('screenRecorder:deleteRecording'),
+    forceCleanup: createSafeIPC('screenRecorder:forceCleanup'),
+    
+    // Recording events
     onRecordingStarted: createEventListener('screenRecorder:started'),
+    onRecordingValidated: createEventListener('screenRecorder:validated'),
     onRecordingCompleted: createEventListener('screenRecorder:completed'),
     onRecordingError: createEventListener('screenRecorder:error'),
     onRecordingPaused: createEventListener('screenRecorder:paused'),
     onRecordingResumed: createEventListener('screenRecorder:resumed'),
-    onRecordingValidated: createEventListener('screenRecorder:validated')
+    
+    // 🔴 ADDED: Missing progress event handler
+    onRecordingProgress: createEventListener('screenRecorder:progress')
   },
 
   // Settings
@@ -201,11 +219,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Debug utilities (useful for development)
   debug: {
     log: (message, data) => console.log('[Renderer]', message, data),
-    testIPC: createSafeIPC('debug:test'),
+    test: createSafeIPC('debug:test'), // 🔴 FIXED: Properly use createSafeIPC helper
+    testIPC: createSafeIPC('debug:test'), // Alias for compatibility
     listChannels: () => {
       console.log('Available IPC channels:');
-      console.log('Models:', Object.keys(contextBridge.exposeInMainWorld.model || {}));
-      console.log('Transcription:', Object.keys(contextBridge.exposeInMainWorld.transcription || {}));
+      console.log('Screen Recorder:', Object.keys(contextBridge.exposeInMainWorld?.screenRecorder || {}));
+      console.log('Models:', Object.keys(contextBridge.exposeInMainWorld?.model || {}));
+      console.log('Transcription:', Object.keys(contextBridge.exposeInMainWorld?.transcription || {}));
     }
   }
 });
@@ -244,6 +264,8 @@ console.log('[Preload] Platform:', process.platform, process.arch);
 console.log('[Preload] Electron version:', process.versions.electron);
 console.log('[Preload] Node version:', process.versions.node);
 console.log('[Preload] Window controls exposed:', !!window.electronAPI?.window);
+console.log('[Preload] Screen recorder API exposed:', !!window.electronAPI?.screenRecorder);
+console.log('[Preload] Shell API exposed:', !!window.electronAPI?.shell);
 console.log('[Preload] Platform detection:', {
   os: process.platform,
   isMacOS: process.platform === 'darwin',
