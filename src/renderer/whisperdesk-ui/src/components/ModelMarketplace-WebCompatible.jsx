@@ -1,4 +1,4 @@
-// src/renderer/whisperdesk-ui/src/components/ModelMarketplace-WebCompatible.jsx - FIXED
+// src/renderer/whisperdesk-ui/src/components/ModelMarketplace-WebCompatible.jsx - FINAL FIXED VERSION
 import { useState, useEffect, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { Separator } from '@/components/ui/separator'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Package, Download, Trash2, HardDrive, Gauge, Clock, Check, AlertCircle, Loader2, X } from 'lucide-react'
+import { Package, Download, Trash2, HardDrive, Gauge, Clock, Check, AlertCircle, Loader2, X, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
 
 export function ModelMarketplace() {
@@ -15,6 +15,7 @@ export function ModelMarketplace() {
   const [downloads, setDownloads] = useState(new Map()) // Track download progress
   const [loading, setLoading] = useState(true)
   const [isElectron, setIsElectron] = useState(false)
+  const [showDebug, setShowDebug] = useState(false) // Debug toggle
 
   // Refs for cleanup
   const downloadProgressCleanup = useRef(null)
@@ -29,10 +30,8 @@ export function ModelMarketplace() {
 
     if (electronAvailable) {
       setupEventHandlers()
-      // 🔴 FIX: Actually call the load functions
       loadModelsFromElectron()
     } else {
-      // 🔴 FIX: Set loading to false for web mode
       setLoading(false)
       toast.warning('Model downloads only available in Electron app')
     }
@@ -64,7 +63,7 @@ export function ModelMarketplace() {
 
     // Completion handler
     if (window.electronAPI.model.onDownloadComplete) {
-      downloadCompleteCleanup.current = window.electronAPI.model.onDownloadComplete((data) => {
+      downloadCompleteCleanup.current = window.electronAPI.model.onDownloadComplete(async (data) => {
         console.log('Download complete:', data)
         setDownloads(prev => {
           const next = new Map(prev)
@@ -72,10 +71,11 @@ export function ModelMarketplace() {
           return next
         })
         
-        // Refresh installed models
-        loadInstalledModels()
+        // Refresh installed models to keep UI in sync
+        console.log('🔄 Refreshing installed models after download completion...')
+        await loadInstalledModels()
         
-        toast.success('Model downloaded successfully!')
+        toast.success('📦 Model downloaded successfully!')
       })
     }
 
@@ -119,7 +119,7 @@ export function ModelMarketplace() {
     }
   }
 
-  // 🔴 FIX: Actually implement the loading functions
+  // Loading functions with better error handling
   const loadModelsFromElectron = async () => {
     try {
       setLoading(true)
@@ -143,11 +143,13 @@ export function ModelMarketplace() {
     try {
       console.log('📦 Loading available models...')
       const models = await window.electronAPI.model.getAvailable()
+      console.log('📦 Raw available models from API:', models)
       setAvailableModels(models)
       console.log('✅ Loaded available models:', models.length)
     } catch (error) {
       console.error('❌ Failed to load available models:', error)
-      throw error
+      // Don't throw, just log - this is recoverable
+      setAvailableModels([])
     }
   }
 
@@ -155,11 +157,18 @@ export function ModelMarketplace() {
     try {
       console.log('💾 Loading installed models...')
       const models = await window.electronAPI.model.getInstalled()
+      console.log('💾 Raw installed models from API:', models)
       setInstalledModels(models)
       console.log('✅ Loaded installed models:', models.length)
+      
+      // Debug model IDs to check for mismatches
+      if (models.length > 0) {
+        console.log('🔍 Installed model IDs:', models.map(m => m.id))
+      }
     } catch (error) {
       console.error('❌ Failed to load installed models:', error)
-      throw error
+      // Don't throw, just log - this is recoverable
+      setInstalledModels([])
     }
   }
 
@@ -169,13 +178,38 @@ export function ModelMarketplace() {
       return
     }
 
+    // CHECK: Prevent downloading already installed models
+    const isAlreadyInstalled = installedModels.some(model => model.id === modelId)
+    if (isAlreadyInstalled) {
+      toast.warning('📦 Model is already installed')
+      // Refresh the UI state to make sure it's in sync
+      await loadInstalledModels()
+      return
+    }
+
+    // Check if already downloading
+    if (downloads.has(modelId)) {
+      toast.warning('📥 Model is already being downloaded')
+      return
+    }
+
     try {
       console.log('Starting download for model:', modelId)
       await window.electronAPI.model.download(modelId)
       // The download progress will be handled by event handlers
     } catch (error) {
       console.error('Failed to start download:', error)
-      toast.error('Failed to start download: ' + error.message)
+      
+      // HANDLE: Specific error messages for better UX
+      if (error.message?.includes('already installed')) {
+        toast.warning('📦 Model is already installed')
+        // Refresh installed models to sync UI
+        await loadInstalledModels()
+      } else if (error.message?.includes('not found')) {
+        toast.error('❌ Model not found in catalog')
+      } else {
+        toast.error('Failed to start download: ' + error.message)
+      }
     }
   }
 
@@ -202,9 +236,14 @@ export function ModelMarketplace() {
     }
 
     try {
+      console.log('🗑️ Deleting model:', modelId)
       await window.electronAPI.model.delete(modelId)
+      
+      // Refresh installed models after deletion
+      console.log('🔄 Refreshing installed models after deletion...')
       await loadInstalledModels()
-      toast.success('Model deleted successfully')
+      
+      toast.success('📦 Model deleted successfully')
     } catch (error) {
       console.error('Failed to delete model:', error)
       toast.error('Failed to delete model: ' + error.message)
@@ -224,6 +263,7 @@ export function ModelMarketplace() {
   }
 
   const getModelStatus = (model) => {
+    // Check if currently downloading
     const download = downloads.get(model.id)
     if (download) {
       return {
@@ -236,7 +276,18 @@ export function ModelMarketplace() {
       }
     }
     
-    const isInstalled = installedModels.some(installed => installed.id === model.id)
+    // More robust installed check with debugging
+    const isInstalled = installedModels.some(installed => {
+      const match = installed.id === model.id
+      if (match) {
+        console.log(`✅ Model ${model.id} found in installed models:`, installed)
+      }
+      return match
+    })
+    
+    // DEBUG: Log model status determination
+    console.log(`📊 Model ${model.id} status: isInstalled=${isInstalled}, downloading=${!!download}`)
+    
     return {
       isDownloading: false,
       isInstalled,
@@ -280,7 +331,7 @@ export function ModelMarketplace() {
     }
   }
 
-  // 🔴 FIX: Show proper loading state and error handling
+  // Show proper loading state and error handling
   if (loading) {
     return (
       <div className="flex items-center justify-center p-8">
@@ -292,7 +343,7 @@ export function ModelMarketplace() {
     )
   }
 
-  // 🔴 FIX: Show message when no Electron API
+  // Show message when no Electron API
   if (!isElectron) {
     return (
       <Card>
@@ -342,13 +393,27 @@ export function ModelMarketplace() {
       {/* Models Marketplace */}
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2">
-            <Package className="w-5 h-5" />
-            Model Marketplace
-          </CardTitle>
-          <CardDescription>
-            Download and manage your WhisperDesk models
-          </CardDescription>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <Package className="w-5 h-5" />
+                Model Marketplace
+              </CardTitle>
+              <CardDescription>
+                Download and manage your WhisperDesk models
+              </CardDescription>
+            </div>
+            {/* Refresh button to help sync state */}
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={loadModelsFromElectron}
+              disabled={loading}
+            >
+              <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+              Refresh
+            </Button>
+          </div>
         </CardHeader>
         <CardContent>
           <ScrollArea className="h-[600px] pr-4">
@@ -444,6 +509,73 @@ export function ModelMarketplace() {
           </ScrollArea>
         </CardContent>
       </Card>
+
+      {/* Debug Panel */}
+      {process.env.NODE_ENV === 'development' && (
+        <Card>
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-sm">Debug Information</CardTitle>
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                onClick={() => setShowDebug(!showDebug)}
+              >
+                {showDebug ? 'Hide' : 'Show'} Debug
+              </Button>
+            </div>
+          </CardHeader>
+          {showDebug && (
+            <CardContent className="pt-0">
+              <div className="space-y-3 text-xs">
+                <div>
+                  <strong>Electron Available:</strong> {isElectron ? 'Yes' : 'No'}
+                </div>
+                <div>
+                  <strong>Loading:</strong> {loading ? 'Yes' : 'No'}
+                </div>
+                <div>
+                  <strong>Available Models:</strong> {availableModels.length}
+                  {availableModels.length > 0 && (
+                    <div className="ml-4 mt-1">
+                      {availableModels.map(m => <div key={m.id}>• {m.id} ({m.name})</div>)}
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <strong>Installed Models:</strong> {installedModels.length}
+                  {installedModels.length > 0 && (
+                    <div className="ml-4 mt-1">
+                      {installedModels.map(m => <div key={m.id}>• {m.id} ({m.name || 'No name'})</div>)}
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <strong>Active Downloads:</strong> {downloads.size}
+                  {downloads.size > 0 && (
+                    <div className="ml-4 mt-1">
+                      {Array.from(downloads.entries()).map(([id, info]) => (
+                        <div key={id}>• {id} ({info.status}) - {Math.round(info.progress || 0)}%</div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <strong>Model Status Check:</strong>
+                  {availableModels.slice(0, 3).map(model => {
+                    const status = getModelStatus(model)
+                    return (
+                      <div key={model.id} className="ml-4">
+                        • {model.id}: installed={status.isInstalled ? 'YES' : 'NO'}, downloading={status.isDownloading ? 'YES' : 'NO'}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            </CardContent>
+          )}
+        </Card>
+      )}
     </div>
   )
 }
