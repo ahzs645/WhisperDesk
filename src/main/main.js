@@ -34,19 +34,6 @@ async function initializeStores() {
   }
 }
 
-// ENHANCED Screen Recorder IPC Handlers - REPLACE existing ones
-function setupEnhancedScreenRecorderHandlers() {
-  console.log('🔧 Setting up ENHANCED screen recorder IPC handlers...');
-
-  // Basic IPC handlers that should always work
-  setupBasicIpcHandlers();
-  
-  // 🔴 UPDATED: Setup enhanced screen recorder handlers
-  setupEnhancedScreenRecorderHandlers();
-  
-  console.log('✅ All IPC handlers set up');
-}
-
 function setupBasicIpcHandlers() {
   // Window controls
   ipcMain.on('window:minimize', () => mainWindow?.minimize());
@@ -340,6 +327,19 @@ function setupEnhancedScreenRecorderHandlers() {
   });
 
   console.log('✅ Enhanced screen recorder IPC handlers set up');
+}
+
+// 🔴 FIXED: Add the missing setupAllIpcHandlers function
+function setupAllIpcHandlers() {
+  console.log('🔧 Setting up ALL IPC handlers...');
+  
+  // Setup basic IPC handlers first (these always work)
+  setupBasicIpcHandlers();
+  
+  // Setup enhanced screen recorder handlers  
+  setupEnhancedScreenRecorderHandlers();
+  
+  console.log('✅ All basic IPC handlers set up successfully');
 }
 
 // Add this to your service initialization in main.js
