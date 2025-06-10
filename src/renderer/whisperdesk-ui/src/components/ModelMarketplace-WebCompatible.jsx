@@ -1,4 +1,4 @@
-// src/renderer/whisperdesk-ui/src/components/ModelMarketplace-Fixed.jsx
+// src/renderer/whisperdesk-ui/src/components/ModelMarketplace-WebCompatible.jsx - FIXED
 import { useState, useEffect, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -25,13 +25,16 @@ export function ModelMarketplace() {
 
   useEffect(() => {
     const electronAvailable = typeof window !== 'undefined' && window.electronAPI
-
     setIsElectron(electronAvailable)
 
     if (electronAvailable) {
-      initializeElectronAPI()
+      setupEventHandlers()
+      // 🔴 FIX: Actually call the load functions
+      loadModelsFromElectron()
     } else {
-      initializeWebAPI()
+      // 🔴 FIX: Set loading to false for web mode
+      setLoading(false)
+      toast.warning('Model downloads only available in Electron app')
     }
 
     return () => {
@@ -44,165 +47,120 @@ export function ModelMarketplace() {
     }
   }, [])
 
-  const initializeElectronAPI = async () => {
+  const setupEventHandlers = () => {
+    console.log('Setting up model download event handlers...')
+
+    // Progress handler
+    if (window.electronAPI.model.onDownloadProgress) {
+      downloadProgressCleanup.current = window.electronAPI.model.onDownloadProgress((data) => {
+        console.log('Download progress:', data)
+        setDownloads(prev => new Map(prev).set(data.modelId, {
+          ...prev.get(data.modelId),
+          progress: data.progress,
+          status: 'downloading'
+        }))
+      })
+    }
+
+    // Completion handler
+    if (window.electronAPI.model.onDownloadComplete) {
+      downloadCompleteCleanup.current = window.electronAPI.model.onDownloadComplete((data) => {
+        console.log('Download complete:', data)
+        setDownloads(prev => {
+          const next = new Map(prev)
+          next.delete(data.modelId)
+          return next
+        })
+        
+        // Refresh installed models
+        loadInstalledModels()
+        
+        toast.success('Model downloaded successfully!')
+      })
+    }
+
+    // Error handler
+    if (window.electronAPI.model.onDownloadError) {
+      downloadErrorCleanup.current = window.electronAPI.model.onDownloadError((data) => {
+        console.error('Download error:', data)
+        setDownloads(prev => {
+          const next = new Map(prev)
+          next.delete(data.modelId)
+          return next
+        })
+        
+        toast.error('Failed to download model: ' + data.error)
+      })
+    }
+
+    // Queue handler
+    if (window.electronAPI.model.onDownloadQueued) {
+      downloadQueuedCleanup.current = window.electronAPI.model.onDownloadQueued((data) => {
+        console.log('Download queued:', data)
+        setDownloads(prev => new Map(prev).set(data.modelId, {
+          progress: 0,
+          status: 'queued'
+        }))
+      })
+    }
+
+    // Cancellation handler
+    if (window.electronAPI.model.onDownloadCancelled) {
+      downloadCancelledCleanup.current = window.electronAPI.model.onDownloadCancelled((data) => {
+        console.log('Download cancelled:', data)
+        setDownloads(prev => {
+          const next = new Map(prev)
+          next.delete(data.modelId)
+          return next
+        })
+        
+        toast.info('Download cancelled')
+      })
+    }
+  }
+
+  // 🔴 FIX: Actually implement the loading functions
+  const loadModelsFromElectron = async () => {
     try {
-      setupElectronEventHandlers()
-      await loadModelsFromElectron()
+      setLoading(true)
+      console.log('🔄 Loading models from Electron...')
+      
+      await Promise.all([
+        loadAvailableModels(),
+        loadInstalledModels()
+      ])
+      
+      console.log('✅ Models loaded successfully')
     } catch (error) {
-      console.error('Failed to initialize Electron API:', error)
+      console.error('❌ Failed to load models:', error)
       toast.error('Failed to load models: ' + error.message)
     } finally {
       setLoading(false)
     }
   }
 
-  const setupElectronEventHandlers = () => {
-    console.log('Setting up model download event handlers...')
-
-    // Download Progress Handler - REAL-TIME UPDATES
-    if (window.electronAPI.model.onDownloadProgress) {
-      downloadProgressCleanup.current = window.electronAPI.model.onDownloadProgress((data) => {
-        console.log('Download progress:', data.modelId, Math.round(data.progress) + '%')
-        
-        setDownloads(prev => {
-          const updated = new Map(prev)
-          updated.set(data.modelId, {
-            ...updated.get(data.modelId),
-            progress: Math.round(data.progress),
-            downloadedBytes: data.downloadedBytes,
-            totalBytes: data.totalBytes,
-            speed: data.speed,
-            status: 'downloading'
-          })
-          return updated
-        })
-      })
-      console.log('✅ Download progress handler set up')
-    }
-
-    // Download Complete Handler
-    if (window.electronAPI.model.onDownloadComplete) {
-      downloadCompleteCleanup.current = window.electronAPI.model.onDownloadComplete((data) => {
-        console.log('Download complete:', data.modelId)
-        
-        setDownloads(prev => {
-          const updated = new Map(prev)
-          updated.delete(data.modelId) // Remove from downloads
-          return updated
-        })
-
-        // Refresh installed models
-        loadInstalledModels()
-        
-        toast.success(`✅ Model downloaded successfully!`)
-      })
-      console.log('✅ Download complete handler set up')
-    }
-
-    // Download Error Handler
-    if (window.electronAPI.model.onDownloadError) {
-      downloadErrorCleanup.current = window.electronAPI.model.onDownloadError((data) => {
-        console.error('Download error:', data.modelId, data.error)
-        
-        setDownloads(prev => {
-          const updated = new Map(prev)
-          updated.delete(data.modelId) // Remove from downloads
-          return updated
-        })
-        
-        toast.error(`❌ Download failed: ${data.error}`)
-      })
-      console.log('✅ Download error handler set up')
-    }
-
-    // Download Queued Handler
-    if (window.electronAPI.model.onDownloadQueued) {
-      downloadQueuedCleanup.current = window.electronAPI.model.onDownloadQueued((data) => {
-        console.log('Download queued:', data.modelId)
-        
-        setDownloads(prev => {
-          const updated = new Map(prev)
-          updated.set(data.modelId, {
-            progress: 0,
-            downloadedBytes: 0,
-            totalBytes: data.model?.sizeBytes || 0,
-            speed: 0,
-            status: 'queued'
-          })
-          return updated
-        })
-        
-        toast.success(`📥 Download started: ${data.model?.name}`)
-      })
-      console.log('✅ Download queued handler set up')
-    }
-
-    if (window.electronAPI.model.onDownloadCancelled) {
-      downloadCancelledCleanup.current = window.electronAPI.model.onDownloadCancelled((data) => {
-        setDownloads(prev => {
-          const updated = new Map(prev)
-          updated.delete(data.modelId)
-          return updated
-        })
-        toast.warning('Download cancelled')
-      })
-    }
-  }
-
-  const loadModelsFromElectron = async () => {
-    await Promise.all([
-      loadAvailableModels(),
-      loadInstalledModels()
-    ])
-  }
-
   const loadAvailableModels = async () => {
     try {
+      console.log('📦 Loading available models...')
       const models = await window.electronAPI.model.getAvailable()
       setAvailableModels(models)
-      console.log('Loaded available models:', models.length)
+      console.log('✅ Loaded available models:', models.length)
     } catch (error) {
-      console.error('Failed to load available models:', error)
-      toast.error('Failed to load available models')
+      console.error('❌ Failed to load available models:', error)
+      throw error
     }
   }
 
   const loadInstalledModels = async () => {
     try {
+      console.log('💾 Loading installed models...')
       const models = await window.electronAPI.model.getInstalled()
       setInstalledModels(models)
-      console.log('Loaded installed models:', models.length)
+      console.log('✅ Loaded installed models:', models.length)
     } catch (error) {
-      console.error('Failed to load installed models:', error)
-      toast.error('Failed to load installed models')
+      console.error('❌ Failed to load installed models:', error)
+      throw error
     }
-  }
-
-  const initializeWebAPI = async () => {
-    // For web interface - you could implement web-based model management here
-    setAvailableModels([
-      {
-        id: 'whisper-tiny',
-        name: 'Whisper Tiny',
-        size: '39 MB',
-        sizeBytes: 39000000,
-        description: 'Fastest model, English only, good for real-time transcription',
-        accuracy: 'Basic',
-        speed: 'Very Fast',
-        isInstalled: false
-      },
-      {
-        id: 'whisper-base',
-        name: 'Whisper Base', 
-        size: '142 MB',
-        sizeBytes: 142000000,
-        description: 'Good balance of speed and accuracy',
-        accuracy: 'Good',
-        speed: 'Fast',
-        isInstalled: false
-      }
-    ])
-    setLoading(false)
   }
 
   const handleDownloadModel = async (modelId) => {
@@ -265,11 +223,6 @@ export function ModelMarketplace() {
     return Math.round(progress)
   }
 
-  const formatSpeed = (bytesPerSecond) => {
-    if (!bytesPerSecond) return ''
-    return formatBytes(bytesPerSecond) + '/s'
-  }
-
   const getModelStatus = (model) => {
     const download = downloads.get(model.id)
     if (download) {
@@ -327,6 +280,7 @@ export function ModelMarketplace() {
     }
   }
 
+  // 🔴 FIX: Show proper loading state and error handling
   if (loading) {
     return (
       <div className="flex items-center justify-center p-8">
@@ -335,6 +289,23 @@ export function ModelMarketplace() {
           <span>Loading models...</span>
         </div>
       </div>
+    )
+  }
+
+  // 🔴 FIX: Show message when no Electron API
+  if (!isElectron) {
+    return (
+      <Card>
+        <CardContent className="flex items-center justify-center p-8">
+          <div className="text-center">
+            <Package className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
+            <h3 className="text-lg font-semibold mb-2">Electron Required</h3>
+            <p className="text-muted-foreground">
+              Model management is only available in the Electron app.
+            </p>
+          </div>
+        </CardContent>
+      </Card>
     )
   }
 

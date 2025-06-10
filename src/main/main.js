@@ -1,9 +1,10 @@
-// src/main/main-simplified.js - Fixed version without glass header and traffic lights
-const { app, BrowserWindow, ipcMain, dialog, Menu } = require('electron');
+// src/main/main.js - FIXED: Always setup IPC handlers regardless of service initialization
+const { app, BrowserWindow, ipcMain, dialog, Menu, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { autoUpdater } = require('electron-updater');
 const Store = require('electron-store');
+const DeviceManager = require('./services/device-manager');
 
 console.log('🚀 WhisperDesk Enhanced starting...');
 console.log('🚀 Platform:', process.platform);
@@ -21,252 +22,381 @@ let services = {};
 let stores = {};
 
 // Initialize stores safely
-function initializeStores() {
+async function initializeStores() {
   try {
-    console.log('🔧 Initializing stores...');
-    
-    stores.main = new Store();
-    stores.transcription = new Store({
-      name: 'transcription',
-      defaults: {
-        activeTranscription: null
-      }
-    });
-    
-    // Clear transcription state on startup
-    stores.transcription.clear();
-    
-    console.log('✅ Stores initialized successfully');
+    const store = new Store();
+    stores.main = store;
+    console.log('✅ Main store initialized');
     return true;
   } catch (error) {
-    console.error('❌ Failed to initialize stores:', error);
+    console.error('❌ Store initialization failed:', error);
     return false;
   }
 }
 
-// Initialize services with error handling
+function setupBasicIpcHandlers() {
+  // Window controls
+  ipcMain.on('window:minimize', () => mainWindow?.minimize());
+  ipcMain.on('window:maximize', () => {
+    if (mainWindow?.isMaximized()) {
+      mainWindow?.unmaximize();
+    } else {
+      mainWindow?.maximize();
+    }
+  });
+  ipcMain.on('window:close', () => mainWindow?.close());
+
+  // Shell access for opening system preferences
+  ipcMain.handle('shell:openExternal', (event, url) => {
+    return shell.openExternal(url);
+  });
+
+  ipcMain.handle('window:isMaximized', () => mainWindow?.isMaximized() || false);
+  ipcMain.handle('window:isMinimized', () => mainWindow?.isMinimized() || false);
+  ipcMain.handle('window:getPlatform', () => process.platform);
+  ipcMain.handle('window:setTheme', (event, theme) => {
+    stores.main?.set('theme', theme);
+    mainWindow?.webContents.send('theme-changed', theme);
+    return true;
+  });
+
+  // Debug
+  ipcMain.handle('debug:test', () => ({ success: true, message: 'Enhanced IPC working!' }));
+}
+
+// ENHANCED Screen Recorder IPC Handlers - REPLACE existing ones
+function setupEnhancedScreenRecorderHandlers() {
+  console.log('🔧 Setting up ENHANCED screen recorder IPC handlers...');
+
+  ipcMain.handle('screenRecorder:getAvailableScreens', async () => {
+    try {
+      if (services.deviceManager) {
+        return await services.deviceManager.getAvailableScreens();
+      } else {
+        const { desktopCapturer } = require('electron');
+        const sources = await desktopCapturer.getSources({ types: ['screen'] });
+        return sources.map((source, index) => ({
+          id: source.id,
+          name: source.name || `Screen ${index + 1}`,
+          type: 'screen'
+        }));
+      }
+    } catch (error) {
+      console.error('❌ Failed to get available screens:', error);
+      return [{ id: 'screen:0', name: 'Primary Display', type: 'screen' }];
+    }
+  });
+
+  ipcMain.handle('screenRecorder:updateAudioDevices', async (event, audioDevices) => {
+    try {
+      if (services.deviceManager) {
+        services.deviceManager.updateAudioDevices(audioDevices);
+      }
+      return { success: true };
+    } catch (error) {
+      console.error('❌ Failed to update audio devices:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('screenRecorder:validateDevices', async (event, screenId, audioId) => {
+    try {
+      if (services.deviceManager) {
+        return services.deviceManager.validateDeviceSelection(screenId, audioId);
+      }
+      return { valid: true, issues: [] };
+    } catch (error) {
+      console.error('❌ Failed to validate devices:', error);
+      return { valid: false, issues: [error.message] };
+    }
+  });
+
+  ipcMain.handle('screenRecorder:checkPermissions', async () => {
+    try {
+      if (services.deviceManager) {
+        return await services.deviceManager.checkPermissions();
+      }
+      return { screen: 'unknown', microphone: 'unknown' };
+    } catch (error) {
+      console.error('❌ Failed to check permissions:', error);
+      return { screen: 'unknown', microphone: 'unknown' };
+    }
+  });
+
+  ipcMain.handle('screenRecorder:requestPermissions', async () => {
+    try {
+      if (services.deviceManager) {
+        return await services.deviceManager.requestPermissions();
+      }
+      return { screen: 'granted', microphone: 'granted' };
+    } catch (error) {
+      console.error('❌ Failed to request permissions:', error);
+      return { screen: 'unknown', microphone: 'unknown' };
+    }
+  });
+
+  ipcMain.handle('screenRecorder:startRecording', async (event, options) => {
+    try {
+      if (services.screenRecorder && typeof services.screenRecorder.startRecording === 'function') {
+        if (services.deviceManager) {
+          const validation = services.deviceManager.validateDeviceSelection(
+            options.screenId,
+            options.audioInputId
+          );
+
+          if (!validation.valid) {
+            return {
+              success: false,
+              error: `Device validation failed: ${validation.issues.join(', ')}`,
+              type: 'validation_error'
+            };
+          }
+        }
+
+        return await services.screenRecorder.startRecording(options);
+      } else {
+        console.warn('⚠️ Screen recorder service not available');
+        return {
+          success: false,
+          error: 'Screen recorder service not available. Please restart the application.',
+          type: 'service_unavailable'
+        };
+      }
+    } catch (error) {
+      console.error('❌ Failed to start recording:', error);
+      return {
+        success: false,
+        error: error.message,
+        type: 'start_error',
+        details: {
+          platform: process.platform,
+          timestamp: new Date().toISOString()
+        }
+      };
+    }
+  });
+
+  ipcMain.handle('screenRecorder:validateRecording', async () => {
+    try {
+      if (services.screenRecorder && typeof services.screenRecorder.validateRecording === 'function') {
+        services.screenRecorder.validateRecording();
+        return { success: true };
+      }
+      return { success: false, error: 'Screen recorder service not available' };
+    } catch (error) {
+      console.error('❌ Failed to validate recording:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('screenRecorder:handleError', async (event, errorData) => {
+    try {
+      if (services.screenRecorder && typeof services.screenRecorder.handleRecordingError === 'function') {
+        services.screenRecorder.handleRecordingError(errorData);
+        return { success: true };
+      }
+      return { success: false, error: 'Screen recorder service not available' };
+    } catch (error) {
+      console.error('❌ Failed to handle recording error:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('screenRecorder:getStatus', () => {
+    try {
+      if (services.screenRecorder && typeof services.screenRecorder.getStatus === 'function') {
+        const status = services.screenRecorder.getStatus();
+        if (services.deviceManager) {
+          const deviceInfo = services.deviceManager.getFormattedDevices();
+          status.availableDevices = deviceInfo;
+        }
+        console.log('📊 Enhanced screen recorder status requested:', status);
+        return status;
+      } else {
+        console.warn('⚠️ Screen recorder service not available, returning fallback status');
+        const fallbackStatus = {
+          isRecording: false,
+          isPaused: false,
+          duration: 0,
+          error: 'Screen recorder service not available',
+          availableDevices: {
+            screens: ['screen:0'],
+            audio: ['default'],
+            deviceNames: {
+              screens: { 'screen:0': 'Primary Display' },
+              audio: { 'default': 'Default Audio Input' }
+            }
+          },
+          hasActiveProcess: false,
+          recordingValidated: false
+        };
+        return fallbackStatus;
+      }
+    } catch (error) {
+      console.error('❌ Failed to get recording status:', error);
+      return {
+        isRecording: false,
+        isPaused: false,
+        duration: 0,
+        error: error.message,
+        availableDevices: { screens: [], audio: [] },
+        hasActiveProcess: false,
+        recordingValidated: false
+      };
+    }
+  });
+
+  // Keep existing handlers for compatibility
+  ipcMain.handle('screenRecorder:stopRecording', async (event) => {
+    try {
+      if (services.screenRecorder && typeof services.screenRecorder.stopRecording === 'function') {
+        return await services.screenRecorder.stopRecording();
+      } else {
+        return { success: true, message: 'No recording was in progress' };
+      }
+    } catch (error) {
+      console.error('❌ Failed to stop recording:', error);
+      return { success: false, error: error.message, type: 'stop_error' };
+    }
+  });
+
+  ipcMain.handle('screenRecorder:pauseRecording', async () => {
+    try {
+      if (services.screenRecorder && typeof services.screenRecorder.pauseRecording === 'function') {
+        return services.screenRecorder.pauseRecording();
+      } else {
+        return { success: false, error: 'Screen recorder service not available' };
+      }
+    } catch (error) {
+      console.error('❌ Failed to pause recording:', error);
+      return { success: false, error: error.message, type: 'pause_error' };
+    }
+  });
+
+  ipcMain.handle('screenRecorder:resumeRecording', async () => {
+    try {
+      if (services.screenRecorder && typeof services.screenRecorder.resumeRecording === 'function') {
+        return services.screenRecorder.resumeRecording();
+      } else {
+        return { success: false, error: 'Screen recorder service not available' };
+      }
+    } catch (error) {
+      console.error('❌ Failed to resume recording:', error);
+      return { success: false, error: error.message, type: 'resume_error' };
+    }
+  });
+
+  ipcMain.handle('screenRecorder:getRecordings', async () => {
+    try {
+      if (services.screenRecorder && typeof services.screenRecorder.getRecordings === 'function') {
+        return await services.screenRecorder.getRecordings();
+      } else {
+        return [];
+      }
+    } catch (error) {
+      console.error('❌ Failed to get recordings:', error);
+      return [];
+    }
+  });
+
+  ipcMain.handle('screenRecorder:deleteRecording', async (event, filePath) => {
+    try {
+      if (services.screenRecorder && typeof services.screenRecorder.deleteRecording === 'function') {
+        return await services.screenRecorder.deleteRecording(filePath);
+      } else {
+        return { success: false, error: 'Screen recorder service not available' };
+      }
+    } catch (error) {
+      console.error('❌ Failed to delete recording:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('screenRecorder:forceCleanup', () => {
+    try {
+      if (services.screenRecorder && typeof services.screenRecorder.forceCleanup === 'function') {
+        services.screenRecorder.forceCleanup();
+        return { success: true, message: 'Cleanup completed' };
+      } else {
+        return { success: true, message: 'No service to clean up' };
+      }
+    } catch (error) {
+      console.error('❌ Failed to force cleanup:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  console.log('✅ Enhanced screen recorder IPC handlers set up');
+}
+
+// 🔴 FIXED: Add the missing setupAllIpcHandlers function
+function setupAllIpcHandlers() {
+  console.log('🔧 Setting up ALL IPC handlers...');
+  
+  // Setup basic IPC handlers first (these always work)
+  setupBasicIpcHandlers();
+  
+  // Setup enhanced screen recorder handlers  
+  setupEnhancedScreenRecorderHandlers();
+  
+  console.log('✅ All basic IPC handlers set up successfully');
+}
+
+// Add this to your service initialization in main.js
 async function initializeServices() {
   console.log('🔧 Initializing services...');
   
   try {
-    // Try to initialize real services one by one
+    // Initialize each service individually with error handling
     await initializeModelManager();
     await initializeTranscriptionService();
     await initializeAudioService();
     await initializeSettingsService();
     await initializeExportService();
-    await initializeScreenRecorder();
+
+    // 🔴 NEW: Initialize enhanced device manager FIRST
+    await initializeEnhancedDeviceManager();
+
+    // 🔴 FIXED: Initialize screen recorder AFTER device manager
+    await initializeEnhancedScreenRecorderSafe();
     
-    console.log('✅ All services initialized successfully');
+    console.log('✅ Services initialization completed');
     return true;
   } catch (error) {
-    console.error('❌ Service initialization failed:', error);
-    console.warn('⚠️ Continuing with fallback services...');
-    initializeFallbackServices();
+    console.error('❌ Service initialization had errors:', error);
+    console.warn('⚠️ Some services may not be available, but app will continue...');
     return false;
   }
 }
 
-async function initializeModelManager() {
+// 🔴 SAFE screen recorder initialization
+async function initializeEnhancedScreenRecorderSafe() {
   try {
-    console.log('🔧 Initializing Model Manager...');
-    const ModelManager = require('./services/model-manager');
-    services.modelManager = new ModelManager();
-    await services.modelManager.initialize();
-    
-    // Set up events
-    services.modelManager.on('downloadQueued', (data) => {
-      mainWindow?.webContents.send('model:downloadQueued', data);
-    });
-    services.modelManager.on('downloadProgress', (data) => {
-      mainWindow?.webContents.send('model:downloadProgress', data);
-    });
-    services.modelManager.on('downloadComplete', (data) => {
-      mainWindow?.webContents.send('model:downloadComplete', data);
-    });
-    services.modelManager.on('downloadError', (data) => {
-      mainWindow?.webContents.send('model:downloadError', data);
-    });
-    services.modelManager.on('downloadCancelled', (data) => {
-      mainWindow?.webContents.send('model:downloadCancelled', data);
-    });
-    
-    console.log('✅ Model Manager initialized');
-  } catch (error) {
-    console.error('❌ Model Manager failed:', error);
-    console.warn('⚠️ Using fallback model manager');
-    
-    // Fallback model manager
-    services.modelManager = {
-      getAvailableModels: () => Promise.resolve([
-        { id: 'whisper-tiny', name: 'Whisper Tiny', size: '39 MB', isInstalled: false },
-        { id: 'whisper-base', name: 'Whisper Base', size: '142 MB', isInstalled: false }
-      ]),
-      getInstalledModels: () => Promise.resolve([]),
-      downloadModel: () => Promise.resolve({ success: true }),
-      deleteModel: () => Promise.resolve({ success: true }),
-      getModelInfo: () => Promise.resolve(null),
-      on: () => {},
-      initialize: () => Promise.resolve()
-    };
-  }
-}
-
-async function initializeTranscriptionService() {
-  try {
-    console.log('🔧 Initializing Transcription Service...');
-    const TranscriptionService = require('./services/transcription-service-native');
-    services.transcriptionService = new TranscriptionService(services.modelManager);
-    await services.transcriptionService.initialize();
-    
-    // Set up events
-    services.transcriptionService.on('progress', (data) => {
-      console.log('📈 Transcription progress:', data);
-      mainWindow?.webContents.send('transcription:progress', data);
-    });
-    services.transcriptionService.on('complete', (data) => {
-      console.log('✅ Transcription complete');
-      mainWindow?.webContents.send('transcription:complete', data);
-    });
-    services.transcriptionService.on('error', (data) => {
-      console.log('❌ Transcription error:', data);
-      mainWindow?.webContents.send('transcription:error', data);
-    });
-    services.transcriptionService.on('start', (data) => {
-      console.log('🎬 Transcription started');
-      mainWindow?.webContents.send('transcription:start', data);
-    });
-    services.transcriptionService.on('cancelled', (data) => {
-      console.log('⏹️ Transcription cancelled');
-      mainWindow?.webContents.send('transcription:cancelled', data);
-    });
-    
-    console.log('✅ Transcription Service initialized');
-  } catch (error) {
-    console.error('❌ Transcription Service failed:', error);
-    console.warn('⚠️ Using fallback transcription service');
-    
-    // Fallback transcription service
-    services.transcriptionService = {
-      getProviders: () => [
-        { id: 'whisper-native', name: 'Native Whisper (Fallback)', isAvailable: false },
-        { id: 'mock', name: 'Mock Transcription', isAvailable: true }
-      ],
-      processFile: async (filePath, options) => {
-        console.log('🔧 Fallback transcription for:', filePath);
-        
-        // Simulate progress
-        mainWindow?.webContents.send('transcription:start', { filePath });
-        
-        for (let i = 0; i <= 100; i += 20) {
-          await new Promise(resolve => setTimeout(resolve, 300));
-          mainWindow?.webContents.send('transcription:progress', {
-            progress: i,
-            message: `Fallback processing... ${i}%`
-          });
-        }
-        
-        const result = {
-          text: `Fallback transcription of: ${path.basename(filePath)}. This is a mock result because the real transcription service failed to initialize.`,
-          segments: [
-            { start: 0, end: 5, text: "Fallback transcription" },
-            { start: 5, end: 10, text: "service is working" }
-          ],
-          language: 'en'
-        };
-        
-        mainWindow?.webContents.send('transcription:complete', { result });
-        return result;
-      },
-      on: () => {},
-      initialize: () => Promise.resolve()
-    };
-  }
-}
-
-async function initializeAudioService() {
-  try {
-    console.log('🔧 Initializing Audio Service...');
-    const AudioService = require('./services/audio-service');
-    services.audioService = new AudioService();
-    await services.audioService.initialize();
-    console.log('✅ Audio Service initialized');
-  } catch (error) {
-    console.error('❌ Audio Service failed:', error);
-    console.warn('⚠️ Using fallback audio service');
-    
-    services.audioService = {
-      getDevices: () => Promise.resolve([]),
-      startRecording: () => Promise.resolve({ success: false, error: 'Audio service not available' }),
-      stopRecording: () => Promise.resolve({ success: false }),
-      getWaveform: () => Promise.resolve(null),
-      initialize: () => Promise.resolve()
-    };
-  }
-}
-
-async function initializeSettingsService() {
-  try {
-    console.log('🔧 Initializing Settings Service...');
-    const SettingsService = require('./services/settings-service');
-    services.settingsService = new SettingsService();
-    await services.settingsService.initialize();
-    console.log('✅ Settings Service initialized');
-  } catch (error) {
-    console.error('❌ Settings Service failed:', error);
-    console.warn('⚠️ Using fallback settings service');
-    
-    const fallbackSettings = {
-      theme: 'system',
-      selectedProvider: 'whisper-native',
-      selectedModel: 'whisper-tiny'
-    };
-    
-    services.settingsService = {
-      get: (key) => fallbackSettings[key] || null,
-      set: (key, value) => { fallbackSettings[key] = value; return true; },
-      getAll: () => fallbackSettings,
-      getTranscriptionSettings: () => ({
-        defaultModel: 'whisper-tiny',
-        defaultProvider: 'whisper-native'
-      }),
-      initialize: () => Promise.resolve()
-    };
-  }
-}
-
-async function initializeExportService() {
-  try {
-    console.log('🔧 Initializing Export Service...');
-    const ExportService = require('./services/export-service');
-    services.exportService = new ExportService();
-    await services.exportService.initialize();
-    console.log('✅ Export Service initialized');
-  } catch (error) {
-    console.error('❌ Export Service failed:', error);
-    console.warn('⚠️ Using fallback export service');
-    
-    services.exportService = {
-      exportText: () => Promise.resolve({ success: true }),
-      exportSubtitle: () => Promise.resolve({ success: true }),
-      copyToClipboard: (text) => {
-        const { clipboard } = require('electron');
-        clipboard.writeText(text);
-        return Promise.resolve(true);
-      },
-      initialize: () => Promise.resolve()
-    };
-  }
-}
-
-async function initializeScreenRecorder() {
-  try {
-    console.log('🔧 Initializing Screen Recorder...');
+    console.log('🔧 Initializing Enhanced Screen Recorder (safe mode)...');
     const ScreenRecorder = require('./services/screen-recorder');
     services.screenRecorder = new ScreenRecorder();
     await services.screenRecorder.initialize();
     
-    // Set up event handlers with proper error handling
+    // Set up event handlers if service is available
+    if (services.screenRecorder) {
+      setupScreenRecorderEvents();
+    }
+    
+    console.log('✅ Enhanced Screen Recorder initialized successfully');
+    
+  } catch (error) {
+    console.error('❌ Enhanced Screen Recorder failed to initialize:', error);
+    console.warn('⚠️ Screen recorder will use fallback mode');
+    
+    // 🔴 Don't set services.screenRecorder = null, just leave it undefined
+    // The IPC handlers will detect this and provide fallbacks
+  }
+}
+
+function setupScreenRecorderEvents() {
+  if (!services.screenRecorder) return;
+  
+  try {
     services.screenRecorder.on('started', (data) => {
       console.log('📹 Recording started event:', data);
       mainWindow?.webContents.send('screenRecorder:started', data);
@@ -279,7 +409,19 @@ async function initializeScreenRecorder() {
     
     services.screenRecorder.on('error', (data) => {
       console.error('❌ Recording error event:', data);
-      mainWindow?.webContents.send('screenRecorder:error', data);
+      const enhancedError = {
+        ...data,
+        timestamp: new Date().toISOString(),
+        platform: process.platform
+      };
+      
+      if (data.error?.includes('Selected framerate') || data.error?.includes('Input/output error')) {
+        enhancedError.suggestion = 'Try refreshing devices or check screen recording permissions';
+      } else if (data.error?.includes('permission')) {
+        enhancedError.suggestion = 'Please grant screen recording and microphone permissions';
+      }
+      
+      mainWindow?.webContents.send('screenRecorder:error', enhancedError);
     });
     
     services.screenRecorder.on('paused', () => {
@@ -296,40 +438,200 @@ async function initializeScreenRecorder() {
       mainWindow?.webContents.send('screenRecorder:progress', data);
     });
     
-    console.log('✅ Screen Recorder initialized');
+    console.log('✅ Screen recorder events set up');
   } catch (error) {
-    console.error('❌ Screen Recorder failed:', error);
-    console.warn('⚠️ Using fallback screen recorder');
-    
-    services.screenRecorder = {
-      startRecording: () => Promise.resolve({ success: false, error: 'Screen recorder not available' }),
-      stopRecording: () => Promise.resolve({ success: false, error: 'Screen recorder not available' }),
-      pauseRecording: () => ({ success: false, error: 'Screen recorder not available' }),
-      resumeRecording: () => ({ success: false, error: 'Screen recorder not available' }),
-      getStatus: () => ({ 
-        isRecording: false, 
-        isPaused: false, 
-        duration: 0, 
-        error: 'Screen recorder not available' 
-      }),
+    console.error('❌ Failed to set up screen recorder events:', error);
+  }
+}
+
+function setupTranscriptionEvents() {
+  if (!services.transcriptionService) return;
+
+  try {
+    services.transcriptionService.on('progress', (data) => {
+      mainWindow?.webContents.send('transcription:progress', data);
+    });
+    services.transcriptionService.on('complete', (data) => {
+      mainWindow?.webContents.send('transcription:complete', data);
+    });
+    services.transcriptionService.on('error', (data) => {
+      mainWindow?.webContents.send('transcription:error', data);
+    });
+    services.transcriptionService.on('start', (data) => {
+      mainWindow?.webContents.send('transcription:start', data);
+    });
+    services.transcriptionService.on('cancelled', (data) => {
+      mainWindow?.webContents.send('transcription:cancelled', data);
+    });
+    console.log('✅ Transcription events set up');
+  } catch (error) {
+    console.error('❌ Failed to set up transcription events:', error);
+  }
+}
+
+// Rest of initialization functions (simplified for brevity)
+async function initializeModelManager() {
+  try {
+    console.log('🔧 Initializing Model Manager...');
+    const ModelManager = require('./services/model-manager');
+    services.modelManager = new ModelManager();
+    await services.modelManager.initialize();
+    console.log('✅ Model Manager initialized');
+  } catch (error) {
+    console.error('❌ Model Manager failed:', error);
+    // Create fallback
+    services.modelManager = {
+      getAvailableModels: () => Promise.resolve([]),
+      getInstalledModels: () => Promise.resolve([]),
+      downloadModel: () => Promise.resolve({ success: false }),
+      deleteModel: () => Promise.resolve({ success: false }),
+      getModelInfo: () => Promise.resolve(null),
+      on: () => {},
       initialize: () => Promise.resolve()
     };
   }
 }
 
-function initializeFallbackServices() {
-  console.log('🔧 Initializing fallback services...');
-  
-  // This function is called if any service fails
-  // Services are already initialized with fallbacks in their individual init functions
-  
-  console.log('✅ Fallback services ready');
+async function initializeTranscriptionService() {
+  try {
+    console.log('🔧 Initializing Transcription Service...');
+    const TranscriptionService = require('./services/transcription-service-native');
+    services.transcriptionService = new TranscriptionService(services.modelManager);
+    await services.transcriptionService.initialize();
+    console.log('✅ Transcription Service initialized');
+  } catch (error) {
+    console.error('❌ Transcription Service failed:', error);
+    // Create fallback
+    services.transcriptionService = {
+      getProviders: () => [{ id: 'mock', name: 'Mock Provider', isAvailable: false }],
+      processFile: () => Promise.reject(new Error('Transcription service not available')),
+      on: () => {},
+      initialize: () => Promise.resolve()
+    };
+  }
+}
+
+async function initializeAudioService() {
+  try {
+    const AudioService = require('./services/audio-service');
+    services.audioService = new AudioService();
+    await services.audioService.initialize();
+    console.log('✅ Audio Service initialized');
+  } catch (error) {
+    console.error('❌ Audio Service failed:', error);
+    services.audioService = {
+      getDevices: () => Promise.resolve([]),
+      startRecording: () => Promise.resolve({ success: false }),
+      stopRecording: () => Promise.resolve({ success: false }),
+      getWaveform: () => Promise.resolve(null),
+      initialize: () => Promise.resolve()
+    };
+  }
+}
+
+async function initializeSettingsService() {
+  try {
+    const SettingsService = require('./services/settings-service');
+    services.settingsService = new SettingsService();
+    await services.settingsService.initialize();
+    console.log('✅ Settings Service initialized');
+  } catch (error) {
+    console.error('❌ Settings Service failed:', error);
+    const fallbackSettings = { theme: 'system' };
+    services.settingsService = {
+      get: (key) => fallbackSettings[key] || null,
+      set: (key, value) => { fallbackSettings[key] = value; return true; },
+      getAll: () => fallbackSettings,
+      getTranscriptionSettings: () => ({}),
+      initialize: () => Promise.resolve()
+    };
+  }
+}
+
+async function initializeExportService() {
+  try {
+    const ExportService = require('./services/export-service');
+    services.exportService = new ExportService();
+    await services.exportService.initialize();
+    console.log('✅ Export Service initialized');
+  } catch (error) {
+    console.error('❌ Export Service failed:', error);
+    services.exportService = {
+      exportText: () => Promise.resolve({ success: true }),
+      exportSubtitle: () => Promise.resolve({ success: true }),
+      copyToClipboard: (text) => {
+        const { clipboard } = require('electron');
+        clipboard.writeText(text);
+        return Promise.resolve(true);
+      },
+      initialize: () => Promise.resolve()
+    };
+  }
+}
+
+async function initializeEnhancedDeviceManager() {
+  try {
+    console.log('🔧 Initializing Enhanced Device Manager...');
+    const DeviceManagerClass = require('./services/device-manager');
+    services.deviceManager = new DeviceManagerClass();
+    await services.deviceManager.initialize();
+
+    console.log('✅ Enhanced Device Manager initialized successfully');
+  } catch (error) {
+    console.error('❌ Enhanced Device Manager failed to initialize:', error);
+    console.warn('⚠️ Device manager will use fallback mode');
+  }
+}
+
+// Setup remaining IPC handlers for other services
+function setupRemainingIpcHandlers() {
+  // Model management
+  ipcMain.handle('model:getAvailable', () => services.modelManager.getAvailableModels());
+  ipcMain.handle('model:getInstalled', () => services.modelManager.getInstalledModels());
+  ipcMain.handle('model:download', (event, modelId) => services.modelManager.downloadModel(modelId));
+  ipcMain.handle('model:delete', (event, modelId) => services.modelManager.deleteModel(modelId));
+  ipcMain.handle('model:getInfo', (event, modelId) => services.modelManager.getModelInfo(modelId));
+  ipcMain.handle('model:cancelDownload', (event, modelId) => services.modelManager.cancelDownload(modelId));
+
+  // Transcription
+  ipcMain.handle('transcription:getProviders', () => services.transcriptionService.getProviders());
+  ipcMain.handle('transcription:processFile', async (event, filePath, options) => {
+    try {
+      console.log('🎵 Processing file:', filePath);
+      const transcriptionSettings = services.settingsService.getTranscriptionSettings();
+      const mergedOptions = { ...transcriptionSettings, ...options };
+      const result = await services.transcriptionService.processFile(filePath, mergedOptions);
+      return result;
+    } catch (error) {
+      console.error('❌ Transcription failed:', error);
+      mainWindow?.webContents.send('transcription:error', { error: error.message });
+      throw error;
+    }
+  });
+  ipcMain.handle('transcription:stop', (event, transcriptionId) => services.transcriptionService.cancelTranscription(transcriptionId));
+
+  // Settings
+  ipcMain.handle('settings:get', (event, key) => services.settingsService.get(key));
+  ipcMain.handle('settings:set', (event, key, value) => services.settingsService.set(key, value));
+  ipcMain.handle('settings:getAll', () => services.settingsService.getAll());
+
+  // File operations
+  ipcMain.handle('file:showOpenDialog', (event, options) => dialog.showOpenDialog(mainWindow, options));
+  ipcMain.handle('file:showSaveDialog', (event, options) => dialog.showSaveDialog(mainWindow, options));
+
+  // Export
+  ipcMain.handle('export:text', (event, data, format) => services.exportService.exportText(data, format));
+  ipcMain.handle('export:subtitle', (event, data, format) => services.exportService.exportSubtitle(data, format));
+  ipcMain.handle('export:copy', (event, text) => services.exportService.copyToClipboard(text));
+
+  // App operations
+  ipcMain.handle('app:getVersion', () => app.getVersion());
+  ipcMain.handle('app:restart', () => autoUpdater.quitAndInstall());
 }
 
 function createWindow() {
   console.log('🔧 Creating main window...');
   
-  // Check preload script
   const preloadPath = path.join(__dirname, 'preload.js');
   const preloadExists = fs.existsSync(preloadPath);
   console.log('🔧 Preload script exists:', preloadExists);
@@ -341,13 +643,12 @@ function createWindow() {
     minHeight: 700,
     show: false,
     center: true,
-    // FIXED: Proper window configuration for custom header
-    frame: false,  // No native frame at all
-    titleBarStyle: 'hidden',  // Hide title bar but keep window controls on macOS
-    titleBarOverlay: false,   // Disable overlay
-    transparent: false,       // Not transparent - causes glass effect
-    vibrancy: null,          // No vibrancy effect
-    visualEffectState: 'inactive', // No visual effects
+    frame: false,
+    titleBarStyle: 'hidden',
+    titleBarOverlay: false,
+    transparent: false,
+    vibrancy: null,
+    visualEffectState: 'inactive',
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -359,9 +660,7 @@ function createWindow() {
     icon: path.join(__dirname, '../../resources/icons/icon.png')
   });
 
-  // FIXED: Explicitly disable native window controls on macOS
   if (process.platform === 'darwin') {
-    // This completely removes the traffic light buttons
     mainWindow.setWindowButtonVisibility(false);
   }
 
@@ -414,6 +713,8 @@ function createWindow() {
   // Window event handlers
   mainWindow.webContents.on('did-finish-load', () => {
     console.log('✅ Renderer finished loading');
+    // Setup transcription events after mainWindow is ready
+    setupTranscriptionEvents();
   });
 
   mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL) => {
@@ -468,159 +769,25 @@ function loadFallback() {
   mainWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(fallbackHTML)}`);
 }
 
-// IPC Handlers (same as simplified version)
-function setupIpcHandlers() {
-  console.log('🔧 Setting up IPC handlers...');
-
-  // Window controls
-  ipcMain.on('window:minimize', () => mainWindow?.minimize());
-  ipcMain.on('window:maximize', () => {
-    if (mainWindow?.isMaximized()) {
-      mainWindow?.unmaximize();
-    } else {
-      mainWindow?.maximize();
-    }
-  });
-  ipcMain.on('window:close', () => mainWindow?.close());
-
-  ipcMain.handle('window:isMaximized', () => mainWindow?.isMaximized() || false);
-  ipcMain.handle('window:isMinimized', () => mainWindow?.isMinimized() || false);
-  ipcMain.handle('window:getPlatform', () => process.platform);
-  ipcMain.handle('window:setTheme', (event, theme) => {
-    stores.main?.set('theme', theme);
-    mainWindow?.webContents.send('theme-changed', theme);
-    return true;
-  });
-
-  // Model management - now using real service
-  ipcMain.handle('model:getAvailable', () => services.modelManager.getAvailableModels());
-  ipcMain.handle('model:getInstalled', () => services.modelManager.getInstalledModels());
-  ipcMain.handle('model:download', (event, modelId) => services.modelManager.downloadModel(modelId));
-  ipcMain.handle('model:delete', (event, modelId) => services.modelManager.deleteModel(modelId));
-  ipcMain.handle('model:getInfo', (event, modelId) => services.modelManager.getModelInfo(modelId));
-  ipcMain.handle('model:cancelDownload', (event, modelId) => services.modelManager.cancelDownload(modelId));
-
-  // Transcription - now using real service
-  ipcMain.handle('transcription:getProviders', () => services.transcriptionService.getProviders());
-  ipcMain.handle('transcription:processFile', async (event, filePath, options) => {
-    try {
-      console.log('🎵 Processing file:', filePath);
-      
-      const transcriptionSettings = services.settingsService.getTranscriptionSettings();
-      const mergedOptions = { ...transcriptionSettings, ...options };
-      
-      const result = await services.transcriptionService.processFile(filePath, mergedOptions);
-      return result;
-    } catch (error) {
-      console.error('❌ Transcription failed:', error);
-      mainWindow?.webContents.send('transcription:error', { error: error.message });
-      throw error;
-    }
-  });
-  ipcMain.handle('transcription:stop', (event, transcriptionId) => services.transcriptionService.cancelTranscription(transcriptionId));
-
-  // Settings - now using real service
-  ipcMain.handle('settings:get', (event, key) => services.settingsService.get(key));
-  ipcMain.handle('settings:set', (event, key, value) => services.settingsService.set(key, value));
-  ipcMain.handle('settings:getAll', () => services.settingsService.getAll());
-
-  // File operations
-  ipcMain.handle('file:showOpenDialog', (event, options) => dialog.showOpenDialog(mainWindow, options));
-  ipcMain.handle('file:showSaveDialog', (event, options) => dialog.showSaveDialog(mainWindow, options));
-
-  // Export - now using real service
-  ipcMain.handle('export:text', (event, data, format) => services.exportService.exportText(data, format));
-  ipcMain.handle('export:subtitle', (event, data, format) => services.exportService.exportSubtitle(data, format));
-  ipcMain.handle('export:copy', (event, text) => services.exportService.copyToClipboard(text));
-
-  // FIXED: Screen recorder IPC handlers with proper error handling
-  ipcMain.handle('screenRecorder:startRecording', async (event, opts) => {
-    try {
-      console.log('🎬 Starting screen recording with options:', opts);
-      const result = await services.screenRecorder.startRecording(opts);
-      console.log('✅ Recording started successfully:', result);
-      return result;
-    } catch (error) {
-      console.error('❌ Failed to start recording:', error);
-      return { success: false, error: error.message };
-    }
-  });
-
-  ipcMain.handle('screenRecorder:stopRecording', async () => {
-    try {
-      console.log('⏹️ Stopping screen recording...');
-      const result = await services.screenRecorder.stopRecording();
-      console.log('✅ Recording stopped successfully:', result);
-      return result;
-    } catch (error) {
-      console.error('❌ Failed to stop recording:', error);
-      return { success: false, error: error.message };
-    }
-  });
-
-  ipcMain.handle('screenRecorder:pauseRecording', async () => {
-    try {
-      console.log('⏸️ Pausing screen recording...');
-      const result = services.screenRecorder.pauseRecording();
-      console.log('Pause result:', result);
-      return result;
-    } catch (error) {
-      console.error('❌ Failed to pause recording:', error);
-      return { success: false, error: error.message };
-    }
-  });
-
-  ipcMain.handle('screenRecorder:resumeRecording', async () => {
-    try {
-      console.log('▶️ Resuming screen recording...');
-      const result = services.screenRecorder.resumeRecording();
-      console.log('Resume result:', result);
-      return result;
-    } catch (error) {
-      console.error('❌ Failed to resume recording:', error);
-      return { success: false, error: error.message };
-    }
-  });
-
-  ipcMain.handle('screenRecorder:getStatus', () => {
-    try {
-      return services.screenRecorder.getStatus();
-    } catch (error) {
-      console.error('❌ Failed to get recording status:', error);
-      return { 
-        isRecording: false, 
-        isPaused: false, 
-        error: error.message 
-      };
-    }
-  });
-
-  // App operations
-  ipcMain.handle('app:getVersion', () => app.getVersion());
-  ipcMain.handle('app:restart', () => autoUpdater.quitAndInstall());
-
-  // Debug
-  ipcMain.handle('debug:test', () => ({ success: true, message: 'Enhanced IPC working!' }));
-
-  console.log('✅ IPC handlers set up successfully');
-}
-
-// App initialization
+// 🔴 FIXED: New initialization order
 app.whenReady().then(async () => {
   console.log('🚀 App ready');
   
-  // Initialize stores first
+  // Step 1: Initialize stores
   if (!initializeStores()) {
     console.error('❌ Failed to initialize stores, continuing anyway...');
   }
   
-  // Initialize services
+  // Step 2: 🔴 CRITICAL - Setup ALL IPC handlers first (with fallbacks)
+  setupAllIpcHandlers();
+  
+  // Step 3: Initialize services (can fail without breaking IPC)
   await initializeServices();
   
-  // Set up IPC handlers
-  setupIpcHandlers();
+  // Step 4: Setup remaining IPC handlers for available services
+  setupRemainingIpcHandlers();
   
-  // Create window
+  // Step 5: Create window
   createWindow();
 });
 

@@ -1,21 +1,22 @@
-// src/renderer/whisperdesk-ui/src/App.jsx - Fixed theme handling
-import React, { useState, useEffect, createContext, useContext } from 'react'
+// src/renderer/whisperdesk-ui/src/App.jsx - FIXED: Added Recording Indicator
+import React, { useState, useEffect, createContext, useContext, useCallback } from 'react'
 import { Button } from './components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './components/ui/tabs'
-import { Mic, Package, Clock, Settings, Video } from 'lucide-react'
+import { Progress } from './components/ui/progress'
+import { Mic, Package, Clock, Settings, Video, BarChart3 } from 'lucide-react'
 import { ModelMarketplace } from './components/ModelMarketplace-WebCompatible'
-import { TranscriptionTabElectron } from './components/TranscriptionTabElectron'
-import { ScreenRecorder } from './components/ScreenRecorder'
-import { SettingsTab } from './components/SettingsTab'
+import { AnalyticsTab } from './components/AnalyticsTab'
+import { EnhancedTranscriptionTab } from './components/EnhancedTranscriptDisplay'
+import { EnhancedSettingsTab } from './components/EnhancedSettingsTab'
 import { UnifiedWindowControls } from './components/UnifiedWindowControls'
 import { Toaster } from './components/ui/sonner'
+import { appInitializer } from './utils/AppInitializer'
 import './App.css'
-import { Label } from './components/ui/label'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './components/ui/select'
 
-// Create context for app-wide state
+// Create contexts for app-wide state and initialization
 const AppStateContext = createContext()
+const InitializationContext = createContext()
 
 export const useAppState = () => {
   const context = useContext(AppStateContext)
@@ -25,55 +26,44 @@ export const useAppState = () => {
   return context
 }
 
-// FIXED: Improved theme management
+export const useInitialization = () => {
+  const context = useContext(InitializationContext)
+  if (!context) {
+    throw new Error('useInitialization must be used within InitializationProvider')
+  }
+  return context
+}
+
+// Theme management
 const useThemeManager = () => {
   const [theme, setTheme] = useState(() => {
     return localStorage.getItem('theme') || 'system'
   })
 
-  // Helper to apply theme classes to DOM - FIXED VERSION
   const applyThemeToDOM = (themeValue) => {
-    console.log('🎨 Applying theme to DOM:', themeValue)
-    
-    // Remove existing theme classes
     document.documentElement.classList.remove('dark', 'light')
     
     let effectiveTheme = themeValue
     
     if (themeValue === 'system') {
-      // Check system preference
       const systemPrefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
       effectiveTheme = systemPrefersDark ? 'dark' : 'light'
-      console.log('🎨 System theme detected:', effectiveTheme)
     }
     
-    // Only add dark class - light is the default (no class needed)
     if (effectiveTheme === 'dark') {
       document.documentElement.classList.add('dark')
-      console.log('🎨 Added dark class to document')
-    } else {
-      console.log('🎨 Using light theme (no class needed)')
     }
-    
-    // Force a small delay to ensure CSS is applied
-    setTimeout(() => {
-      console.log('🎨 Theme applied, current classes:', document.documentElement.className)
-    }, 10)
   }
 
-  // Apply theme immediately when it changes
   useEffect(() => {
-    console.log('🎨 Theme changing to:', theme)
     applyThemeToDOM(theme)
   }, [theme])
 
-  // Listen for system theme changes
   useEffect(() => {
     if (theme !== 'system') return
 
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
-    const handleSystemThemeChange = (e) => {
-      console.log('🎨 System theme changed, dark mode:', e.matches)
+    const handleSystemThemeChange = () => {
       if (theme === 'system') {
         applyThemeToDOM('system')
       }
@@ -83,13 +73,10 @@ const useThemeManager = () => {
     return () => mediaQuery.removeEventListener('change', handleSystemThemeChange)
   }, [theme])
 
-  // Update theme function
   const updateTheme = (newTheme) => {
-    console.log('🎨 Theme update requested:', newTheme)
     setTheme(newTheme)
     localStorage.setItem('theme', newTheme)
     
-    // Send to Electron main process if available
     if (window.electronAPI?.window?.setTheme) {
       window.electronAPI.window.setTheme(newTheme)
     }
@@ -98,59 +85,116 @@ const useThemeManager = () => {
   return { theme, updateTheme }
 }
 
+function InitializationProvider({ children }) {
+  const [initializationState, setInitializationState] = useState({
+    isInitializing: false,
+    isInitialized: false,
+    progress: 0,
+    step: '',
+    error: null
+  })
+
+  const initialize = async (updateAppState) => {
+    if (initializationState.isInitializing || initializationState.isInitialized) {
+      console.log('🔒 App already initialized/initializing, skipping...')
+      return
+    }
+
+    setInitializationState(prev => ({ ...prev, isInitializing: true }))
+
+    try {
+      await appInitializer.initialize(
+        updateAppState,
+        (progress) => setInitializationState(prev => ({ ...prev, ...progress }))
+      )
+      
+      setInitializationState(prev => ({
+        ...prev,
+        isInitializing: false,
+        isInitialized: true,
+        progress: 100,
+        step: 'Ready!'
+      }))
+    } catch (error) {
+      console.error('❌ App initialization failed:', error)
+      setInitializationState(prev => ({
+        ...prev,
+        isInitializing: false,
+        error: error.message
+      }))
+    }
+  }
+
+  const cleanup = () => {
+    appInitializer.cleanup()
+    setInitializationState({
+      isInitializing: false,
+      isInitialized: false,
+      progress: 0,
+      step: '',
+      error: null
+    })
+  }
+
+  return (
+    <InitializationContext.Provider value={{
+      ...initializationState,
+      initialize,
+      cleanup
+    }}>
+      {children}
+    </InitializationContext.Provider>
+  )
+}
+
 function AppStateProvider({ children }) {
   const { theme, updateTheme } = useThemeManager()
+  const { initialize } = useInitialization()
   
   const [appState, setAppState] = useState({
-    // File selection state
     selectedFile: null,
-    
-    // Transcription state
     transcription: '',
     isTranscribing: false,
     progress: 0,
     progressMessage: '',
     activeTranscriptionId: null,
-    
-    // Settings state
     selectedProvider: 'whisper-native',
     selectedModel: 'whisper-tiny',
-    
-    // Recording state
     isRecording: false,
+    recordingDuration: 0,
+    recordingValidated: false,
     recordingSettings: {
       includeMicrophone: true,
       includeSystemAudio: true
     },
-    
-    // Results state
     lastTranscriptionResult: null,
-    
-    // Environment
     isElectron: false,
-    theme: theme // Use theme from theme manager
+    theme: theme
   })
 
-  // Update app state when theme changes
   useEffect(() => {
-    setAppState(prev => ({ ...prev, theme }))
-  }, [theme])
+    if (appState.theme !== theme) {
+      setAppState(prev => ({ ...prev, theme }))
+    }
+  }, [theme, appState.theme])
 
-  // FIXED: Simplified update function that doesn't handle theme directly
-  const updateAppState = (updates) => {
-    // Handle theme updates specially
+  const updateAppState = useCallback((updates) => {
+    console.log('🔄 App state update:', updates)
+    
     if (typeof updates.theme !== 'undefined') {
       updateTheme(updates.theme)
-      // Remove theme from updates to avoid state conflicts
       const { theme: _, ...otherUpdates } = updates
       updates = otherUpdates
     }
     
-    setAppState(prev => ({ ...prev, ...updates }))
-  }
+    setAppState(prev => {
+      const newState = { ...prev, ...updates }
+      console.log('📊 New app state:', newState)
+      return newState
+    })
+  }, [updateTheme])
 
-  // Reset transcription state (but keep file and settings)
-  const resetTranscription = () => {
+  const resetTranscription = useCallback(() => {
     updateAppState({
       transcription: '',
       isTranscribing: false,
@@ -159,10 +203,9 @@ function AppStateProvider({ children }) {
       lastTranscriptionResult: null,
       activeTranscriptionId: null
     })
-  }
+  }, [updateAppState])
 
-  // Clear everything (new session)
-  const clearAll = () => {
+  const clearAll = useCallback(() => {
     setAppState(prev => ({
       ...prev,
       selectedFile: null,
@@ -171,19 +214,24 @@ function AppStateProvider({ children }) {
       progress: 0,
       progressMessage: '',
       lastTranscriptionResult: null,
-      activeTranscriptionId: null
+      activeTranscriptionId: null,
+      isRecording: false,
+      recordingDuration: 0,
+      recordingValidated: false
     }))
-  }
+  }, [])
 
-  // Detect Electron environment
   useEffect(() => {
     const isElectron = typeof window !== 'undefined' && !!window.electronAPI
     if (isElectron !== appState.isElectron) {
       updateAppState({ isElectron })
     }
-  }, [appState.isElectron])
+  }, [appState.isElectron, updateAppState])
 
-  // REMOVED: The problematic Electron theme listener that was causing conflicts
+  // Initialize app when mounted
+  useEffect(() => {
+    initialize(updateAppState)
+  }, [initialize, updateAppState])
 
   return (
     <AppStateContext.Provider value={{ 
@@ -191,39 +239,59 @@ function AppStateProvider({ children }) {
       updateAppState, 
       resetTranscription, 
       clearAll,
-      updateTheme // Expose theme updater directly
+      updateTheme
     }}>
       {children}
     </AppStateContext.Provider>
   )
 }
 
-// App content component (unchanged)
+// App content component
 function AppContent() {
-  const { appState } = useAppState();
-  const [platform, setPlatform] = useState('unknown');
+  const { appState } = useAppState()
+  const { isInitializing, isInitialized, progress, step, error } = useInitialization()
+  const [platform, setPlatform] = useState('unknown')
 
   useEffect(() => {
     // Detect platform
     window.electronAPI?.window?.getPlatform?.().then(platformInfo => {
-      setPlatform(platformInfo);
-    });
-  }, []);
+      setPlatform(platformInfo)
+    })
+  }, [])
 
-  const isMacOS = platform === 'darwin';
+  const isMacOS = platform === 'darwin'
 
-  // Choose the appropriate transcription component
-  const TranscriptionComponent = TranscriptionTabElectron
+  // Show loading state while initializing
+  if (isInitializing || !isInitialized) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <Card className="w-[400px]">
+          <CardHeader>
+            <CardTitle>Initializing WhisperDesk</CardTitle>
+            <CardDescription>{step}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Progress value={progress} className="mb-4" />
+            {error && (
+              <div className="text-red-500 text-sm mt-2">
+                Error: {error}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
       <Toaster 
         position="bottom-right"
-        expand={false}  // 🔑 KEY FIX: Prevents baseline shifting
+        expand={false}
         richColors={true}
         closeButton={true}
         duration={4000}
-        visibleToasts={4}  // 🔑 KEY FIX: Limits visible toasts
+        visibleToasts={4}
         gap={12}
         offset={16}
       />
@@ -257,7 +325,6 @@ function AppContent() {
           {/* Right side: Status indicator and controls */}
           <div className="header-section header-right">
             <div className="flex items-center space-x-3">
-              {/* Add back the status indicator */}
               <AppStateIndicator />
               
               {/* Windows/Linux: Controls on the right */}
@@ -272,11 +339,15 @@ function AppContent() {
       {/* Main content */}
       <main className="flex-1 container mx-auto py-6">
         <Tabs defaultValue="transcribe" className="w-full">
-          <TabsList className="grid w-full grid-cols-4">
+          <TabsList className="grid w-full grid-cols-5">
             <TabsTrigger value="transcribe" className="flex items-center space-x-2">
               <Mic className="w-4 h-4" />
               <span>Transcribe</span>
               <FileIndicator />
+            </TabsTrigger>
+            <TabsTrigger value="analytics" className="flex items-center space-x-2">
+              <BarChart3 className="w-4 h-4" />
+              <span>Analytics</span>
             </TabsTrigger>
             <TabsTrigger value="models" className="flex items-center space-x-2">
               <Package className="w-4 h-4" />
@@ -294,7 +365,11 @@ function AppContent() {
 
           {/* Tab Contents */}
           <TabsContent value="transcribe" className="space-y-6">
-            <TranscriptionComponent />
+            <EnhancedTranscriptionTab />
+          </TabsContent>
+
+          <TabsContent value="analytics" className="space-y-6">
+            <AnalyticsTab />
           </TabsContent>
 
           <TabsContent value="models" className="space-y-6">
@@ -306,7 +381,7 @@ function AppContent() {
           </TabsContent>
 
           <TabsContent value="settings" className="space-y-6">
-            <SettingsTab />
+            <EnhancedSettingsTab />
           </TabsContent>
         </Tabs>
       </main>
@@ -317,9 +392,11 @@ function AppContent() {
 // Main App component
 const App = () => {
   return (
-    <AppStateProvider>
-      <AppContent />
-    </AppStateProvider>
+    <InitializationProvider>
+      <AppStateProvider>
+        <AppContent />
+      </AppStateProvider>
+    </InitializationProvider>
   )
 }
 
@@ -338,28 +415,50 @@ function FileIndicator() {
   return null
 }
 
+// 🔴 ENHANCED: Added recording status with breathing animation
 function AppStateIndicator() {
   const { appState } = useAppState()
   
   return (
     <div className="flex items-center space-x-2 text-xs text-muted-foreground">
-      {appState.selectedFile && (
+      {/* 🔴 PRIORITY: Recording status - most important */}
+      {appState.isRecording && (
+        <span className="bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 px-2 py-1 rounded animate-pulse flex items-center">
+          <Video className="w-3 h-3 mr-1" />
+          {appState.recordingValidated ? 'Recording' : 'Starting...'}
+          {appState.recordingDuration > 0 && ` ${formatDuration(appState.recordingDuration)}`}
+        </span>
+      )}
+      
+      {/* Selected file indicator */}
+      {appState.selectedFile && !appState.isRecording && (
         <span className="bg-primary/10 text-primary px-2 py-1 rounded">
           {appState.selectedFile.name}
         </span>
       )}
+      
+      {/* Transcribing status */}
       {appState.isTranscribing && (
         <span className="bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400 px-2 py-1 rounded animate-pulse">
           Transcribing...
         </span>
       )}
-      {appState.transcription && !appState.isTranscribing && (
+      
+      {/* Completion status */}
+      {appState.transcription && !appState.isTranscribing && !appState.isRecording && (
         <span className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 px-2 py-1 rounded">
           ✓ Complete
         </span>
       )}
     </div>
   )
+}
+
+// 🔴 ADDED: Duration formatter
+function formatDuration(seconds) {
+  const mins = Math.floor(seconds / 60)
+  const secs = seconds % 60
+  return `${mins}:${secs.toString().padStart(2, '0')}`
 }
 
 function HistoryTab() {
@@ -374,7 +473,6 @@ function HistoryTab() {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        {/* Current Session */}
         {appState.selectedFile || appState.transcription ? (
           <div className="space-y-4">
             <h3 className="font-medium">Current Session</h3>
@@ -412,11 +510,10 @@ function HistoryTab() {
           <p className="text-muted-foreground">No transcriptions yet in this session</p>
         )}
         
-        {/* Placeholder for persistent history */}
         <div className="pt-4 border-t">
           <h3 className="font-medium mb-2">Saved History</h3>
           <p className="text-sm text-muted-foreground">
-            Persisteçnt history across sessions coming soon...
+            Persistent history across sessions coming soon...
           </p>
         </div>
       </CardContent>
