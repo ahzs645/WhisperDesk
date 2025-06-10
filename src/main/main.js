@@ -22,17 +22,15 @@ let services = {};
 let stores = {};
 
 // Initialize stores safely
-function initializeStores() {
+async function initializeStores() {
   try {
-    console.log('🔧 Initializing Enhanced Device Manager...');
-    const DeviceManagerClass = require('./services/device-manager');
-    services.deviceManager = new DeviceManagerClass();
-    await services.deviceManager.initialize();
-    
-    console.log('✅ Enhanced Device Manager initialized successfully');
+    const store = new Store();
+    stores.main = store;
+    console.log('✅ Main store initialized');
+    return true;
   } catch (error) {
-    console.error('❌ Enhanced Device Manager failed to initialize:', error);
-    console.warn('⚠️ Device manager will use fallback mode');
+    console.error('❌ Store initialization failed:', error);
+    return false;
   }
 }
 
