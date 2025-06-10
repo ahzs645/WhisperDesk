@@ -1,4 +1,4 @@
-// src/main/main.js - FIXED: Always setup IPC handlers regardless of service initialization
+// src/main/main.js
 const { app, BrowserWindow, ipcMain, dialog, Menu, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
@@ -329,6 +329,140 @@ function setupEnhancedScreenRecorderHandlers() {
   console.log('✅ Enhanced screen recorder IPC handlers set up');
 }
 
+// 🔴 CRITICAL: Model Manager Event Forwarding Function
+function setupModelManagerEventForwarding() {
+  if (!services.modelManager || !mainWindow) {
+    console.warn('⚠️ Model manager or main window not available for event forwarding');
+    return;
+  }
+
+  console.log('🔧 Setting up model manager event forwarding...');
+  
+  // CRITICAL: Forward download progress events to renderer
+  services.modelManager.on('downloadProgress', (data) => {
+    // Throttle progress events to avoid overwhelming the renderer
+    const progress = Math.round(data.progress);
+    if (progress % 5 === 0 || data.progress >= 100) { // Every 5% or completion
+      console.log(`📊 [MAIN] Download progress ${data.modelId}: ${progress}%`);
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('model:downloadProgress', {
+          ...data,
+          progress
+        });
+      }
+    }
+  });
+
+  // Forward download queue events
+  services.modelManager.on('downloadQueued', (data) => {
+    console.log('📥 [MAIN] Download queued, forwarding to renderer:', data.modelId);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('model:downloadQueued', data);
+    }
+  });
+
+  // Forward download completion events
+  services.modelManager.on('downloadComplete', (data) => {
+    console.log('✅ [MAIN] Download complete, forwarding to renderer:', data.modelId);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('model:downloadComplete', data);
+    }
+  });
+
+  // Forward download error events
+  services.modelManager.on('downloadError', (data) => {
+    console.error('❌ [MAIN] Download error, forwarding to renderer:', data);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('model:downloadError', data);
+    }
+  });
+
+  // Forward download cancellation events
+  services.modelManager.on('downloadCancelled', (data) => {
+    console.log('🚫 [MAIN] Download cancelled, forwarding to renderer:', data.modelId);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('model:downloadCancelled', data);
+    }
+  });
+
+  // Forward model deletion events
+  services.modelManager.on('modelDeleted', (data) => {
+    console.log('🗑️ [MAIN] Model deleted, forwarding to renderer:', data.modelId);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('model:modelDeleted', data);
+    }
+  });
+
+  console.log('✅ Model manager event forwarding set up successfully');
+}
+
+// 🔴 Enhanced Model IPC Handlers
+function enhanceModelIpcHandlers() {
+  console.log('🔧 Enhancing model IPC handlers...');
+
+  // Remove existing handler first if it exists
+  try {
+    ipcMain.removeHandler('model:download');
+  } catch (e) {
+    // Handler might not exist yet
+  }
+  
+  // Enhanced download handler with better error handling
+  ipcMain.handle('model:download', async (event, modelId) => {
+    try {
+      console.log(`📥 [IPC] Download request for model: ${modelId}`);
+      
+      // Check if already installed before starting download
+      if (services.modelManager.isModelInstalled && services.modelManager.isModelInstalled(modelId)) {
+        const error = new Error(`Model ${modelId} is already installed`);
+        console.warn(`⚠️ [IPC] ${error.message}`);
+        throw error;
+      }
+
+      // Check if already downloading
+      if (services.modelManager.getDownloadStatus) {
+        const downloadStatus = await services.modelManager.getDownloadStatus(modelId);
+        if (downloadStatus) {
+          const error = new Error(`Model ${modelId} is already being downloaded`);
+          console.warn(`⚠️ [IPC] ${error.message}`);
+          throw error;
+        }
+      }
+
+      const result = await services.modelManager.downloadModel(modelId);
+      console.log(`✅ [IPC] Download started for ${modelId}:`, result.success);
+      return result;
+      
+    } catch (error) {
+      console.error(`❌ [IPC] Download failed for ${modelId}:`, error.message);
+      // Re-throw the error so the renderer gets the specific error message
+      throw error;
+    }
+  });
+
+  // Add missing handlers if they don't exist
+  if (!ipcMain.listenerCount('model:getInfo')) {
+    ipcMain.handle('model:getInfo', (event, modelId) => {
+      if (services.modelManager.getModelInfo) {
+        return services.modelManager.getModelInfo(modelId);
+      }
+      return null;
+    });
+  }
+
+  if (!ipcMain.listenerCount('model:getAllDownloadStates')) {
+    ipcMain.handle('model:getAllDownloadStates', () => {
+      if (services.modelManager.getAllDownloadStates) {
+        const states = services.modelManager.getAllDownloadStates();
+        return Array.from(states.entries()).map(([id, state]) => ({ id, ...state }));
+      }
+      return [];
+    });
+  }
+
+  console.log('✅ Model IPC handlers enhanced');
+}
+
 // 🔴 FIXED: Add the missing setupAllIpcHandlers function
 function setupAllIpcHandlers() {
   console.log('🔧 Setting up ALL IPC handlers...');
@@ -469,13 +603,19 @@ function setupTranscriptionEvents() {
   }
 }
 
-// Rest of initialization functions (simplified for brevity)
+// 🔴 FIXED: Enhanced Model Manager initialization with event forwarding
 async function initializeModelManager() {
   try {
     console.log('🔧 Initializing Model Manager...');
     const ModelManager = require('./services/model-manager');
     services.modelManager = new ModelManager();
     await services.modelManager.initialize();
+    
+    // 🔴 CRITICAL: Set up event forwarding after initialization
+    if (mainWindow) {
+      setupModelManagerEventForwarding();
+    }
+    
     console.log('✅ Model Manager initialized');
   } catch (error) {
     console.error('❌ Model Manager failed:', error);
@@ -486,6 +626,9 @@ async function initializeModelManager() {
       downloadModel: () => Promise.resolve({ success: false }),
       deleteModel: () => Promise.resolve({ success: false }),
       getModelInfo: () => Promise.resolve(null),
+      isModelInstalled: () => false,
+      getDownloadStatus: () => null,
+      getAllDownloadStates: () => new Map(),
       on: () => {},
       initialize: () => Promise.resolve()
     };
@@ -583,14 +726,15 @@ async function initializeEnhancedDeviceManager() {
   }
 }
 
-// Setup remaining IPC handlers for other services
+// 🔴 FIXED: Setup remaining IPC handlers with enhanced model handlers
 function setupRemainingIpcHandlers() {
-  // Model management
+  // 🔴 CRITICAL: Enhance model handlers first
+  enhanceModelIpcHandlers();
+
+  // Model management (getInfo and download are handled by enhanceModelIpcHandlers)
   ipcMain.handle('model:getAvailable', () => services.modelManager.getAvailableModels());
   ipcMain.handle('model:getInstalled', () => services.modelManager.getInstalledModels());
-  ipcMain.handle('model:download', (event, modelId) => services.modelManager.downloadModel(modelId));
   ipcMain.handle('model:delete', (event, modelId) => services.modelManager.deleteModel(modelId));
-  ipcMain.handle('model:getInfo', (event, modelId) => services.modelManager.getModelInfo(modelId));
   ipcMain.handle('model:cancelDownload', (event, modelId) => services.modelManager.cancelDownload(modelId));
 
   // Transcription
@@ -710,11 +854,18 @@ function createWindow() {
     }
   }
 
-  // Window event handlers
+  // 🔴 FIXED: Window event handlers with model event forwarding
   mainWindow.webContents.on('did-finish-load', () => {
     console.log('✅ Renderer finished loading');
+    
     // Setup transcription events after mainWindow is ready
     setupTranscriptionEvents();
+    
+    // 🔴 CRITICAL: Set up model manager event forwarding if not already done
+    if (services.modelManager && !services.modelManager._eventForwardingSetup) {
+      setupModelManagerEventForwarding();
+      services.modelManager._eventForwardingSetup = true; // Prevent duplicate setup
+    }
   });
 
   mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL) => {
@@ -769,7 +920,7 @@ function loadFallback() {
   mainWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(fallbackHTML)}`);
 }
 
-// 🔴 FIXED: New initialization order
+// 🔴 FIXED: New initialization order with model event forwarding
 app.whenReady().then(async () => {
   console.log('🚀 App ready');
   

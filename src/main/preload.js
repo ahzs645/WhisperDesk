@@ -1,4 +1,4 @@
-// src/main/preload.js - Enhanced preload script for screen recording
+// src/main/preload.js - Enhanced preload script with complete model events
 const { contextBridge, ipcRenderer } = require('electron');
 
 // Enhanced IPC wrapper with error handling and logging
@@ -89,27 +89,107 @@ contextBridge.exposeInMainWorld('electronAPI', {
     }
   },
 
-  // 🔴 ADDED: Shell operations (needed for system preferences)
+  // Shell operations (needed for system preferences)
   shell: {
     openExternal: createSafeIPC('shell:openExternal')
   },
 
-  // Model management
+  // 🔴 ENHANCED: Complete model management with all event handlers
   model: {
+    // Basic model operations
     getAvailable: createSafeIPC('model:getAvailable'),
     getInstalled: createSafeIPC('model:getInstalled'),
     download: createSafeIPC('model:download'),
     delete: createSafeIPC('model:delete'),
     getInfo: createSafeIPC('model:getInfo'),
     cancelDownload: createSafeIPC('model:cancelDownload'),
+    getAllDownloadStates: createSafeIPC('model:getAllDownloadStates'),
     
-    // Model events
-    onDownloadQueued: createEventListener('model:downloadQueued'),
-    onDownloadProgress: createEventListener('model:downloadProgress'),
-    onDownloadComplete: createEventListener('model:downloadComplete'),
-    onDownloadError: createEventListener('model:downloadError'),
-    onDownloadCancelled: createEventListener('model:downloadCancelled'),
-    onModelDeleted: createEventListener('model:modelDeleted')
+    // 🔴 CRITICAL: All model event listeners that return cleanup functions
+    onDownloadQueued: (callback) => {
+      console.log('[Preload] Setting up downloadQueued listener');
+      const handler = (event, data) => {
+        console.log('[Preload] Model download queued:', data);
+        callback(data);
+      };
+      ipcRenderer.on('model:downloadQueued', handler);
+      
+      // Return cleanup function
+      return () => {
+        console.log('[Preload] Removing downloadQueued listener');
+        ipcRenderer.removeListener('model:downloadQueued', handler);
+      };
+    },
+
+    onDownloadProgress: (callback) => {
+      console.log('[Preload] Setting up downloadProgress listener');
+      const handler = (event, data) => {
+        console.log(`[Preload] Model download progress: ${data.modelId} - ${Math.round(data.progress)}%`);
+        callback(data);
+      };
+      ipcRenderer.on('model:downloadProgress', handler);
+      
+      return () => {
+        console.log('[Preload] Removing downloadProgress listener');
+        ipcRenderer.removeListener('model:downloadProgress', handler);
+      };
+    },
+
+    onDownloadComplete: (callback) => {
+      console.log('[Preload] Setting up downloadComplete listener');
+      const handler = (event, data) => {
+        console.log('[Preload] Model download complete:', data);
+        callback(data);
+      };
+      ipcRenderer.on('model:downloadComplete', handler);
+      
+      return () => {
+        console.log('[Preload] Removing downloadComplete listener');
+        ipcRenderer.removeListener('model:downloadComplete', handler);
+      };
+    },
+
+    onDownloadError: (callback) => {
+      console.log('[Preload] Setting up downloadError listener');
+      const handler = (event, data) => {
+        console.error('[Preload] Model download error:', data);
+        callback(data);
+      };
+      ipcRenderer.on('model:downloadError', handler);
+      
+      return () => {
+        console.log('[Preload] Removing downloadError listener');
+        ipcRenderer.removeListener('model:downloadError', handler);
+      };
+    },
+
+    onDownloadCancelled: (callback) => {
+      console.log('[Preload] Setting up downloadCancelled listener');
+      const handler = (event, data) => {
+        console.log('[Preload] Model download cancelled:', data);
+        callback(data);
+      };
+      ipcRenderer.on('model:downloadCancelled', handler);
+      
+      return () => {
+        console.log('[Preload] Removing downloadCancelled listener');
+        ipcRenderer.removeListener('model:downloadCancelled', handler);
+      };
+    },
+
+    onModelDeleted: (callback) => {
+      console.log('[Preload] Setting up modelDeleted listener');
+      const handler = (event, data) => {
+        console.log('[Preload] Model deleted:', data);
+        callback(data);
+      };
+      ipcRenderer.on('model:modelDeleted', handler);
+      
+      return () => {
+        console.log('[Preload] Removing modelDeleted listener');
+        ipcRenderer.removeListener('model:modelDeleted', handler);
+      };
+    }
   },
 
   // Transcription with enhanced progress tracking
@@ -144,7 +224,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     onLevel: createEventListener('audio:level')
   },
 
-  // 🔴 ENHANCED: Complete screen recorder API with all missing methods
+  // Complete screen recorder API with all missing methods
   screenRecorder: {
     // Recording operations
     startRecording: createSafeIPC('screenRecorder:startRecording'),
@@ -153,11 +233,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
     resumeRecording: createSafeIPC('screenRecorder:resumeRecording'),
     getStatus: createSafeIPC('screenRecorder:getStatus'),
     
-    // 🔴 ADDED: Missing device and recording management APIs
+    // Device and recording management APIs
     getAvailableScreens: createSafeIPC('screenRecorder:getAvailableScreens'),
     getRecordings: createSafeIPC('screenRecorder:getRecordings'),
     deleteRecording: createSafeIPC('screenRecorder:deleteRecording'),
     forceCleanup: createSafeIPC('screenRecorder:forceCleanup'),
+    updateAudioDevices: createSafeIPC('screenRecorder:updateAudioDevices'),
+    validateDevices: createSafeIPC('screenRecorder:validateDevices'),
+    checkPermissions: createSafeIPC('screenRecorder:checkPermissions'),
+    requestPermissions: createSafeIPC('screenRecorder:requestPermissions'),
+    validateRecording: createSafeIPC('screenRecorder:validateRecording'),
+    handleError: createSafeIPC('screenRecorder:handleError'),
     
     // Recording events
     onRecordingStarted: createEventListener('screenRecorder:started'),
@@ -166,8 +252,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     onRecordingError: createEventListener('screenRecorder:error'),
     onRecordingPaused: createEventListener('screenRecorder:paused'),
     onRecordingResumed: createEventListener('screenRecorder:resumed'),
-    
-    // 🔴 ADDED: Missing progress event handler
     onRecordingProgress: createEventListener('screenRecorder:progress')
   },
 
@@ -216,16 +300,68 @@ contextBridge.exposeInMainWorld('electronAPI', {
     onDownloadModels: createEventListener('menu-download-models')
   },
 
-  // Debug utilities (useful for development)
+  // 🔴 ENHANCED: Debug utilities with model event testing
   debug: {
     log: (message, data) => console.log('[Renderer]', message, data),
-    test: createSafeIPC('debug:test'), // 🔴 FIXED: Properly use createSafeIPC helper
+    test: createSafeIPC('debug:test'),
     testIPC: createSafeIPC('debug:test'), // Alias for compatibility
+    
+    // Enhanced debug helpers
     listChannels: () => {
-      console.log('Available IPC channels:');
-      console.log('Screen Recorder:', Object.keys(contextBridge.exposeInMainWorld?.screenRecorder || {}));
-      console.log('Models:', Object.keys(contextBridge.exposeInMainWorld?.model || {}));
-      console.log('Transcription:', Object.keys(contextBridge.exposeInMainWorld?.transcription || {}));
+      console.log('🔍 Available IPC channels:');
+      console.log('Screen Recorder:', [
+        'startRecording', 'stopRecording', 'pauseRecording', 'resumeRecording',
+        'getStatus', 'getAvailableScreens', 'getRecordings', 'deleteRecording'
+      ]);
+      console.log('Models:', [
+        'getAvailable', 'getInstalled', 'download', 'delete', 'getInfo', 'cancelDownload'
+      ]);
+      console.log('Transcription:', [
+        'processFile', 'start', 'stop', 'getProviders'
+      ]);
+    },
+    
+    listModelEvents: () => {
+      console.log('🔍 Model event listeners:');
+      console.log('- downloadQueued:', ipcRenderer.listenerCount('model:downloadQueued'));
+      console.log('- downloadProgress:', ipcRenderer.listenerCount('model:downloadProgress'));
+      console.log('- downloadComplete:', ipcRenderer.listenerCount('model:downloadComplete'));
+      console.log('- downloadError:', ipcRenderer.listenerCount('model:downloadError'));
+      console.log('- downloadCancelled:', ipcRenderer.listenerCount('model:downloadCancelled'));
+      console.log('- modelDeleted:', ipcRenderer.listenerCount('model:modelDeleted'));
+    },
+    
+    testModelEvents: () => {
+      console.log('🧪 Testing model events...');
+      
+      // Set up temporary listeners to test if events are working
+      const testListeners = [];
+      
+      const events = [
+        'model:downloadQueued',
+        'model:downloadProgress', 
+        'model:downloadComplete',
+        'model:downloadError',
+        'model:downloadCancelled'
+      ];
+      
+      events.forEach(event => {
+        const handler = (_, data) => {
+          console.log(`✅ Test received event ${event}:`, data);
+        };
+        ipcRenderer.on(event, handler);
+        testListeners.push({ event, handler });
+      });
+      
+      // Clean up test listeners after 30 seconds
+      setTimeout(() => {
+        testListeners.forEach(({ event, handler }) => {
+          ipcRenderer.removeListener(event, handler);
+        });
+        console.log('🧹 Test listeners cleaned up');
+      }, 30000);
+      
+      console.log('✅ Test listeners set up, will auto-cleanup in 30s');
     }
   }
 });
@@ -239,6 +375,40 @@ contextBridge.exposeInMainWorld('platform', {
   isMacOS: process.platform === 'darwin',
   isLinux: process.platform === 'linux'
 });
+
+// 🔴 ENHANCED: Development debugging tools
+if (process.env.NODE_ENV === 'development') {
+  contextBridge.exposeInMainWorld('debugModelEvents', {
+    testProgressEvent: () => {
+      console.log('[DEBUG] Testing progress event...');
+      ipcRenderer.on('model:downloadProgress', (event, data) => {
+        console.log('[DEBUG] Received progress event:', data);
+      });
+    },
+    
+    listAllListeners: () => {
+      console.log('[DEBUG] Current event listeners:');
+      console.log('- downloadProgress:', ipcRenderer.listenerCount('model:downloadProgress'));
+      console.log('- downloadComplete:', ipcRenderer.listenerCount('model:downloadComplete'));
+      console.log('- downloadError:', ipcRenderer.listenerCount('model:downloadError'));
+      console.log('- downloadQueued:', ipcRenderer.listenerCount('model:downloadQueued'));
+      console.log('- downloadCancelled:', ipcRenderer.listenerCount('model:downloadCancelled'));
+    },
+    
+    injectTestProgress: () => {
+      console.log('[DEBUG] Injecting test progress event...');
+      // Simulate a progress event for testing
+      setTimeout(() => {
+        ipcRenderer.emit('model:downloadProgress', null, {
+          modelId: 'test-model',
+          progress: 50,
+          downloadedBytes: 5000000,
+          totalBytes: 10000000
+        });
+      }, 1000);
+    }
+  });
+}
 
 // Enhanced error handling
 window.addEventListener('error', (event) => {
@@ -258,17 +428,37 @@ window.addEventListener('unhandledrejection', (event) => {
   });
 });
 
-// Startup logging
-console.log('[Preload] WhisperDesk Enhanced preload script loaded');
-console.log('[Preload] Platform:', process.platform, process.arch);
-console.log('[Preload] Electron version:', process.versions.electron);
-console.log('[Preload] Node version:', process.versions.node);
-console.log('[Preload] Window controls exposed:', !!window.electronAPI?.window);
-console.log('[Preload] Screen recorder API exposed:', !!window.electronAPI?.screenRecorder);
-console.log('[Preload] Shell API exposed:', !!window.electronAPI?.shell);
-console.log('[Preload] Platform detection:', {
-  os: process.platform,
-  isMacOS: process.platform === 'darwin',
-  isWindows: process.platform === 'win32',
-  isLinux: process.platform === 'linux'
-});
+// 🔴 STARTUP: Enhanced startup logging and verification
+console.log('🚀 [Preload] WhisperDesk Enhanced preload script loaded');
+console.log('🚀 [Preload] Platform:', process.platform, process.arch);
+console.log('🚀 [Preload] Electron version:', process.versions.electron);
+console.log('🚀 [Preload] Node version:', process.versions.node);
+
+// Verify critical APIs are exposed
+const verifyAPI = () => {
+  const checks = {
+    windowControls: !!window.electronAPI?.window,
+    screenRecorder: !!window.electronAPI?.screenRecorder,
+    modelManagement: !!window.electronAPI?.model,
+    transcription: !!window.electronAPI?.transcription,
+    shell: !!window.electronAPI?.shell,
+    modelEvents: !!(
+      window.electronAPI?.model?.onDownloadProgress &&
+      window.electronAPI?.model?.onDownloadComplete &&
+      window.electronAPI?.model?.onDownloadQueued
+    )
+  };
+  
+  console.log('✅ [Preload] API verification:', checks);
+  
+  if (!checks.modelEvents) {
+    console.error('❌ [Preload] CRITICAL: Model events not properly exposed!');
+  }
+  
+  return checks;
+};
+
+// Run verification after a short delay to ensure everything is set up
+setTimeout(verifyAPI, 100);
+
+console.log('✅ [Preload] Setup complete with enhanced model event support');

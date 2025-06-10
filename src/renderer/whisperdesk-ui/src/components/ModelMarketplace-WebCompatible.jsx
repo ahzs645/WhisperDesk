@@ -1,5 +1,5 @@
-// src/renderer/whisperdesk-ui/src/components/ModelMarketplace-WebCompatible.jsx - FINAL FIXED VERSION
-import { useState, useEffect, useRef } from 'react'
+// src/renderer/whisperdesk-ui/src/components/ModelMarketplace-WebCompatible.jsx
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -14,8 +14,13 @@ export function ModelMarketplace() {
   const [installedModels, setInstalledModels] = useState([])
   const [downloads, setDownloads] = useState(new Map()) // Track download progress
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
   const [isElectron, setIsElectron] = useState(false)
-  const [showDebug, setShowDebug] = useState(false) // Debug toggle
+  const [showDebug, setShowDebug] = useState(false)
+
+  // FIXED: Track download requests to prevent duplicates
+  const downloadingModels = useRef(new Set())
+  const lastStateUpdate = useRef(Date.now())
 
   // Refs for cleanup
   const downloadProgressCleanup = useRef(null)
@@ -47,87 +52,136 @@ export function ModelMarketplace() {
   }, [])
 
   const setupEventHandlers = () => {
-    console.log('Setting up model download event handlers...')
+    console.log('🔧 Setting up model download event handlers...')
 
-    // Progress handler
+    // FIXED: Progress handler with better state management
     if (window.electronAPI.model.onDownloadProgress) {
       downloadProgressCleanup.current = window.electronAPI.model.onDownloadProgress((data) => {
-        console.log('Download progress:', data)
-        setDownloads(prev => new Map(prev).set(data.modelId, {
-          ...prev.get(data.modelId),
-          progress: data.progress,
-          status: 'downloading'
-        }))
+        console.log(`📊 Download progress ${data.modelId}: ${Math.round(data.progress)}%`)
+        
+        setDownloads(prev => {
+          const next = new Map(prev)
+          const existing = next.get(data.modelId) || {}
+          
+          next.set(data.modelId, {
+            ...existing,
+            progress: Math.round(data.progress), // Round to prevent too many updates
+            status: 'downloading',
+            downloadedBytes: data.downloadedBytes,
+            totalBytes: data.totalBytes,
+            speed: data.speed
+          })
+          
+          return next
+        })
       })
     }
 
-    // Completion handler
+    // FIXED: Completion handler with immediate state sync
     if (window.electronAPI.model.onDownloadComplete) {
       downloadCompleteCleanup.current = window.electronAPI.model.onDownloadComplete(async (data) => {
-        console.log('Download complete:', data)
+        console.log('✅ Download complete:', data)
+        
+        // FIXED: Remove from downloads and downloading set immediately
         setDownloads(prev => {
           const next = new Map(prev)
           next.delete(data.modelId)
           return next
         })
         
-        // Refresh installed models to keep UI in sync
-        console.log('🔄 Refreshing installed models after download completion...')
-        await loadInstalledModels()
+        downloadingModels.current.delete(data.modelId)
         
-        toast.success('📦 Model downloaded successfully!')
+        // FIXED: Force immediate refresh of installed models
+        console.log('🔄 Refreshing installed models after download completion...')
+        await refreshInstalledModels()
+        
+        toast.success(`✅ ${data.installedModel?.name || data.modelId} downloaded successfully!`)
       })
     }
 
-    // Error handler
+    // FIXED: Error handler
     if (window.electronAPI.model.onDownloadError) {
       downloadErrorCleanup.current = window.electronAPI.model.onDownloadError((data) => {
-        console.error('Download error:', data)
+        console.error('❌ Download error:', data)
+        
         setDownloads(prev => {
           const next = new Map(prev)
           next.delete(data.modelId)
           return next
         })
         
-        toast.error('Failed to download model: ' + data.error)
+        downloadingModels.current.delete(data.modelId)
+        
+        toast.error(`❌ Failed to download model: ${data.error}`)
       })
     }
 
-    // Queue handler
+    // FIXED: Queue handler with immediate UI feedback
     if (window.electronAPI.model.onDownloadQueued) {
       downloadQueuedCleanup.current = window.electronAPI.model.onDownloadQueued((data) => {
-        console.log('Download queued:', data)
+        console.log('📥 Download queued:', data)
+        
         setDownloads(prev => new Map(prev).set(data.modelId, {
           progress: 0,
-          status: 'queued'
+          status: 'queued',
+          downloadedBytes: 0,
+          totalBytes: data.totalBytes || 0
         }))
       })
     }
 
-    // Cancellation handler
+    // FIXED: Cancellation handler
     if (window.electronAPI.model.onDownloadCancelled) {
       downloadCancelledCleanup.current = window.electronAPI.model.onDownloadCancelled((data) => {
-        console.log('Download cancelled:', data)
+        console.log('🚫 Download cancelled:', data)
+        
         setDownloads(prev => {
           const next = new Map(prev)
           next.delete(data.modelId)
           return next
         })
         
-        toast.info('Download cancelled')
+        downloadingModels.current.delete(data.modelId)
+        
+        toast.info('📥 Download cancelled')
       })
     }
   }
 
-  // Loading functions with better error handling
-  const loadModelsFromElectron = async () => {
+  // FIXED: Separated refresh functions for better control
+  const refreshInstalledModels = useCallback(async () => {
+    try {
+      console.log('🔄 Refreshing installed models...')
+      const models = await window.electronAPI.model.getInstalled()
+      console.log(`💾 Loaded ${models.length} installed models:`, models.map(m => m.id))
+      setInstalledModels(models)
+      lastStateUpdate.current = Date.now()
+    } catch (error) {
+      console.error('❌ Failed to refresh installed models:', error)
+    }
+  }, [])
+
+  const refreshAvailableModels = useCallback(async () => {
+    try {
+      console.log('📦 Refreshing available models...')
+      const models = await window.electronAPI.model.getAvailable()
+      console.log(`📦 Loaded ${models.length} available models`)
+      setAvailableModels(models)
+    } catch (error) {
+      console.error('❌ Failed to refresh available models:', error)
+      setAvailableModels([])
+    }
+  }, [])
+
+  // FIXED: Comprehensive model refresh
+  const loadModelsFromElectron = useCallback(async () => {
     try {
       setLoading(true)
       console.log('🔄 Loading models from Electron...')
       
       await Promise.all([
-        loadAvailableModels(),
-        loadInstalledModels()
+        refreshAvailableModels(),
+        refreshInstalledModels()
       ])
       
       console.log('✅ Models loaded successfully')
@@ -137,92 +191,124 @@ export function ModelMarketplace() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [refreshAvailableModels, refreshInstalledModels])
 
-  const loadAvailableModels = async () => {
+  // FIXED: Manual refresh with loading state
+  const handleRefresh = useCallback(async () => {
+    if (refreshing) return
+    
     try {
-      console.log('📦 Loading available models...')
-      const models = await window.electronAPI.model.getAvailable()
-      console.log('📦 Raw available models from API:', models)
-      setAvailableModels(models)
-      console.log('✅ Loaded available models:', models.length)
+      setRefreshing(true)
+      await loadModelsFromElectron()
+      toast.success('🔄 Models refreshed!')
     } catch (error) {
-      console.error('❌ Failed to load available models:', error)
-      // Don't throw, just log - this is recoverable
-      setAvailableModels([])
+      toast.error('Failed to refresh: ' + error.message)
+    } finally {
+      setRefreshing(false)
     }
-  }
+  }, [loadModelsFromElectron, refreshing])
 
-  const loadInstalledModels = async () => {
-    try {
-      console.log('💾 Loading installed models...')
-      const models = await window.electronAPI.model.getInstalled()
-      console.log('💾 Raw installed models from API:', models)
-      setInstalledModels(models)
-      console.log('✅ Loaded installed models:', models.length)
-      
-      // Debug model IDs to check for mismatches
-      if (models.length > 0) {
-        console.log('🔍 Installed model IDs:', models.map(m => m.id))
-      }
-    } catch (error) {
-      console.error('❌ Failed to load installed models:', error)
-      // Don't throw, just log - this is recoverable
-      setInstalledModels([])
-    }
-  }
-
+  // FIXED: Enhanced download handler with duplicate prevention
   const handleDownloadModel = async (modelId) => {
     if (!isElectron) {
       toast.error('Model downloads only available in Electron app')
       return
     }
 
-    // CHECK: Prevent downloading already installed models
-    const isAlreadyInstalled = installedModels.some(model => model.id === modelId)
-    if (isAlreadyInstalled) {
-      toast.warning('📦 Model is already installed')
-      // Refresh the UI state to make sure it's in sync
-      await loadInstalledModels()
+    // FIXED: Multiple layers of duplicate prevention
+    
+    // 1. Check if already in downloading set
+    if (downloadingModels.current.has(modelId)) {
+      console.log(`⚠️ Download already in progress for ${modelId}`)
+      toast.warning('📥 Download already in progress')
       return
     }
 
-    // Check if already downloading
+    // 2. Check if already in downloads state
     if (downloads.has(modelId)) {
-      toast.warning('📥 Model is already being downloaded')
+      console.log(`⚠️ Download state exists for ${modelId}`)
+      toast.warning('📥 Model is being downloaded')
       return
     }
+
+    // 3. Check if already installed (with recent state update)
+    const isRecentlyInstalled = installedModels.some(model => model.id === modelId)
+    if (isRecentlyInstalled) {
+      console.log(`⚠️ Model ${modelId} is already installed`)
+      toast.warning('📦 Model is already installed')
+      return
+    }
+
+    // 4. Additional backend check for edge cases
+    try {
+      const modelInfo = await window.electronAPI.model.getInfo(modelId)
+      if (modelInfo?.isInstalled) {
+        console.log(`⚠️ Backend confirms ${modelId} is already installed`)
+        toast.warning('📦 Model is already installed')
+        await refreshInstalledModels() // Sync UI state
+        return
+      }
+    } catch (error) {
+      console.warn('Could not check model info:', error)
+    }
+
+    // FIXED: Mark as downloading immediately
+    downloadingModels.current.add(modelId)
 
     try {
-      console.log('Starting download for model:', modelId)
-      await window.electronAPI.model.download(modelId)
-      // The download progress will be handled by event handlers
-    } catch (error) {
-      console.error('Failed to start download:', error)
+      console.log(`🚀 Starting download for model: ${modelId}`)
       
-      // HANDLE: Specific error messages for better UX
+      // Add to downloads state immediately for UI feedback
+      setDownloads(prev => new Map(prev).set(modelId, {
+        progress: 0,
+        status: 'starting',
+        downloadedBytes: 0,
+        totalBytes: 0
+      }))
+
+      const result = await window.electronAPI.model.download(modelId)
+      console.log(`✅ Download request successful for ${modelId}:`, result)
+      
+    } catch (error) {
+      console.error(`❌ Failed to start download for ${modelId}:`, error)
+      
+      // FIXED: Clean up state on error
+      downloadingModels.current.delete(modelId)
+      setDownloads(prev => {
+        const next = new Map(prev)
+        next.delete(modelId)
+        return next
+      })
+      
+      // FIXED: Better error handling
       if (error.message?.includes('already installed')) {
         toast.warning('📦 Model is already installed')
-        // Refresh installed models to sync UI
-        await loadInstalledModels()
+        await refreshInstalledModels() // Sync UI state
       } else if (error.message?.includes('not found')) {
         toast.error('❌ Model not found in catalog')
+      } else if (error.message?.includes('already being downloaded')) {
+        toast.warning('📥 Model is already being downloaded')
       } else {
-        toast.error('Failed to start download: ' + error.message)
+        toast.error(`❌ Failed to start download: ${error.message}`)
       }
     }
   }
 
   const handleCancelDownload = async (modelId) => {
     if (!isElectron) return
+    
     try {
+      console.log(`🚫 Cancelling download for ${modelId}`)
       await window.electronAPI.model.cancelDownload(modelId)
+      
+      // Clean up local state
+      downloadingModels.current.delete(modelId)
       setDownloads(prev => {
         const updated = new Map(prev)
         updated.delete(modelId)
         return updated
       })
-      toast.warning('Download cancelled')
+      
     } catch (error) {
       console.error('Failed to cancel download:', error)
       toast.error('Failed to cancel download: ' + error.message)
@@ -239,11 +325,10 @@ export function ModelMarketplace() {
       console.log('🗑️ Deleting model:', modelId)
       await window.electronAPI.model.delete(modelId)
       
-      // Refresh installed models after deletion
-      console.log('🔄 Refreshing installed models after deletion...')
-      await loadInstalledModels()
+      // Immediate state update
+      setInstalledModels(prev => prev.filter(m => m.id !== modelId))
       
-      toast.success('📦 Model deleted successfully')
+      toast.success('🗑️ Model deleted successfully')
     } catch (error) {
       console.error('Failed to delete model:', error)
       toast.error('Failed to delete model: ' + error.message)
@@ -258,35 +343,37 @@ export function ModelMarketplace() {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
   }
 
-  const roundProgress = (progress) => {
-    return Math.round(progress)
+  const formatSpeed = (bytesPerSecond) => {
+    if (!bytesPerSecond) return ''
+    return `${formatBytes(bytesPerSecond)}/s`
   }
 
+  // FIXED: Enhanced model status detection
   const getModelStatus = (model) => {
     // Check if currently downloading
     const download = downloads.get(model.id)
     if (download) {
       return {
         isDownloading: true,
-        progress: download.progress,
-        downloadedBytes: download.downloadedBytes,
-        totalBytes: download.totalBytes,
-        speed: download.speed,
-        status: download.status
+        progress: download.progress || 0,
+        downloadedBytes: download.downloadedBytes || 0,
+        totalBytes: download.totalBytes || 0,
+        speed: download.speed || 0,
+        status: download.status || 'downloading'
       }
     }
     
-    // More robust installed check with debugging
-    const isInstalled = installedModels.some(installed => {
-      const match = installed.id === model.id
-      if (match) {
-        console.log(`✅ Model ${model.id} found in installed models:`, installed)
+    // Check if in downloading set (for immediate feedback)
+    if (downloadingModels.current.has(model.id)) {
+      return {
+        isDownloading: true,
+        progress: 0,
+        status: 'starting'
       }
-      return match
-    })
+    }
     
-    // DEBUG: Log model status determination
-    console.log(`📊 Model ${model.id} status: isInstalled=${isInstalled}, downloading=${!!download}`)
+    // Check if installed
+    const isInstalled = installedModels.some(installed => installed.id === model.id)
     
     return {
       isDownloading: false,
@@ -318,6 +405,8 @@ export function ModelMarketplace() {
     if (!accuracy) return 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400'
     
     switch (accuracy.toLowerCase()) {
+      case 'outstanding':
+        return 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'
       case 'excellent':
         return 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'
       case 'very good':
@@ -403,15 +492,15 @@ export function ModelMarketplace() {
                 Download and manage your WhisperDesk models
               </CardDescription>
             </div>
-            {/* Refresh button to help sync state */}
+            {/* FIXED: Refresh button with proper loading state */}
             <Button 
               variant="outline" 
               size="sm" 
-              onClick={loadModelsFromElectron}
-              disabled={loading}
+              onClick={handleRefresh}
+              disabled={loading || refreshing}
             >
-              <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
-              Refresh
+              <RefreshCw className={`w-4 h-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
+              {refreshing ? 'Refreshing...' : 'Refresh'}
             </Button>
           </div>
         </CardHeader>
@@ -420,7 +509,6 @@ export function ModelMarketplace() {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
               {availableModels.map((model) => {
                 const status = getModelStatus(model)
-                const isInstalled = installedModels.some(m => m.id === model.id)
                 
                 return (
                   <Card key={model.id} className="relative overflow-hidden p-3">
@@ -430,7 +518,7 @@ export function ModelMarketplace() {
                           <h3 className="font-medium truncate">{model.name}</h3>
                           <p className="text-xs text-muted-foreground line-clamp-2 mt-0.5">{model.description}</p>
                         </div>
-                        {isInstalled && (
+                        {status.isInstalled && (
                           <Badge variant="secondary" className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 shrink-0">
                             <Check className="w-3 h-3" />
                           </Badge>
@@ -459,12 +547,23 @@ export function ModelMarketplace() {
                       </div>
 
                       <div className="flex items-center justify-between gap-2 pt-1">
-                        {status.isDownloading || status.status === 'queued' ? (
+                        {status.isDownloading ? (
                           <div className="flex items-center gap-2 w-full">
-                            <Progress value={roundProgress(status.progress)} className="h-1.5 flex-1" />
-                            <span className="text-xs text-muted-foreground whitespace-nowrap">
-                              {status.status === 'queued' ? 'Queued' : `${roundProgress(status.progress)}%`}
-                            </span>
+                            <div className="flex-1">
+                              <Progress value={status.progress} className="h-1.5" />
+                              <div className="flex justify-between items-center mt-1">
+                                <span className="text-xs text-muted-foreground">
+                                  {status.status === 'queued' ? 'Queued...' : 
+                                   status.status === 'starting' ? 'Starting...' :
+                                   `${status.progress}%`}
+                                </span>
+                                {status.speed > 0 && (
+                                  <span className="text-xs text-muted-foreground">
+                                    {formatSpeed(status.speed)}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
                             <Button
                               variant="ghost"
                               size="icon"
@@ -475,7 +574,7 @@ export function ModelMarketplace() {
                               <X className="w-3 h-3" />
                             </Button>
                           </div>
-                        ) : isInstalled ? (
+                        ) : status.isInstalled ? (
                           <div className="flex justify-end w-full">
                             <Button
                               variant="ghost"
@@ -529,16 +628,16 @@ export function ModelMarketplace() {
             <CardContent className="pt-0">
               <div className="space-y-3 text-xs">
                 <div>
-                  <strong>Electron Available:</strong> {isElectron ? 'Yes' : 'No'}
+                  <strong>State Updated:</strong> {new Date(lastStateUpdate.current).toLocaleTimeString()}
                 </div>
                 <div>
-                  <strong>Loading:</strong> {loading ? 'Yes' : 'No'}
+                  <strong>Downloading Models:</strong> {Array.from(downloadingModels.current).join(', ') || 'None'}
                 </div>
                 <div>
                   <strong>Available Models:</strong> {availableModels.length}
                   {availableModels.length > 0 && (
                     <div className="ml-4 mt-1">
-                      {availableModels.map(m => <div key={m.id}>• {m.id} ({m.name})</div>)}
+                      {availableModels.slice(0, 3).map(m => <div key={m.id}>• {m.id} ({m.name})</div>)}
                     </div>
                   )}
                 </div>
@@ -561,8 +660,8 @@ export function ModelMarketplace() {
                   )}
                 </div>
                 <div>
-                  <strong>Model Status Check:</strong>
-                  {availableModels.slice(0, 3).map(model => {
+                  <strong>Model Status Sample:</strong>
+                  {availableModels.slice(0, 2).map(model => {
                     const status = getModelStatus(model)
                     return (
                       <div key={model.id} className="ml-4">

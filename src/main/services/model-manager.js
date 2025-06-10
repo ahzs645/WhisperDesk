@@ -8,6 +8,9 @@ const { EventEmitter } = require('events');
 const crypto = require('crypto');
 const { spawn } = require('child_process');
 
+// Import model configurations from separate file
+const { WHISPER_MODELS, MODEL_NAME_MAPPING, CONFIG } = require('./models-config');
+
 class ModelManager extends EventEmitter {
   constructor() {
     super();
@@ -15,28 +18,14 @@ class ModelManager extends EventEmitter {
     this.downloadQueue = new Map();
     this.installedModels = new Map();
     this.availableModels = new Map();
-    this.maxConcurrentDownloads = 2;
+    this.maxConcurrentDownloads = CONFIG.MAX_CONCURRENT_DOWNLOADS;
     this.activeDownloads = 0;
     
-    // Model name mapping for whisper.cpp compatibility
-    this.modelNameMapping = {
-      'whisper-tiny.bin': 'ggml-tiny.bin',
-      'whisper-base.bin': 'ggml-base.bin',
-      'whisper-small.bin': 'ggml-small.bin',
-      'whisper-medium.bin': 'ggml-medium.bin',
-      'whisper-large.bin': 'ggml-large-v3.bin',
-      'whisper-large-v2.bin': 'ggml-large-v2.bin',
-      'whisper-large-v3.bin': 'ggml-large-v3.bin',
-      
-      // Handle different variations
-      'tiny.bin': 'ggml-tiny.bin',
-      'base.bin': 'ggml-base.bin',
-      'small.bin': 'ggml-small.bin',
-      'medium.bin': 'ggml-medium.bin',
-      'large.bin': 'ggml-large-v3.bin',
-      'large-v2.bin': 'ggml-large-v2.bin',
-      'large-v3.bin': 'ggml-large-v3.bin'
-    };
+    // FIXED: Add download tracking for UI state sync
+    this.downloadStates = new Map(); // Track download states for UI
+    
+    // Use imported model name mapping
+    this.modelNameMapping = MODEL_NAME_MAPPING;
   }
 
   getModelsDirectory() {
@@ -85,132 +74,8 @@ class ModelManager extends EventEmitter {
   }
 
   async loadModelsCatalog() {
-    // Define available models with their metadata
-    const models = [
-      {
-        id: 'whisper-tiny',
-        name: 'Whisper Tiny',
-        provider: 'OpenAI',
-        size: '39 MB',
-        sizeBytes: 39000000,
-        languages: ['en'],
-        description: 'Fastest model, English only, good for real-time transcription',
-        accuracy: 'Basic',
-        speed: 'Very Fast',
-        requirements: {
-          ram: '1 GB',
-          disk: '50 MB'
-        },
-        downloadUrl: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin',
-        checksum: '65147644a518d12f04e32d6f83b26e78e39ff953a90edea0b0f4b7c8b8e0e5de',
-        version: '1.0.0',
-        type: 'whisper',
-        expectedFilename: 'ggml-tiny.bin' // Add expected filename for whisper.cpp
-      },
-      {
-        id: 'whisper-base',
-        name: 'Whisper Base',
-        provider: 'OpenAI',
-        size: '142 MB',
-        sizeBytes: 142000000,
-        languages: ['multilingual'],
-        description: 'Good balance of speed and accuracy, supports multiple languages',
-        accuracy: 'Good',
-        speed: 'Fast',
-        requirements: {
-          ram: '2 GB',
-          disk: '200 MB'
-        },
-        downloadUrl: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin',
-        checksum: 'ed3a0b6b1c0edf879ad9b11b1af5a0e6ab5db9205f891f668f8b0e6c6326e34e',
-        version: '1.0.0',
-        type: 'whisper',
-        expectedFilename: 'ggml-base.bin'
-      },
-      {
-        id: 'whisper-small',
-        name: 'Whisper Small',
-        provider: 'OpenAI',
-        size: '461 MB',
-        sizeBytes: 461000000,
-        languages: ['multilingual'],
-        description: 'Better accuracy than base, still reasonably fast',
-        accuracy: 'Very Good',
-        speed: 'Medium',
-        requirements: {
-          ram: '4 GB',
-          disk: '500 MB'
-        },
-        downloadUrl: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin',
-        checksum: '9ecf779972d90ba49c06d968637d720dd632c55bbf19a9b982f6b20a0e4b1b8e',
-        version: '1.0.0',
-        type: 'whisper',
-        expectedFilename: 'ggml-small.bin'
-      },
-      {
-        id: 'whisper-medium',
-        name: 'Whisper Medium',
-        provider: 'OpenAI',
-        size: '1.42 GB',
-        sizeBytes: 1420000000,
-        languages: ['multilingual'],
-        description: 'High accuracy, good for professional transcription',
-        accuracy: 'Excellent',
-        speed: 'Medium-Slow',
-        requirements: {
-          ram: '6 GB',
-          disk: '1.5 GB'
-        },
-        downloadUrl: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium.bin',
-        checksum: '345ae4da62f9b3d59415adc60127b97c714f32e89e936602e85993674d08dcb1',
-        version: '1.0.0',
-        type: 'whisper',
-        expectedFilename: 'ggml-medium.bin'
-      },
-      {
-        id: 'whisper-large-v2',
-        name: 'Whisper Large v2',
-        provider: 'OpenAI',
-        size: '2.87 GB',
-        sizeBytes: 2870000000,
-        languages: ['multilingual'],
-        description: 'Best accuracy, slower processing, ideal for high-quality transcription',
-        accuracy: 'Outstanding',
-        speed: 'Slow',
-        requirements: {
-          ram: '8 GB',
-          disk: '3 GB'
-        },
-        downloadUrl: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v2.bin',
-        checksum: '81f7c96c852ee8fc832187b0132e569d6c3065a3252ed18e56effd0b6a73e524',
-        version: '2.0.0',
-        type: 'whisper',
-        expectedFilename: 'ggml-large-v2.bin'
-      },
-      {
-        id: 'whisper-large-v3',
-        name: 'Whisper Large v3',
-        provider: 'OpenAI',
-        size: '2.87 GB',
-        sizeBytes: 2870000000,
-        languages: ['multilingual'],
-        description: 'Latest and most accurate model, best for professional use',
-        accuracy: 'Outstanding',
-        speed: 'Slow',
-        requirements: {
-          ram: '8 GB',
-          disk: '3 GB'
-        },
-        downloadUrl: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3.bin',
-        checksum: 'e4b87e7e0bf463eb8e6956e646f1e277e901512310def2c24bf0e11bd3c28e9a',
-        version: '3.0.0',
-        type: 'whisper',
-        expectedFilename: 'ggml-large-v3.bin'
-      }
-    ];
-
-    // Add models to available models map
-    models.forEach(model => {
+    // Use imported models instead of hardcoded array
+    WHISPER_MODELS.forEach(model => {
       this.availableModels.set(model.id, model);
     });
   }
@@ -436,22 +301,44 @@ class ModelManager extends EventEmitter {
     };
   }
 
+  // FIXED: Enhanced download method with better duplicate handling and progress tracking
   async downloadModel(modelId) {
     const model = this.availableModels.get(modelId);
     if (!model) {
       throw new Error(`Model ${modelId} not found`);
     }
 
+    // FIXED: More thorough duplicate check including download states
     if (this.installedModels.has(modelId)) {
+      console.log(`⚠️ Model ${modelId} is already installed, skipping download`);
       throw new Error(`Model ${modelId} is already installed`);
     }
 
     if (this.downloadQueue.has(modelId)) {
+      console.log(`⚠️ Model ${modelId} is already being downloaded`);
       throw new Error(`Model ${modelId} is already being downloaded`);
+    }
+
+    // FIXED: Check download states to prevent duplicate downloads
+    if (this.downloadStates.has(modelId)) {
+      const existingState = this.downloadStates.get(modelId);
+      if (existingState.status === 'downloading' || existingState.status === 'queued') {
+        console.log(`⚠️ Model ${modelId} download already in progress (${existingState.status})`);
+        throw new Error(`Model ${modelId} is already being downloaded`);
+      }
     }
 
     // Check available disk space
     await this.checkDiskSpace(model.sizeBytes);
+
+    // FIXED: Add to download states immediately
+    this.downloadStates.set(modelId, {
+      status: 'queued',
+      progress: 0,
+      downloadedBytes: 0,
+      totalBytes: model.sizeBytes,
+      startTime: Date.now()
+    });
 
     // Add to download queue
     const downloadInfo = {
@@ -465,11 +352,14 @@ class ModelManager extends EventEmitter {
     };
 
     this.downloadQueue.set(modelId, downloadInfo);
+    
+    // FIXED: Emit queued event immediately
+    console.log(`📥 Model ${model.name} queued for download`);
     this.emit('downloadQueued', downloadInfo);
 
     // Start download if under concurrent limit
     if (this.activeDownloads < this.maxConcurrentDownloads) {
-      await this.startDownload(modelId);
+      setImmediate(() => this.startDownload(modelId)); // Use setImmediate to ensure event is emitted first
     }
 
     return { success: true, downloadInfo };
@@ -485,6 +375,12 @@ class ModelManager extends EventEmitter {
     downloadInfo.status = 'downloading';
     downloadInfo.startTime = Date.now();
 
+    // FIXED: Update download states
+    this.downloadStates.set(modelId, {
+      ...downloadInfo,
+      status: 'downloading'
+    });
+
     try {
       // UPDATED: Download with correct GGML filename from the start
       const model = downloadInfo.model;
@@ -498,6 +394,7 @@ class ModelManager extends EventEmitter {
       if (downloadInfo.cancelled) {
         try { await fs.unlink(outputPath); } catch {}
         downloadInfo.status = 'cancelled';
+        this.downloadStates.delete(modelId); // FIXED: Clean up download state
         this.emit('downloadCancelled', { modelId });
       } else {
         // Skip checksum verification for now since we're using new model files
@@ -518,11 +415,15 @@ class ModelManager extends EventEmitter {
           isCompatible: this.isFileNameCompatible(outputFilename)
         };
 
+        // FIXED: Add to installed models BEFORE emitting events
         this.installedModels.set(modelId, installedModel);
 
         downloadInfo.status = 'completed';
         downloadInfo.progress = 100;
         downloadInfo.completedAt = Date.now();
+
+        // FIXED: Clean up download state and emit completion
+        this.downloadStates.delete(modelId);
 
         console.log(`✅ Model ${model.name} downloaded successfully as ${outputFilename}`);
         this.emit('downloadComplete', { modelId, installedModel });
@@ -531,10 +432,12 @@ class ModelManager extends EventEmitter {
     } catch (error) {
       if (downloadInfo.cancelled || error.message === 'Download cancelled') {
         downloadInfo.status = 'cancelled';
+        this.downloadStates.delete(modelId); // FIXED: Clean up download state
         this.emit('downloadCancelled', { modelId });
       } else {
         downloadInfo.status = 'error';
         downloadInfo.error = error.message;
+        this.downloadStates.delete(modelId); // FIXED: Clean up download state
         this.emit('downloadError', { modelId, error: error.message });
       }
       
@@ -556,11 +459,12 @@ class ModelManager extends EventEmitter {
         .find(info => info.status === 'queued');
       
       if (nextDownload && this.activeDownloads < this.maxConcurrentDownloads) {
-        await this.startDownload(nextDownload.modelId);
+        setImmediate(() => this.startDownload(nextDownload.modelId));
       }
     }
   }
 
+  // FIXED: Enhanced download file method with better progress tracking
   async downloadFile(url, outputPath, downloadInfo) {
     return new Promise((resolve, reject) => {
       const protocol = url.startsWith('https:') ? https : http;
@@ -581,31 +485,69 @@ class ModelManager extends EventEmitter {
         const totalBytes = parseInt(response.headers['content-length'], 10);
         if (totalBytes) {
           downloadInfo.totalBytes = totalBytes;
+          // FIXED: Update download state with correct total bytes
+          if (this.downloadStates.has(downloadInfo.modelId)) {
+            this.downloadStates.get(downloadInfo.modelId).totalBytes = totalBytes;
+          }
         }
 
         const writeStream = require('fs').createWriteStream(outputPath);
         downloadInfo.request = request;
         downloadInfo.writeStream = writeStream;
         let downloadedBytes = 0;
+        let lastProgressEmit = 0;
 
         response.on('data', (chunk) => {
           downloadedBytes += chunk.length;
           downloadInfo.downloadedBytes = downloadedBytes;
           downloadInfo.progress = totalBytes ? (downloadedBytes / totalBytes) * 100 : 0;
           
-          this.emit('downloadProgress', {
-            modelId: downloadInfo.modelId,
-            progress: downloadInfo.progress,
-            downloadedBytes,
-            totalBytes,
-            speed: this.calculateDownloadSpeed(downloadInfo)
-          });
+          // FIXED: Update download state
+          if (this.downloadStates.has(downloadInfo.modelId)) {
+            Object.assign(this.downloadStates.get(downloadInfo.modelId), {
+              downloadedBytes,
+              progress: downloadInfo.progress
+            });
+          }
+          
+          // FIXED: Throttle progress events to prevent spam (emit every 1% or 1MB)
+          const now = Date.now();
+          const progressChanged = Math.floor(downloadInfo.progress) > Math.floor(lastProgressEmit);
+          const sizeChanged = downloadedBytes - (this.lastEmittedBytes || 0) > CONFIG.PROGRESS_EMIT_SIZE_THRESHOLD;
+          
+          if (progressChanged || sizeChanged || now - (this.lastEmitTime || 0) > CONFIG.PROGRESS_EMIT_INTERVAL) {
+            this.lastEmittedBytes = downloadedBytes;
+            this.lastEmitTime = now;
+            
+            const progressData = {
+              modelId: downloadInfo.modelId,
+              progress: downloadInfo.progress,
+              downloadedBytes,
+              totalBytes,
+              speed: this.calculateDownloadSpeed(downloadInfo)
+            };
+            
+            console.log(`📊 Download progress ${downloadInfo.modelId}: ${Math.round(downloadInfo.progress)}% (${Math.round(downloadedBytes/1024/1024)}MB/${Math.round(totalBytes/1024/1024)}MB)`);
+            this.emit('downloadProgress', progressData);
+            lastProgressEmit = downloadInfo.progress;
+          }
         });
 
         response.on('end', () => {
           writeStream.end();
           downloadInfo.request = null;
           downloadInfo.writeStream = null;
+          
+          // FIXED: Emit final progress
+          console.log(`✅ Download completed for ${downloadInfo.modelId}: ${Math.round(downloadedBytes/1024/1024)}MB`);
+          this.emit('downloadProgress', {
+            modelId: downloadInfo.modelId,
+            progress: 100,
+            downloadedBytes,
+            totalBytes,
+            speed: this.calculateDownloadSpeed(downloadInfo)
+          });
+          
           resolve();
         });
 
@@ -624,7 +566,7 @@ class ModelManager extends EventEmitter {
         downloadInfo.writeStream = null;
         reject(err);
       });
-      request.setTimeout(30000, () => {
+      request.setTimeout(CONFIG.DOWNLOAD_TIMEOUT, () => {
         downloadInfo.request = null;
         downloadInfo.writeStream = null;
         request.destroy();
@@ -700,8 +642,32 @@ class ModelManager extends EventEmitter {
     }
   }
 
+  // FIXED: Enhanced status method
   async getDownloadStatus(modelId) {
-    return this.downloadQueue.get(modelId);
+    return this.downloadQueue.get(modelId) || this.downloadStates.get(modelId);
+  }
+
+  // FIXED: Get all download states for UI sync
+  getAllDownloadStates() {
+    const states = new Map();
+    
+    // Add active downloads
+    for (const [id, info] of this.downloadQueue.entries()) {
+      states.set(id, {
+        modelId: id,
+        status: info.status,
+        progress: info.progress || 0,
+        downloadedBytes: info.downloadedBytes || 0,
+        totalBytes: info.totalBytes || 0
+      });
+    }
+    
+    // Add any tracked states
+    for (const [id, state] of this.downloadStates.entries()) {
+      states.set(id, state);
+    }
+    
+    return states;
   }
 
   async cancelDownload(modelId) {
@@ -712,6 +678,7 @@ class ModelManager extends EventEmitter {
 
     if (downloadInfo.status === 'queued') {
       this.downloadQueue.delete(modelId);
+      this.downloadStates.delete(modelId); // FIXED: Clean up download state
       downloadInfo.status = 'cancelled';
       this.emit('downloadCancelled', { modelId });
       return { success: true };
