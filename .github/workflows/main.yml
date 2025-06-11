@@ -360,7 +360,7 @@ jobs:
           Write-Host "🔧 Starting Electron build..."
           
           try {
-            npx electron-builder --win --x64 --publish=never --config.compression=normal
+            npx electron-builder --win --x64 --publish=never --config.compression=normal --config.files="src/**/*,binaries/**/*,!binaries/models/**/*" --config.extraResources="[{\"from\":\"binaries/\",\"to\":\"binaries/\",\"filter\":[\"**/*\"]}]" --config.win.extraResources="binaries/whisper-cli.exe,binaries/diarize-cli.exe,binaries/*.dll"
             
             Write-Host "✅ Electron build completed"
             
@@ -564,9 +564,9 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: false
         run: |
           if [ "${{ matrix.arch }}" = "arm64" ]; then
-            npx electron-builder --mac --arm64 --publish=never
+            npx electron-builder --mac --arm64 --publish=never --config.files="src/**/*,binaries/**/*,!binaries/models/**/*" --config.extraResources="[{\"from\":\"binaries/\",\"to\":\"binaries/\",\"filter\":[\"**/*\"]}]" --config.mac.extraResources="binaries/whisper-cli,binaries/diarize-cli,binaries/*.dylib"
           else
-            npx electron-builder --mac --x64 --publish=never
+            npx electron-builder --mac --x64 --publish=never --config.files="src/**/*,binaries/**/*,!binaries/models/**/*" --config.extraResources="[{\"from\":\"binaries/\",\"to\":\"binaries/\",\"filter\":[\"**/*\"]}]" --config.mac.extraResources="binaries/whisper-cli,binaries/diarize-cli,binaries/*.dylib"
           fi
           
           # Rename ZIP files to Portable versions
@@ -675,7 +675,7 @@ jobs:
       # Build Electron app
       - name: Build Electron app
         run: |
-          npx electron-builder --linux --x64 --publish=never
+          npx electron-builder --linux --x64 --publish=never --config.files="src/**/*,binaries/**/*,!binaries/models/**/*" --config.extraResources="[{\"from\":\"binaries/\",\"to\":\"binaries/\",\"filter\":[\"**/*\"]}]" --config.linux.extraResources="binaries/whisper-cli,binaries/diarize-cli,binaries/*.so"
           
           # Rename any ZIP files to Portable versions (though Linux typically doesn't use ZIP)
           node scripts/rename-portable.js

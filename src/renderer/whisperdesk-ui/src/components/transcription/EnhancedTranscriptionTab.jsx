@@ -19,10 +19,21 @@ export function EnhancedTranscriptionTab() {
   const [models, setModels] = useState([])
   const [isLoading, setIsLoading] = useState(false)
   const [hasLoadedInitial, setHasLoadedInitial] = useState(false)
+  const [diarizationAvailable, setDiarizationAvailable] = useState(false)
   
   // Refs for cleanup and toast management
   const lastToastRef = useRef(null)
   const hasShownCompletionToast = useRef(false)
+
+  // Check if diarization is available for the selected provider
+  useEffect(() => {
+    const checkDiarizationAvailability = () => {
+      const selectedProvider = providers.find(p => p.id === appState.selectedProvider)
+      setDiarizationAvailable(selectedProvider?.supportsDiarization || false)
+    }
+    
+    checkDiarizationAvailability()
+  }, [appState.selectedProvider, providers])
 
   // 🔴 NEW: Load initial providers and models from AppInitializer on mount
   useEffect(() => {
@@ -142,7 +153,13 @@ export function EnhancedTranscriptionTab() {
         provider: appState.selectedProvider,
         model: appState.selectedModel,
         language: 'auto',
-        enableTimestamps: true
+        enableTimestamps: true,
+        // Add diarization options if available
+        ...(diarizationAvailable && {
+          enableSpeakerDiarization: appState.enableSpeakerDiarization,
+          maxSpeakers: appState.maxSpeakers,
+          speakerThreshold: appState.speakerThreshold
+        })
       }
 
       console.log('Starting enhanced transcription with options:', options)
@@ -333,7 +350,7 @@ export function EnhancedTranscriptionTab() {
         <QuickRecordSection />
       </div>
 
-      {/* Enhanced Transcription Settings - Now with auto-loaded data */}
+      {/* Enhanced Transcription Settings - Now with diarization options */}
       <TranscriptionSettings
         providers={providers}
         models={models}
@@ -341,9 +358,16 @@ export function EnhancedTranscriptionTab() {
         selectedModel={appState.selectedModel}
         onProviderChange={(value) => updateAppState({ selectedProvider: value })}
         onModelChange={(value) => updateAppState({ selectedModel: value })}
-        onRefreshProviders={handleManualRefreshProviders} // Use manual refresh for user action
-        onRefreshModels={handleManualRefreshModels} // Use manual refresh for user action
+        onRefreshProviders={handleManualRefreshProviders}
+        onRefreshModels={handleManualRefreshModels}
         isLoading={isLoading}
+        diarizationAvailable={diarizationAvailable}
+        settings={{
+          enableSpeakerDiarization: appState.enableSpeakerDiarization,
+          maxSpeakers: appState.maxSpeakers,
+          speakerThreshold: appState.speakerThreshold
+        }}
+        updateSetting={(key, value) => updateAppState({ [key]: value })}
       />
 
       {/* Enhanced Transcription Controls */}
