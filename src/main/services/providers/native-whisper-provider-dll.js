@@ -283,85 +283,86 @@ class NativeWhisperProviderDLL extends EventEmitter {
    */
   async parseWhisperCliOutput(transcriptionId, stdout, stderr) {
     let transcriptionText = '';
-    let transcriptionData = null;
+    let segments = [];
     let outputSource = 'unknown';
 
-    // Strategy 1: Parse modern VTT format from stdout (whisper-cli --output-vtt)
+    // Parse VTT format from stdout (whisper-cli --output-vtt)
     if (stdout) {
       console.log('📄 Parsing VTT from whisper-cli stdout...');
       const vttResult = this.parseVTTFromStdout(stdout);
       if (vttResult.text) {
         transcriptionText = vttResult.text;
-        transcriptionData = vttResult.data;
+        segments = vttResult.segments || [];
         outputSource = 'stdout_vtt';
-        console.log(`✅ VTT parsing successful: ${transcriptionText.length} chars`);
+        console.log(`✅ VTT parsing successful: ${transcriptionText.length} chars, ${segments.length} segments`);
       }
     }
 
-    // Strategy 2: Parse plain text output from whisper-cli
-    if (!transcriptionText && stdout) {
-      console.log('📄 Attempting to extract plain text from whisper-cli stdout...');
+    // Fallback parsing strategies...
+    if (!transcriptionText) {
       transcriptionText = this.extractPlainTextFromStdout(stdout);
-      if (transcriptionText) {
-        outputSource = 'stdout_text';
-        console.log(`✅ Plain text extraction: ${transcriptionText.length} chars`);
-      }
-    }
-
-    // Strategy 3: Look for generated VTT files (whisper-cli creates these)
-    if (!transcriptionText) {
-      console.log('📄 Looking for generated VTT files...');
-      const vttFile = await this.findGeneratedVTTFile();
-      if (vttFile) {
-        const vttContent = await fs.readFile(vttFile, 'utf8');
-        const vttResult = this.parseVTTContent(vttContent);
-        if (vttResult.text) {
-          transcriptionText = vttResult.text;
-          transcriptionData = vttResult.data;
-          outputSource = 'vtt_file';
-          console.log(`✅ VTT file parsing successful: ${transcriptionText.length} chars`);
-          
-          // Clean up the VTT file
-          try {
-            await fs.unlink(vttFile);
-          } catch (cleanupError) {
-            console.warn('⚠️ Failed to clean up VTT file:', cleanupError.message);
-          }
-        }
-      }
+      outputSource = 'stdout_text';
     }
 
     if (!transcriptionText) {
-      console.error('❌ No transcription output found from whisper-cli');
-      console.log('📝 Stdout preview:', stdout.substring(0, 500));
-      console.log('📝 Stderr preview:', stderr.substring(0, 500));
       throw new Error('No transcription output found - Check whisper-cli binary output');
     }
 
-    transcriptionText = transcriptionText.trim();
-
-    // Music detection
-    const containsMusic = this.detectMusicContent(transcriptionText);
+    // Process segments for speaker identification
+    const processedSegments = this.processSegmentsWithSpeakers(segments);
     
+    // Generate speaker statistics
+    const speakerStats = this.generateSpeakerStatistics(processedSegments);
+    
+    // Calculate metadata
+    const duration = processedSegments.length > 0 
+      ? Math.max(...processedSegments.map(s => s.end || 0)) 
+      : 0;
+
+    // Calculate word count and confidence
+    const wordCount = transcriptionText.split(/\s+/).filter(word => word.length > 0).length;
+    const avgConfidence = processedSegments.length > 0
+      ? processedSegments.reduce((sum, s) => sum + (s.confidence || 0.9), 0) / processedSegments.length
+      : 0.9;
+
+    // RETURN ENHANCED FORMAT
     const result = {
-      text: transcriptionText,
-      data: transcriptionData,
-      provider: 'whisper-native',
-      model: 'local',
-      timestamp: new Date().toISOString(),
+      // Core transcription data
+      text: transcriptionText.trim(),
+      segments: processedSegments,
+      
+      // Enhanced metadata
       metadata: {
-        containsMusic,
-        suggestion: containsMusic ? 'Content contains music sections' : null,
-        outputSource,
+        duration,
+        wordCount,
+        segmentCount: processedSegments.length,
+        speakerCount: speakerStats.length,
+        averageConfidence: avgConfidence,
+        model: 'whisper-local',
+        provider: 'whisper-native',
+        language: 'auto',
+        createdAt: new Date().toISOString(),
+        channels: 1,
+        sampleRate: 16000,
         buildType: this.buildType,
         platform: this.platform,
-        executableName: this.executableName
-      }
+        executableName: this.executableName,
+        outputSource,
+        speakers: speakerStats,
+        quality: {
+          confidence: avgConfidence,
+          wordCount,
+          duration,
+          wpm: duration > 0 ? Math.round((wordCount / duration) * 60) : 0
+        }
+      },
+      
+      // Legacy fields for compatibility
+      provider: 'whisper-native',
+      timestamp: new Date().toISOString()
     };
 
-    console.log(`✅ Transcription processed (${result.text.length} chars) via ${outputSource}`);
-    console.log(`📊 Build type: ${this.buildType}`);
-    console.log(`📊 Executable: ${this.executableName}`);
+    console.log(`✅ Enhanced transcription processed: ${result.text.length} chars, ${result.segments.length} segments, ${speakerStats.length} speakers`);
     return result;
   }
 
@@ -667,6 +668,79 @@ class NativeWhisperProviderDLL extends EventEmitter {
 
   isAvailable() {
     return this.available;
+  }
+
+  // NEW: Process segments with speaker identification
+  processSegmentsWithSpeakers(segments) {
+    if (segments.length === 0) return [];
+    
+    // Simple speaker identification based on pauses and content
+    let currentSpeaker = 1;
+    let lastEndTime = 0;
+    const SPEAKER_CHANGE_THRESHOLD = 2.0; // 2 seconds pause = new speaker
+    const MIN_SEGMENT_DURATION = 0.5; // Minimum duration for a valid segment
+    
+    return segments.map((segment, index) => {
+      // Skip very short segments
+      if (segment.end - segment.start < MIN_SEGMENT_DURATION) {
+        return {
+          ...segment,
+          speakerId: `speaker_${currentSpeaker}`,
+          speakerLabel: `Speaker ${currentSpeaker}`
+        };
+      }
+      
+      // If there's a significant pause, assume new speaker
+      if (segment.start - lastEndTime > SPEAKER_CHANGE_THRESHOLD) {
+        currentSpeaker = currentSpeaker === 1 ? 2 : 1;
+      }
+      
+      lastEndTime = segment.end;
+      
+      return {
+        ...segment,
+        speakerId: `speaker_${currentSpeaker}`,
+        speakerLabel: `Speaker ${currentSpeaker}`,
+        confidence: segment.confidence || 0.9,
+        words: segment.words || []
+      };
+    });
+  }
+
+  // NEW: Generate speaker statistics
+  generateSpeakerStatistics(segments) {
+    const speakerStats = {};
+    
+    segments.forEach(segment => {
+      const speakerId = segment.speakerId;
+      if (!speakerId) return;
+      
+      if (!speakerStats[speakerId]) {
+        speakerStats[speakerId] = {
+          id: speakerId,
+          label: segment.speakerLabel,
+          totalDuration: 0,
+          segmentCount: 0,
+          wordCount: 0,
+          averageConfidence: 0,
+          confidenceSum: 0
+        };
+      }
+      
+      const stats = speakerStats[speakerId];
+      stats.totalDuration += (segment.end - segment.start);
+      stats.segmentCount += 1;
+      stats.wordCount += segment.text.split(/\s+/).filter(word => word.length > 0).length;
+      stats.confidenceSum += (segment.confidence || 0.9);
+    });
+    
+    // Calculate averages and format stats
+    return Object.values(speakerStats).map(stats => ({
+      ...stats,
+      averageConfidence: stats.segmentCount > 0 ? stats.confidenceSum / stats.segmentCount : 0,
+      averageSegmentDuration: stats.segmentCount > 0 ? stats.totalDuration / stats.segmentCount : 0,
+      wpm: stats.totalDuration > 0 ? Math.round((stats.wordCount / stats.totalDuration) * 60) : 0
+    }));
   }
 }
 

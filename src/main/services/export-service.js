@@ -84,6 +84,41 @@ class ExportService {
     }
   }
 
+  async exportEnhancedTranscription(transcriptionData, format, options = {}) {
+    try {
+      let content = '';
+      
+      switch (format.toLowerCase()) {
+        case 'enhanced-json':
+          content = this.generateEnhancedJSON(transcriptionData, options);
+          break;
+        case 'enhanced-txt':
+          content = this.generateEnhancedText(transcriptionData, options);
+          break;
+        case 'speakers-csv':
+          content = this.generateSpeakersCSV(transcriptionData, options);
+          break;
+        case 'segments-csv':
+          content = this.generateSegmentsCSV(transcriptionData, options);
+          break;
+        default:
+          // Fall back to existing export methods
+          return this.exportText(transcriptionData, format, options);
+      }
+
+      return {
+        success: true,
+        content,
+        mimeType: this.getMimeType(format)
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  }
+
   generatePlainText(data, options = {}) {
     const { includeTimestamps = false, includeSpeakers = true, includeConfidence = false } = options;
     let text = '';
@@ -296,6 +331,105 @@ class ExportService {
     });
 
     return ass;
+  }
+
+  generateEnhancedJSON(data, options = {}) {
+    const exportData = {
+      ...data,
+      exportedAt: new Date().toISOString(),
+      exportOptions: options,
+      format: 'enhanced-whisperdesk-v1'
+    };
+
+    return JSON.stringify(exportData, null, 2);
+  }
+
+  generateEnhancedText(data, options = {}) {
+    const { includeSpeakers = true, includeTimestamps = true, includeMetadata = true } = options;
+    let text = '';
+
+    if (includeMetadata && data.metadata) {
+      text += `Transcription Report\n`;
+      text += `===================\n\n`;
+      text += `Duration: ${this.formatDuration(data.metadata.duration)}\n`;
+      text += `Model: ${data.metadata.model}\n`;
+      text += `Provider: ${data.metadata.provider}\n`;
+      text += `Language: ${data.metadata.language}\n`;
+      text += `Created: ${new Date(data.metadata.createdAt).toLocaleString()}\n`;
+      
+      if (data.metadata.speakers && data.metadata.speakers.length > 0) {
+        text += `\nSpeakers (${data.metadata.speakers.length}):\n`;
+        data.metadata.speakers.forEach(speaker => {
+          text += `  • ${speaker.label}: ${this.formatDuration(speaker.totalDuration)} (${speaker.segmentCount} segments)\n`;
+          text += `    - Words: ${speaker.wordCount}\n`;
+          text += `    - WPM: ${speaker.wpm}\n`;
+          text += `    - Confidence: ${Math.round(speaker.averageConfidence * 100)}%\n`;
+        });
+      }
+      
+      text += '\n' + '='.repeat(50) + '\n\n';
+    }
+
+    if (data.segments && data.segments.length > 0) {
+      data.segments.forEach(segment => {
+        let line = '';
+
+        if (includeTimestamps) {
+          line += `[${this.formatTimestamp(segment.start)} → ${this.formatTimestamp(segment.end)}] `;
+        }
+
+        if (includeSpeakers && segment.speakerLabel) {
+          line += `${segment.speakerLabel}: `;
+        }
+
+        line += segment.text;
+
+        if (segment.confidence) {
+          line += ` (${Math.round(segment.confidence * 100)}%)`;
+        }
+
+        text += line + '\n\n';
+      });
+    } else {
+      text += data.text || 'No transcription content available.';
+    }
+
+    return text;
+  }
+
+  generateSpeakersCSV(data, options = {}) {
+    if (!data.metadata?.speakers) {
+      return 'Speaker ID,Speaker Label,Total Duration (seconds),Segment Count,Word Count,WPM,Average Confidence\nNo speaker data available';
+    }
+
+    const totalDuration = data.metadata.speakers.reduce((sum, s) => sum + s.totalDuration, 0);
+    
+    let csv = 'Speaker ID,Speaker Label,Total Duration (seconds),Segment Count,Word Count,WPM,Average Confidence\n';
+    
+    data.metadata.speakers.forEach(speaker => {
+      const confidence = Math.round(speaker.averageConfidence * 100);
+      csv += `"${speaker.id}","${speaker.label}",${speaker.totalDuration.toFixed(2)},${speaker.segmentCount},${speaker.wordCount},${speaker.wpm},${confidence}%\n`;
+    });
+
+    return csv;
+  }
+
+  generateSegmentsCSV(data, options = {}) {
+    if (!data.segments || data.segments.length === 0) {
+      return 'Segment ID,Start Time,End Time,Duration,Speaker ID,Speaker Label,Text,Confidence,Word Count\nNo segment data available';
+    }
+
+    let csv = 'Segment ID,Start Time,End Time,Duration,Speaker ID,Speaker Label,Text,Confidence,Word Count\n';
+    
+    data.segments.forEach(segment => {
+      const duration = segment.end - segment.start;
+      const wordCount = segment.text.split(/\s+/).filter(word => word.length > 0).length;
+      const confidence = segment.confidence ? Math.round(segment.confidence * 100) : '';
+      
+      csv += `${segment.id},${segment.start},${segment.end},${duration.toFixed(2)},"${segment.speakerId || ''}","${segment.speakerLabel || ''}","${segment.text.replace(/"/g, '""')}",${confidence},${wordCount}\n`;
+    });
+
+    return csv;
   }
 
   async copyToClipboard(text) {

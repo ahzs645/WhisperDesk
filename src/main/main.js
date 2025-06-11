@@ -1,6 +1,7 @@
 // src/main/main.js - Main entry point
-const { app, BrowserWindow } = require('electron');
+const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
+const fs = require('fs');
 
 const WindowManager = require('./managers/window-manager');
 const ServiceManager = require('./managers/service-manager');
@@ -16,6 +17,22 @@ if (!app.requestSingleInstanceLock()) {
   console.log('❌ Another instance is already running');
   app.quit();
   process.exit(0);
+}
+
+async function waitForDevServer(maxRetries = 30, retryInterval = 1000) {
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      const response = await fetch('http://localhost:3000/');
+      if (response.ok) {
+        console.log('✅ Vite dev server is ready');
+        return true;
+      }
+    } catch (error) {
+      console.log(`⏳ Waiting for Vite dev server... (${i + 1}/${maxRetries})`);
+      await new Promise(resolve => setTimeout(resolve, retryInterval));
+    }
+  }
+  return false;
 }
 
 class WhisperDeskApp {
@@ -42,12 +59,36 @@ class WhisperDeskApp {
       this.ipcManager = new IpcManager(this.serviceManager);
       this.ipcManager.setupAllHandlers();
 
+      // Wait for Vite dev server before creating window
+      if (process.env.NODE_ENV === 'development') {
+        console.log('🔧 Waiting for Vite dev server...');
+        const serverReady = await waitForDevServer();
+        if (!serverReady) {
+          console.error('❌ Vite dev server failed to start');
+          app.quit();
+          return;
+        }
+      }
+
       // Step 4: Create window manager
       this.windowManager = new WindowManager(this.serviceManager);
       await this.windowManager.createMainWindow();
 
       // Step 5: Setup event forwarding
       this.serviceManager.setupEventForwarding(this.windowManager.getMainWindow());
+
+      // Add enhanced export IPC handler
+      ipcMain.handle('export:enhancedTranscription', async (event, data, format, options) => {
+        try {
+          return await this.serviceManager.exportService.exportEnhancedTranscription(data, format, options);
+        } catch (error) {
+          console.error('Export failed:', error);
+          return {
+            success: false,
+            error: error.message
+          };
+        }
+      });
 
       console.log('✅ WhisperDesk initialization completed');
       return true;
