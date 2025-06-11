@@ -534,4 +534,3 @@ class SpeakerRecognitionService extends EventEmitter {
 }
 
 module.exports = SpeakerRecognitionService;
-

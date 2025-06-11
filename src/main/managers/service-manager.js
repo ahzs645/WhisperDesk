@@ -15,7 +15,6 @@ class ServiceManager extends EventEmitter {
       // Initialize services in order of dependency
       await this.initializeModelManager();
       await this.initializeTranscriptionService();
-      await this.initializeAudioService();
       await this.initializeSettingsService();
       await this.initializeExportService();
       await this.initializeEnhancedDeviceManager();
@@ -53,19 +52,6 @@ class ServiceManager extends EventEmitter {
     } catch (error) {
       console.error('❌ Transcription Service failed:', error);
       this.services.transcriptionService = this.createFallbackTranscriptionService();
-    }
-  }
-
-  async initializeAudioService() {
-    try {
-      console.log('🔧 Initializing Audio Service...');
-      const AudioService = require('../services/audio-service');
-      this.services.audioService = new AudioService();
-      await this.services.audioService.initialize();
-      console.log('✅ Audio Service initialized');
-    } catch (error) {
-      console.error('❌ Audio Service failed:', error);
-      this.services.audioService = this.createFallbackAudioService();
     }
   }
 
