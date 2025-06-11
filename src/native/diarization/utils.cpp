@@ -1,4 +1,4 @@
-// src/native/diarization/utils.cpp - FIXED with proper headers
+// src/native/diarization/utils.cpp - FIXED: Namespace conflict resolved
 #include "include/utils.h"
 #include "include/diarize-cli.h"
 #include <iostream>
@@ -120,13 +120,14 @@ std::vector<float> simple_resample(const std::vector<float>& audio, int source_r
 namespace Json {
 
 void output_results(const std::vector<AudioSegment>& segments, const DiarizeOptions& options) {
-    Json::Value root;
-    Json::Value segments_json(Json::arrayValue);
+    // FIXED: Use fully qualified names to avoid namespace conflict
+    ::Json::Value root;
+    ::Json::Value segments_json(::Json::arrayValue);
     
     auto speaker_stats = generate_speaker_stats(segments);
     
     for (const auto& segment : segments) {
-        Json::Value seg;
+        ::Json::Value seg;
         seg["start_time"] = segment.start_time;
         seg["end_time"] = segment.end_time;
         seg["speaker_id"] = segment.speaker_id;
@@ -147,7 +148,7 @@ void output_results(const std::vector<AudioSegment>& segments, const DiarizeOpti
     root["created_at"] = Time::get_current_timestamp();
     
     // Add model info
-    Json::Value model_info;
+    ::Json::Value model_info;
     model_info["segment_model"] = options.segment_model_path;
     model_info["embedding_model"] = options.embedding_model_path;
     model_info["max_speakers"] = options.max_speakers;
@@ -155,9 +156,9 @@ void output_results(const std::vector<AudioSegment>& segments, const DiarizeOpti
     root["model_info"] = model_info;
     
     // Add speaker statistics
-    Json::Value speakers_json(Json::arrayValue);
+    ::Json::Value speakers_json(::Json::arrayValue);
     for (const auto& [speaker_id, stats] : speaker_stats) {
-        Json::Value speaker;
+        ::Json::Value speaker;
         speaker["speaker_id"] = speaker_id;
         speaker["segment_count"] = static_cast<int>(stats.at("segment_count"));
         speaker["total_duration"] = stats.at("total_duration");

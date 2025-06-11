@@ -1,7 +1,8 @@
-// src/native/diarization/speaker-segmenter.cpp
+// src/native/diarization/speaker-segmenter.cpp - FIXED: Added missing iomanip header
 #include "include/speaker-segmenter.h"
 #include "include/utils.h"
 #include <iostream>
+#include <iomanip>    // ← FIXED: Added missing header for std::setprecision
 #include <algorithm>
 #include <cmath>
 
@@ -92,7 +93,7 @@ std::vector<float> SpeakerSegmenter::detect_change_points(const std::vector<floa
             // Add to global change points
             change_points.insert(change_points.end(), window_changes.begin(), window_changes.end());
             
-            // Progress reporting
+            // Progress reporting - FIXED: Now works with proper iomanip header
             processed_windows++;
             if (verbose_ && processed_windows % 10 == 0) {
                 float progress = static_cast<float>(processed_windows) / total_windows * 100.0f;

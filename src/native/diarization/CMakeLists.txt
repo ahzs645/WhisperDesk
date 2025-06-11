@@ -73,46 +73,29 @@ else()
 endif()
 
 # Find jsoncpp
-find_package(PkgConfig REQUIRED)
-pkg_check_modules(JSONCPP jsoncpp)
-
-if(NOT JSONCPP_FOUND)
-    # Try manual search
-    find_library(JSONCPP_LIB 
-        NAMES jsoncpp libjsoncpp
-        HINTS /opt/homebrew/lib /usr/local/lib /usr/lib
-    )
-    find_path(JSONCPP_INCLUDE 
-        NAMES json/json.h
-        HINTS /opt/homebrew/include /usr/local/include /usr/include
-    )
+if(APPLE)
+    # macOS-specific jsoncpp configuration
+    set(JSONCPP_LIB "/opt/homebrew/lib/libjsoncpp.dylib")
+    set(JSONCPP_INCLUDE "/opt/homebrew/include")
     
-    if(JSONCPP_LIB AND JSONCPP_INCLUDE)
+    if(EXISTS ${JSONCPP_LIB} AND EXISTS ${JSONCPP_INCLUDE})
         set(JSONCPP_LIBRARIES ${JSONCPP_LIB})
         set(JSONCPP_INCLUDE_DIRS ${JSONCPP_INCLUDE})
-        message(STATUS "✅ Found jsoncpp manually: ${JSONCPP_LIB}")
+        message(STATUS "✅ Found jsoncpp at: ${JSONCPP_LIB}")
     else()
-        message(STATUS "❌ jsoncpp not found. Installing...")
-        if(APPLE)
-            execute_process(COMMAND brew install jsoncpp)
+        message(STATUS "❌ jsoncpp not found at expected location. Installing...")
+        execute_process(COMMAND brew install jsoncpp)
+        if(EXISTS ${JSONCPP_LIB} AND EXISTS ${JSONCPP_INCLUDE})
+            set(JSONCPP_LIBRARIES ${JSONCPP_LIB})
+            set(JSONCPP_INCLUDE_DIRS ${JSONCPP_INCLUDE})
+            message(STATUS "✅ Found jsoncpp after installation: ${JSONCPP_LIB}")
         else()
-            message(FATAL_ERROR "Please install jsoncpp: apt-get install libjsoncpp-dev")
+            message(FATAL_ERROR "jsoncpp installation failed or library not found in expected location")
         endif()
     endif()
 else()
-    message(STATUS "✅ Found jsoncpp via pkg-config")
-endif()
-
-# Optional: libsndfile
-pkg_check_modules(SNDFILE sndfile)
-if(SNDFILE_FOUND)
-    message(STATUS "✅ Found libsndfile - enabling enhanced audio support")
-    add_definitions(-DUSE_LIBSNDFILE)
-else()
-    message(STATUS "⚠️ libsndfile not found - using simple audio loading")
-    if(APPLE)
-        message(STATUS "💡 Install with: brew install libsndfile")
-    endif()
+    # Non-macOS platforms use pkg-config
+    message(FATAL_ERROR "Please install jsoncpp: apt-get install libjsoncpp-dev")
 endif()
 
 # Include directories
@@ -121,10 +104,6 @@ include_directories(
     ${ONNXRUNTIME_INCLUDE}
     ${JSONCPP_INCLUDE_DIRS}
 )
-
-if(SNDFILE_FOUND)
-    include_directories(${SNDFILE_INCLUDE_DIRS})
-endif()
 
 # Source files
 set(SOURCES
@@ -142,10 +121,6 @@ target_link_libraries(diarize-cli
     ${ONNXRUNTIME_LIB}
     ${JSONCPP_LIBRARIES}
 )
-
-if(SNDFILE_FOUND)
-    target_link_libraries(diarize-cli ${SNDFILE_LIBRARIES})
-endif()
 
 # Platform-specific settings
 if(APPLE)
@@ -216,10 +191,5 @@ message(STATUS "C++ Standard: ${CMAKE_CXX_STANDARD}")
 message(STATUS "ONNX Runtime: ${ONNXRUNTIME_LIB}")
 message(STATUS "ONNX Headers: ${ONNXRUNTIME_INCLUDE}")
 message(STATUS "jsoncpp: ${JSONCPP_LIBRARIES}")
-if(SNDFILE_FOUND)
-    message(STATUS "libsndfile: ${SNDFILE_LIBRARIES}")
-else()
-    message(STATUS "libsndfile: Not found (optional)")
-endif()
 message(STATUS "══════════════════════════════════════")
 message(STATUS "")
