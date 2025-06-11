@@ -1,4 +1,4 @@
-// src/main/services/diarization-binary-manager.js
+// src/main/services/diarization-binary-manager.js - FIXED for macOS
 const path = require('path');
 const fs = require('fs').promises;
 const os = require('os');
@@ -49,16 +49,22 @@ class EnhancedDiarizationBinaryManager {
         ]
       };
     } else if (this.platform === 'darwin') {
+      // FIXED: macOS may have providers_shared statically linked
       return {
         dlls: [
-          'libonnxruntime.dylib',
-          'libonnxruntime_providers_shared.dylib'
+          'libonnxruntime.dylib'
+          // Note: libonnxruntime_providers_shared.dylib may be statically linked
+        ],
+        optional_dlls: [
+          'libonnxruntime_providers_shared.dylib'  // Optional on macOS
         ],
         executable: 'diarize-cli',
         all: [
           'libonnxruntime.dylib',
-          'libonnxruntime_providers_shared.dylib',
           'diarize-cli'
+        ],
+        optional: [
+          'libonnxruntime_providers_shared.dylib'
         ]
       };
     } else {
@@ -127,8 +133,38 @@ class EnhancedDiarizationBinaryManager {
         }
       }
       
+      // FIXED: Check optional files (don't fail if missing on macOS)
+      if (this.requiredFiles.optional) {
+        for (const fileName of this.requiredFiles.optional) {
+          const filePath = path.join(this.binariesDir, fileName);
+          try {
+            await fs.access(filePath, fs.constants.F_OK);
+            console.log(`✅ Found optional: ${fileName}`);
+          } catch (error) {
+            console.warn(`⚠️ Missing optional: ${fileName} (may be statically linked)`);
+          }
+        }
+      }
+      
       if (missingFiles.length > 0) {
         console.error(`❌ Missing required diarization files: ${missingFiles.join(', ')}`);
+        
+        // FIXED: Don't fail immediately - test the binary first
+        console.log('🧪 Testing binary despite missing files...');
+        const testResult = await this.testDiarizationBinary();
+        if (testResult.success) {
+          console.log('✅ Binary works despite missing files (likely statically linked)');
+          return true;
+        } else {
+          console.error(`❌ Binary test also failed: ${testResult.error}`);
+          return false;
+        }
+      }
+      
+      // All files present - test the binary
+      const testResult = await this.testDiarizationBinary();
+      if (!testResult.success) {
+        console.error(`❌ Diarization binary test failed: ${testResult.error}`);
         return false;
       }
       
@@ -192,6 +228,7 @@ class EnhancedDiarizationBinaryManager {
           output.includes('--audio') ||
           output.includes('Usage:')) {
         
+        console.log('✅ Diarization binary test passed');
         return {
           success: true,
           output: output.substring(0, 200),
@@ -206,9 +243,20 @@ class EnhancedDiarizationBinaryManager {
       }
       
     } catch (error) {
+      // FIXED: Better error messages for macOS
+      let errorMessage = error.message;
+      
+      if (this.platform === 'darwin' && error.message.includes('dylib')) {
+        if (error.message.includes('providers_shared')) {
+          errorMessage = `ONNX Runtime providers_shared library issue. This may be expected on macOS if statically linked. Original error: ${error.message}`;
+        } else {
+          errorMessage = `ONNX Runtime library loading failed: ${error.message}`;
+        }
+      }
+      
       return {
         success: false,
-        error: error.message
+        error: errorMessage
       };
     }
   }
@@ -251,7 +299,15 @@ class EnhancedDiarizationBinaryManager {
     return new Promise((resolve, reject) => {
       const process = spawn(binaryPath, args, {
         cwd: this.binariesDir, // Run from binaries directory for DLL loading
-        stdio: ['pipe', 'pipe', 'pipe']
+        stdio: ['pipe', 'pipe', 'pipe'],
+        env: {
+          ...process.env,
+          // FIXED: Set library path for macOS
+          ...(this.platform === 'darwin' && {
+            DYLD_LIBRARY_PATH: `${this.binariesDir}:${process.env.DYLD_LIBRARY_PATH || ''}`,
+            DYLD_FALLBACK_LIBRARY_PATH: this.binariesDir
+          })
+        }
       });
 
       let stdout = '';
@@ -302,6 +358,8 @@ class EnhancedDiarizationBinaryManager {
         
         if (this.platform === 'win32' && error.code === 'ENOENT') {
           reject(new Error(`Failed to start diarize-cli.exe. Make sure all DLL files are present in ${this.binariesDir}`));
+        } else if (this.platform === 'darwin' && error.code === 'ENOENT') {
+          reject(new Error(`Failed to start diarize-cli. Make sure the binary is built and ONNX Runtime libraries are available in ${this.binariesDir}`));
         } else {
           reject(new Error(`Failed to start diarize-cli process: ${error.message}`));
         }
@@ -332,6 +390,12 @@ class EnhancedDiarizationBinaryManager {
       } else if (stderr.includes('onnxruntime.dll')) {
         return 'onnxruntime.dll not found or incompatible version';
       }
+    } else if (this.platform === 'darwin') {
+      if (stderr.includes('dylib') && stderr.includes('image not found')) {
+        return 'ONNX Runtime library loading failed - ensure libonnxruntime.dylib is available or try rebuilding with static linking';
+      } else if (stderr.includes('providers_shared')) {
+        return 'ONNX Runtime providers library issue - this may be expected if using static linking';
+      }
     }
     
     if (stderr.includes('model') && stderr.includes('not found')) {
@@ -355,6 +419,7 @@ class EnhancedDiarizationBinaryManager {
       modelsDir: this.modelsDir,
       diarizeBinaryPath: this.getDiarizationBinaryPath(),
       requiredFiles: this.requiredFiles.all,
+      optionalFiles: this.requiredFiles.optional || [],
       requiredModels: this.modelFiles.map(m => m.filename),
       fileStatus: {},
       modelStatus: {},
@@ -382,6 +447,29 @@ class EnhancedDiarizationBinaryManager {
             size: 0,
             executable: false
           };
+        }
+      }
+
+      // Check optional files
+      if (this.requiredFiles.optional) {
+        for (const fileName of this.requiredFiles.optional) {
+          const filePath = path.join(this.binariesDir, fileName);
+          try {
+            const stats = await fs.stat(filePath);
+            status.fileStatus[fileName] = {
+              exists: true,
+              size: Math.round(stats.size / 1024),
+              executable: false,
+              optional: true
+            };
+          } catch {
+            status.fileStatus[fileName] = {
+              exists: false,
+              size: 0,
+              executable: false,
+              optional: true
+            };
+          }
         }
       }
 
@@ -441,7 +529,12 @@ class EnhancedDiarizationBinaryManager {
         status.testResult = await this.testDiarizationBinary();
         
         if (!status.testResult.success) {
-          status.recommendation = 'Binary exists but fails tests. Rebuild with: npm run build:diarization';
+          // FIXED: More specific recommendation for macOS
+          if (this.platform === 'darwin' && status.testResult.error.includes('dylib')) {
+            status.recommendation = 'Library loading issue on macOS. Try: npm run build:diarization with static linking';
+          } else {
+            status.recommendation = 'Binary exists but fails tests. Rebuild with: npm run build:diarization';
+          }
         }
       }
 
@@ -500,7 +593,9 @@ class EnhancedDiarizationBinaryManager {
       solutions: [
         'Run "npm run build:diarization" to build the diarization CLI',
         'Run "npm run download:diarization-models" to download required models',
-        'Check that ONNX Runtime dependencies are installed',
+        this.platform === 'darwin' 
+          ? 'On macOS, ensure ONNX Runtime is available or build with static linking'
+          : 'Check that ONNX Runtime dependencies are installed',
         'Restart the application after building'
       ],
       technicalInfo: {
@@ -508,6 +603,7 @@ class EnhancedDiarizationBinaryManager {
         architecture: this.arch,
         executableName: this.requiredFiles.executable,
         expectedFiles: this.requiredFiles.all,
+        optionalFiles: this.requiredFiles.optional || [],
         expectedModels: this.modelFiles.map(m => m.filename),
         binariesDirectory: this.binariesDir,
         modelsDirectory: this.modelsDir

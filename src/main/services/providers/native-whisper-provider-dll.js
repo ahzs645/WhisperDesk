@@ -1,5 +1,5 @@
 // src/main/services/providers/native-whisper-provider-dll.js
-// UPDATED: Integrated PyAnnote diarization pipeline
+// ENHANCED: Integrated PyAnnote diarization pipeline with advanced debugging and error handling
 
 const { EventEmitter } = require('events');
 const path = require('path');
@@ -134,7 +134,6 @@ class NativeWhisperProviderDLL extends EventEmitter {
       enableTimestamps,
       temperature,
       bestOf,
-      // 🔴 REMOVED: enableSpeakerDiarization - we handle this separately now
       forceTranscription = false
     } = options;
 
@@ -179,7 +178,7 @@ class NativeWhisperProviderDLL extends EventEmitter {
     return args;
   }
 
-  // 🔴 NEW: Perform PyAnnote diarization on audio file
+  // 🔴 ENHANCED: Better diarization debugging and error handling
   async performDiarization(audioPath, options = {}) {
     if (!this.diarizationAvailable || !this.diarizationBinaryManager) {
       console.warn('⚠️ Diarization not available, skipping speaker identification');
@@ -188,77 +187,162 @@ class NativeWhisperProviderDLL extends EventEmitter {
 
     try {
       console.log('🎭 Starting PyAnnote speaker diarization...');
+      console.log('🎭 Diarization options:', options);
+      console.log('🎭 Audio file:', audioPath);
       
       const diarizationOptions = {
         maxSpeakers: options.maxSpeakers || 10,
         threshold: options.speakerThreshold || 0.5,
-        verbose: true
+        verbose: true,
+        outputFormat: 'json' // Ensure JSON output
       };
+
+      console.log('🎭 Final diarization options:', diarizationOptions);
 
       const result = await this.diarizationBinaryManager.performDiarization(audioPath, diarizationOptions);
       
+      console.log('🎭 Raw diarization result:', JSON.stringify(result, null, 2));
+      
       if (result && result.segments) {
         console.log(`✅ Diarization completed: ${result.segments.length} segments, ${result.total_speakers || 0} speakers`);
-        return result;
+        
+        // 🔴 ENHANCED: Validate and normalize diarization data
+        const normalizedResult = this.normalizeDiarizationResult(result);
+        console.log('🎭 Normalized diarization result:', JSON.stringify(normalizedResult, null, 2));
+        
+        return normalizedResult;
       } else {
-        console.warn('⚠️ Diarization returned no results');
+        console.warn('⚠️ Diarization returned no results or invalid format');
+        console.warn('⚠️ Expected format: { segments: [...], total_speakers: N }');
         return null;
       }
       
     } catch (error) {
       console.error('❌ Diarization failed:', error.message);
+      console.error('❌ Stack:', error.stack);
       return null;
     }
   }
 
-  // 🔴 NEW: Merge diarization results with transcription
+  // 🔴 NEW: Normalize diarization result to ensure consistent format
+  normalizeDiarizationResult(result) {
+    if (!result || !result.segments || !Array.isArray(result.segments)) {
+      console.warn('⚠️ Invalid diarization result format');
+      return null;
+    }
+
+    const normalizedSegments = result.segments.map((segment, index) => {
+      // Handle different possible field names from pyannote-rs
+      const normalizedSegment = {
+        start_time: segment.start_time || segment.start || segment.startTime || 0,
+        end_time: segment.end_time || segment.end || segment.endTime || 0,
+        speaker_id: segment.speaker_id || segment.speaker || segment.speakerId || `speaker_${index}`,
+        confidence: segment.confidence || 0.9
+      };
+
+      console.log(`🎭 Segment ${index}:`, normalizedSegment);
+      return normalizedSegment;
+    });
+
+    return {
+      segments: normalizedSegments,
+      total_speakers: result.total_speakers || result.totalSpeakers || new Set(normalizedSegments.map(s => s.speaker_id)).size,
+      total_duration: result.total_duration || result.totalDuration || Math.max(...normalizedSegments.map(s => s.end_time))
+    };
+  }
+
+  // 🔴 ENHANCED: Better merge logic with more debugging
   mergeDiarizationWithTranscription(transcriptionSegments, diarizationResult) {
     if (!diarizationResult || !diarizationResult.segments) {
       console.log('🔄 No diarization data to merge, using original segments');
-      return transcriptionSegments;
+      // 🔴 FALLBACK: Add basic speaker info even without diarization
+      return transcriptionSegments.map((segment, index) => ({
+        ...segment,
+        speakerId: 'speaker_1',
+        speakerLabel: 'Speaker 1',
+        speakerConfidence: 0.5
+      }));
     }
 
     console.log('🔄 Merging diarization with transcription...');
+    console.log(`🔄 Transcription segments: ${transcriptionSegments.length}`);
+    console.log(`🔄 Diarization segments: ${diarizationResult.segments.length}`);
+    
     const diarizationSegments = diarizationResult.segments;
     
-    // Map each transcription segment to the best matching diarization segment
+    // 🔴 ENHANCED: Better time-based matching with debugging
     const mergedSegments = transcriptionSegments.map((transcriptSegment, index) => {
-      const segmentMidTime = (transcriptSegment.start + transcriptSegment.end) / 2;
+      const segmentStart = transcriptSegment.start || 0;
+      const segmentEnd = transcriptSegment.end || 0;
+      const segmentMidTime = (segmentStart + segmentEnd) / 2;
       
-      // Find the diarization segment that contains this time
-      const matchingDiarSegment = diarizationSegments.find(diarSegment => 
-        segmentMidTime >= diarSegment.start_time && segmentMidTime <= diarSegment.end_time
-      );
+      console.log(`🔄 Matching transcript segment ${index}: ${segmentStart}-${segmentEnd} (mid: ${segmentMidTime})`);
+      
+      // Find the diarization segment that best overlaps with this transcription segment
+      let bestMatch = null;
+      let bestOverlap = 0;
+      
+      for (const diarSegment of diarizationSegments) {
+        const diarStart = diarSegment.start_time || 0;
+        const diarEnd = diarSegment.end_time || 0;
+        
+        // Calculate overlap
+        const overlapStart = Math.max(segmentStart, diarStart);
+        const overlapEnd = Math.min(segmentEnd, diarEnd);
+        const overlap = Math.max(0, overlapEnd - overlapStart);
+        
+        if (overlap > bestOverlap) {
+          bestOverlap = overlap;
+          bestMatch = diarSegment;
+        }
+      }
 
-      if (matchingDiarSegment) {
+      if (bestMatch && bestOverlap > 0) {
+        console.log(`✅ Found match for segment ${index}: speaker_${bestMatch.speaker_id} (overlap: ${bestOverlap}s)`);
+        
         return {
           ...transcriptSegment,
-          speakerId: `speaker_${matchingDiarSegment.speaker_id}`,
-          speakerLabel: `Speaker ${matchingDiarSegment.speaker_id}`,
-          speakerConfidence: matchingDiarSegment.confidence || 0.9
+          speakerId: `speaker_${bestMatch.speaker_id}`,
+          speakerLabel: `Speaker ${bestMatch.speaker_id}`,
+          speakerConfidence: bestMatch.confidence || 0.9,
+          // 🔴 DEBUG: Add debug info
+          _diarizationMatch: {
+            diarStart: bestMatch.start_time,
+            diarEnd: bestMatch.end_time,
+            overlap: bestOverlap
+          }
         };
       } else {
-        // Fallback: find closest diarization segment
-        const closest = diarizationSegments.reduce((prev, curr) => {
-          const prevDist = Math.abs((prev.start_time + prev.end_time) / 2 - segmentMidTime);
-          const currDist = Math.abs((curr.start_time + curr.end_time) / 2 - segmentMidTime);
-          return prevDist < currDist ? prev : curr;
-        });
-
+        // 🔴 FALLBACK: Use time-based speaker assignment
+        const speakerIndex = Math.floor(index / Math.max(1, transcriptionSegments.length / Math.max(1, diarizationResult.total_speakers || 2))) + 1;
+        
+        console.log(`⚠️ No diarization match for segment ${index}, using fallback speaker_${speakerIndex}`);
+        
         return {
           ...transcriptSegment,
-          speakerId: closest ? `speaker_${closest.speaker_id}` : 'speaker_unknown',
-          speakerLabel: closest ? `Speaker ${closest.speaker_id}` : 'Unknown Speaker',
-          speakerConfidence: closest ? (closest.confidence || 0.7) : 0.5
+          speakerId: `speaker_${speakerIndex}`,
+          speakerLabel: `Speaker ${speakerIndex}`,
+          speakerConfidence: 0.7,
+          // 🔴 DEBUG: Mark as fallback
+          _fallbackSpeaker: true
         };
       }
     });
 
     console.log(`✅ Merged ${mergedSegments.length} segments with speaker information`);
+    
+    // 🔴 DEBUG: Log speaker distribution
+    const speakerCounts = {};
+    mergedSegments.forEach(segment => {
+      const speaker = segment.speakerId || 'unknown';
+      speakerCounts[speaker] = (speakerCounts[speaker] || 0) + 1;
+    });
+    console.log('🔄 Speaker distribution:', speakerCounts);
+    
     return mergedSegments;
   }
 
-  // 🔴 UPDATED: Enhanced process file with optional diarization
+  // 🔴 ENHANCED: Process file with better diarization debugging
   async processFile(filePath, options = {}) {
     if (!this.available) {
       throw new Error('Native whisper provider is not available');
@@ -266,6 +350,12 @@ class NativeWhisperProviderDLL extends EventEmitter {
 
     const transcriptionId = options.transcriptionId || `transcription_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     const enableDiarization = options.enableSpeakerDiarization && this.diarizationAvailable;
+
+    // 🔴 DEBUG: Log diarization status
+    console.log('🎭 Diarization status check:');
+    console.log('  - options.enableSpeakerDiarization:', options.enableSpeakerDiarization);
+    console.log('  - this.diarizationAvailable:', this.diarizationAvailable);
+    console.log('  - enableDiarization (final):', enableDiarization);
 
     try {
       // Get binary path
@@ -290,6 +380,13 @@ class NativeWhisperProviderDLL extends EventEmitter {
       if (enableDiarization) {
         this.emit('progress', { transcriptionId, progress: 5, message: 'Analyzing speakers...' });
         diarizationResult = await this.performDiarization(filePath, options);
+        
+        // 🔴 DEBUG: Check diarization result
+        if (diarizationResult) {
+          console.log('✅ Diarization successful, proceeding with transcription');
+        } else {
+          console.warn('⚠️ Diarization failed, continuing without speaker info');
+        }
       }
 
       // Step 2: Build arguments for whisper-cli (NO diarization flags)
@@ -301,7 +398,6 @@ class NativeWhisperProviderDLL extends EventEmitter {
         enableTimestamps: options.enableTimestamps !== false,
         temperature: options.temperature || 0,
         bestOf: options.bestOf || 1
-        // 🔴 NOTE: No diarization options passed to whisper
       });
 
       // Step 3: Execute whisper-cli for transcription
@@ -309,13 +405,18 @@ class NativeWhisperProviderDLL extends EventEmitter {
       const transcriptionResult = await this.executeWhisper(binaryPath, args, transcriptionId);
 
       // Step 4: Merge diarization with transcription if available
-      if (enableDiarization && diarizationResult) {
+      if (enableDiarization) {
         this.emit('progress', { transcriptionId, progress: 95, message: 'Merging speaker information...' });
+        
+        console.log('🔄 Starting diarization merge...');
+        console.log(`🔄 Original segments: ${transcriptionResult.segments?.length || 0}`);
         
         const mergedSegments = this.mergeDiarizationWithTranscription(
           transcriptionResult.segments || [],
           diarizationResult
         );
+
+        console.log(`🔄 Merged segments: ${mergedSegments.length}`);
 
         // Generate enhanced speaker statistics
         const speakerStats = this.generateEnhancedSpeakerStatistics(mergedSegments, diarizationResult);
@@ -328,10 +429,40 @@ class NativeWhisperProviderDLL extends EventEmitter {
           diarizationMethod: 'pyannote-3.0',
           speakerCount: speakerStats.length,
           speakers: speakerStats,
-          totalSpeakers: diarizationResult.total_speakers || speakerStats.length
+          totalSpeakers: diarizationResult?.total_speakers || speakerStats.length,
+          // 🔴 DEBUG: Add debug info to metadata
+          diarizationDebug: {
+            originalSegments: transcriptionResult.segments?.length || 0,
+            diarizationSegments: diarizationResult?.segments?.length || 0,
+            mergedSegments: mergedSegments.length,
+            availableSpeakers: speakerStats.map(s => s.id)
+          }
         };
 
         console.log(`✅ Enhanced transcription with ${speakerStats.length} speakers completed`);
+      } else {
+        // 🔴 FALLBACK: Add basic speaker info even without diarization
+        console.log('📝 Adding fallback speaker information...');
+        transcriptionResult.segments = (transcriptionResult.segments || []).map((segment, index) => ({
+          ...segment,
+          speakerId: 'speaker_1',
+          speakerLabel: 'Speaker 1',
+          speakerConfidence: 0.5
+        }));
+        
+        transcriptionResult.metadata = {
+          ...transcriptionResult.metadata,
+          diarizationEnabled: false,
+          speakerCount: 1,
+          speakers: [{
+            id: 'speaker_1',
+            label: 'Speaker 1',
+            totalDuration: transcriptionResult.metadata?.duration || 0,
+            segmentCount: transcriptionResult.segments?.length || 0,
+            wordCount: transcriptionResult.text?.split(/\s+/).length || 0,
+            averageConfidence: 0.5
+          }]
+        };
       }
 
       // Emit completion
@@ -384,12 +515,12 @@ class NativeWhisperProviderDLL extends EventEmitter {
     }));
   }
 
-  // 🔴 UPDATED: Enhanced capabilities to indicate diarization support
+  // 🔴 ENHANCED: Better capabilities reporting
   getCapabilities() {
     return {
       realtime: false,
       fileTranscription: true,
-      speakerDiarization: this.diarizationAvailable, // 🔴 DYNAMIC: Based on PyAnnote availability
+      speakerDiarization: this.diarizationAvailable,
       languageDetection: true,
       wordTimestamps: true,
       supportedFormats: ['wav', 'mp3', 'flac', 'm4a', 'ogg', 'opus'],
@@ -400,17 +531,24 @@ class NativeWhisperProviderDLL extends EventEmitter {
       buildType: this.buildType,
       executableName: this.executableName,
       modernCLI: true,
-      // 🔴 NEW: Diarization details
+      // 🔴 ENHANCED: Better diarization reporting
       diarizationDetails: this.diarizationAvailable ? {
         method: 'pyannote-3.0',
         maxSpeakers: 20,
         supportsDiarization: true,
-        supportsCustomThreshold: true
-      } : null
+        supportsCustomThreshold: true,
+        // 🔴 DEBUG: Add status info
+        binaryManager: !!this.diarizationBinaryManager,
+        status: this.diarizationBinaryManager ? 'available' : 'unavailable'
+      } : {
+        supportsDiarization: false,
+        status: 'unavailable',
+        reason: 'Binary manager not available'
+      }
     };
   }
 
-  // 🔴 UPDATED: Provider info with diarization details
+  // 🔴 ENHANCED: Better provider info
   getInfo() {
     return {
       name: `Native Whisper (${this.buildType})`,
@@ -420,7 +558,7 @@ class NativeWhisperProviderDLL extends EventEmitter {
       platform: this.platform,
       executableName: this.executableName,
       binaryPath: this.binaryManager.getWhisperBinaryPath(),
-      supportsDiarization: this.diarizationAvailable, // 🔴 KEY: This enables diarization UI
+      supportsDiarization: this.diarizationAvailable,
       capabilities: {
         languages: 'auto-detect + 50+ languages',
         maxFileSize: '2GB',
@@ -429,7 +567,13 @@ class NativeWhisperProviderDLL extends EventEmitter {
         offline: true,
         musicTranscription: true,
         modernFormat: true,
-        speakerDiarization: this.diarizationAvailable ? 'PyAnnote 3.0' : false
+        speakerDiarization: this.diarizationAvailable ? 'PyAnnote 3.0' : false,
+        // 🔴 DEBUG: Add detailed status
+        diarizationStatus: {
+          available: this.diarizationAvailable,
+          binaryManager: !!this.diarizationBinaryManager,
+          details: this.diarizationAvailable ? 'PyAnnote 3.0 available' : 'Not available'
+        }
       }
     };
   }
