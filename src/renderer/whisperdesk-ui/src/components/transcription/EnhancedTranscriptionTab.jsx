@@ -1,7 +1,9 @@
-// Main component that orchestrates all the sub-components
+// src/renderer/whisperdesk-ui/src/components/transcription/EnhancedTranscriptionTab.jsx
+// Enhanced component that automatically loads providers and models on boot
 import React, { useState, useEffect, useRef } from 'react'
 import { toast } from 'sonner'
 import { useAppState } from '@/App'
+import { appInitializer } from '@/utils/AppInitializer'
 import { EnhancedScreenRecorder } from '../EnhancedScreenRecorder'
 import { FileUploadSection } from './FileUploadSection'
 import { QuickRecordSection } from './QuickRecordSection'
@@ -16,10 +18,63 @@ export function EnhancedTranscriptionTab() {
   const [providers, setProviders] = useState([])
   const [models, setModels] = useState([])
   const [isLoading, setIsLoading] = useState(false)
+  const [hasLoadedInitial, setHasLoadedInitial] = useState(false)
   
   // Refs for cleanup and toast management
   const lastToastRef = useRef(null)
   const hasShownCompletionToast = useRef(false)
+
+  // 🔴 NEW: Load initial providers and models from AppInitializer on mount
+  useEffect(() => {
+    const loadInitialData = async () => {
+      if (hasLoadedInitial) return
+      
+      console.log('🔄 Loading initial providers and models from app initialization...')
+      
+      try {
+        // Check if AppInitializer has already loaded the data
+        if (appInitializer.isReady()) {
+          const services = appInitializer.services || {}
+          
+          // Load providers from services if available
+          if (services.providers && services.providers.length > 0) {
+            console.log('✅ Loading providers from AppInitializer:', services.providers.length)
+            setProviders(services.providers)
+          } else {
+            // Fallback: Load providers directly from API
+            console.log('🔄 Loading providers from API...')
+            await refreshProviders(false) // Don't show toast for initial load
+          }
+          
+          // Load models from services if available
+          if (services.models && services.models.length > 0) {
+            console.log('✅ Loading models from AppInitializer:', services.models.length)
+            setModels(services.models)
+          } else {
+            // Fallback: Load models directly from API
+            console.log('🔄 Loading models from API...')
+            await refreshModels(false) // Don't show toast for initial load
+          }
+        } else {
+          // AppInitializer not ready yet, try loading directly
+          console.log('⏳ AppInitializer not ready, loading directly from APIs...')
+          await Promise.all([
+            refreshProviders(false),
+            refreshModels(false)
+          ])
+        }
+        
+        setHasLoadedInitial(true)
+        console.log('✅ Initial providers and models loaded successfully')
+        
+      } catch (error) {
+        console.error('❌ Failed to load initial providers/models:', error)
+        // Don't show error toast for initial load, just log it
+      }
+    }
+
+    loadInitialData()
+  }, [hasLoadedInitial])
 
   // Setup auto-transcription listener
   useEffect(() => {
@@ -121,29 +176,52 @@ export function EnhancedTranscriptionTab() {
     }
   }
 
-  const refreshProviders = async () => {
+  // 🔴 UPDATED: Enhanced refresh functions with optional toast parameter
+  const refreshProviders = async (showToast = true) => {
     try {
       setIsLoading(true)
       const availableProviders = await window.electronAPI.transcription.getProviders()
       setProviders(availableProviders)
-      toast.success('🔄 Providers refreshed')
+      
+      // Also update AppInitializer services cache
+      if (appInitializer.services) {
+        appInitializer.services.providers = availableProviders
+      }
+      
+      if (showToast) {
+        toast.success('🔄 Providers refreshed')
+      }
+      console.log('✅ Providers refreshed:', availableProviders.length)
     } catch (error) {
       console.error('Failed to refresh providers:', error)
-      toast.error('Failed to refresh providers: ' + error.message)
+      if (showToast) {
+        toast.error('Failed to refresh providers: ' + error.message)
+      }
     } finally {
       setIsLoading(false)
     }
   }
 
-  const refreshModels = async () => {
+  const refreshModels = async (showToast = true) => {
     try {
       setIsLoading(true)
       const installedModels = await window.electronAPI.model.getInstalled()
       setModels(installedModels)
-      toast.success('🔄 Models refreshed')
+      
+      // Also update AppInitializer services cache
+      if (appInitializer.services) {
+        appInitializer.services.models = installedModels
+      }
+      
+      if (showToast) {
+        toast.success('🔄 Models refreshed')
+      }
+      console.log('✅ Models refreshed:', installedModels.length)
     } catch (error) {
       console.error('Failed to refresh models:', error)
-      toast.error('Failed to refresh models: ' + error.message)
+      if (showToast) {
+        toast.error('Failed to refresh models: ' + error.message)
+      }
     } finally {
       setIsLoading(false)
     }
@@ -236,6 +314,10 @@ export function EnhancedTranscriptionTab() {
     toast.success('🆕 Ready for new transcription')
   }
 
+  // 🔴 NEW: Manual refresh that always shows toast
+  const handleManualRefreshProviders = () => refreshProviders(true)
+  const handleManualRefreshModels = () => refreshModels(true)
+
   return (
     <div className="space-y-6">
       {/* Enhanced Input Section */}
@@ -251,7 +333,7 @@ export function EnhancedTranscriptionTab() {
         <QuickRecordSection />
       </div>
 
-      {/* Enhanced Transcription Settings */}
+      {/* Enhanced Transcription Settings - Now with auto-loaded data */}
       <TranscriptionSettings
         providers={providers}
         models={models}
@@ -259,8 +341,8 @@ export function EnhancedTranscriptionTab() {
         selectedModel={appState.selectedModel}
         onProviderChange={(value) => updateAppState({ selectedProvider: value })}
         onModelChange={(value) => updateAppState({ selectedModel: value })}
-        onRefreshProviders={refreshProviders}
-        onRefreshModels={refreshModels}
+        onRefreshProviders={handleManualRefreshProviders} // Use manual refresh for user action
+        onRefreshModels={handleManualRefreshModels} // Use manual refresh for user action
         isLoading={isLoading}
       />
 
