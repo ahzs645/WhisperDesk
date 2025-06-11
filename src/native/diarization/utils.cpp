@@ -1,4 +1,4 @@
-// src/native/diarization/utils.cpp
+// src/native/diarization/utils.cpp - FIXED with proper headers
 #include "include/utils.h"
 #include "include/diarize-cli.h"
 #include <iostream>
@@ -6,7 +6,7 @@
 #include <sstream>
 #include <algorithm>
 #include <cmath>
-#include <iomanip>
+#include <iomanip>    // ← FIXED: Added for std::setprecision, std::setfill, etc.
 #include <chrono>
 #include <json/json.h>
 

@@ -1,4 +1,4 @@
-// src/native/diarization/diarize-cli.cpp
+// src/native/diarization/diarize-cli.cpp - FIXED with proper headers
 // Modular main entry point using separated components
 
 #include "include/diarize-cli.h"
@@ -7,9 +7,11 @@
 #include "include/utils.h"
 
 #include <iostream>
+#include <iomanip>    // ← FIXED: Added missing header for std::setprecision
 #include <memory>
 #include <vector>
 #include <algorithm>
+#include <map>
 
 // DiarizationEngine implementation using modular components
 DiarizationEngine::DiarizationEngine(bool verbose) 
@@ -158,7 +160,7 @@ std::vector<AudioSegment> DiarizationEngine::assign_speakers(std::vector<AudioSe
             // Calculate confidence
             segment.confidence = embedder_->calculate_confidence(embedding, speaker_id);
             
-            // Progress indication
+            // Progress indication - FIXED: Now includes proper <iomanip>
             if (verbose_ && i % 10 == 0) {
                 float progress = static_cast<float>(i) / segments.size() * 100.0f;
                 std::cout << "\rSpeaker assignment progress: " << std::fixed << std::setprecision(1) 
