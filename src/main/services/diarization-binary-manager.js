@@ -49,20 +49,14 @@ class EnhancedDiarizationBinaryManager {
         ]
       };
     } else if (this.platform === 'darwin') {
-      // FIXED: macOS may have providers_shared statically linked
+      // FIXED: For macOS, only require the executable
+      // The ONNX Runtime libraries are checked more flexibly
       return {
-        dlls: [
-          'libonnxruntime.dylib'
-          // Note: libonnxruntime_providers_shared.dylib may be statically linked
-        ],
-        optional_dlls: [
-          'libonnxruntime_providers_shared.dylib'  // Optional on macOS
-        ],
         executable: 'diarize-cli',
         all: [
-          'libonnxruntime.dylib',
-          'diarize-cli'
+          'diarize-cli'  // Only require the executable
         ],
+        // Optional - don't fail if missing
         optional: [
           'libonnxruntime_providers_shared.dylib'
         ]
@@ -120,55 +114,61 @@ class EnhancedDiarizationBinaryManager {
       await fs.access(binaryPath, fs.constants.F_OK | fs.constants.X_OK);
       console.log(`✅ Diarization executable found: ${binaryPath}`);
       
-      // Check all required ONNX Runtime files
-      const missingFiles = [];
-      for (const fileName of this.requiredFiles.all) {
-        const filePath = path.join(this.binariesDir, fileName);
-        try {
-          await fs.access(filePath, fs.constants.F_OK);
-          console.log(`✅ Found: ${fileName}`);
-        } catch (error) {
-          missingFiles.push(fileName);
-          console.error(`❌ Missing: ${fileName}`);
+      // FIXED: For macOS, use flexible library checking
+      if (this.platform === 'darwin') {
+        console.log('🔍 Checking macOS ONNX Runtime libraries...');
+        
+        let foundRequiredLib = false;
+        
+        // Check for any acceptable ONNX Runtime library
+        if (this.requiredFiles.optional) {
+          for (const libName of this.requiredFiles.optional) {
+            const libPath = path.join(this.binariesDir, libName);
+            try {
+              await fs.access(libPath, fs.constants.F_OK);
+              console.log(`✅ Found optional library: ${libName}`);
+              foundRequiredLib = true;
+            } catch (error) {
+              console.log(`ℹ️ Optional library ${libName} not found (this is normal)`);
+            }
+          }
         }
-      }
-      
-      // FIXED: Check optional files (don't fail if missing on macOS)
-      if (this.requiredFiles.optional) {
-        for (const fileName of this.requiredFiles.optional) {
+        
+        if (!foundRequiredLib) {
+          console.error('❌ No ONNX Runtime library found');
+          return false;
+        }
+        
+      } else {
+        // For Windows/Linux, use the original checking logic
+        const missingFiles = [];
+        for (const fileName of this.requiredFiles.all) {
           const filePath = path.join(this.binariesDir, fileName);
           try {
             await fs.access(filePath, fs.constants.F_OK);
-            console.log(`✅ Found optional: ${fileName}`);
+            console.log(`✅ Found: ${fileName}`);
           } catch (error) {
-            console.warn(`⚠️ Missing optional: ${fileName} (may be statically linked)`);
+            missingFiles.push(fileName);
+            console.error(`❌ Missing: ${fileName}`);
           }
         }
-      }
-      
-      if (missingFiles.length > 0) {
-        console.error(`❌ Missing required diarization files: ${missingFiles.join(', ')}`);
         
-        // FIXED: Don't fail immediately - test the binary first
-        console.log('🧪 Testing binary despite missing files...');
-        const testResult = await this.testDiarizationBinary();
-        if (testResult.success) {
-          console.log('✅ Binary works despite missing files (likely statically linked)');
-          return true;
-        } else {
-          console.error(`❌ Binary test also failed: ${testResult.error}`);
+        if (missingFiles.length > 0) {
+          console.error(`❌ Missing required diarization files: ${missingFiles.join(', ')}`);
           return false;
         }
       }
       
-      // All files present - test the binary
+      // Test the binary functionality
       const testResult = await this.testDiarizationBinary();
       if (!testResult.success) {
         console.error(`❌ Diarization binary test failed: ${testResult.error}`);
         return false;
       }
       
+      console.log('✅ Diarization binary verification complete');
       return true;
+      
     } catch (error) {
       console.error(`❌ Diarization binary verification failed: ${error.message}`);
       console.error(`💡 To fix this, run: npm run build:diarization`);

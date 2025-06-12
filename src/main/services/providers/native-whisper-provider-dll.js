@@ -205,12 +205,7 @@ class NativeWhisperProviderDLL extends EventEmitter {
       
       if (result && result.segments) {
         console.log(`✅ Diarization completed: ${result.segments.length} segments, ${result.total_speakers || 0} speakers`);
-        
-        // 🔴 ENHANCED: Validate and normalize diarization data
-        const normalizedResult = this.normalizeDiarizationResult(result);
-        console.log('🎭 Normalized diarization result:', JSON.stringify(normalizedResult, null, 2));
-        
-        return normalizedResult;
+        return result;
       } else {
         console.warn('⚠️ Diarization returned no results or invalid format');
         console.warn('⚠️ Expected format: { segments: [...], total_speakers: N }');

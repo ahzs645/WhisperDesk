@@ -75,15 +75,25 @@ std::vector<float> SpeakerEmbedder::extract_embedding(const std::vector<float>& 
         // Prepare audio segment (pad/truncate and normalize)
         auto prepared_audio = prepare_audio_segment(audio_segment);
         
-        // Create input tensor (batch_size=1, channels=1, samples=target_length)
-        std::vector<int64_t> input_shape = {1, 1, static_cast<int64_t>(target_length_)};
+        // Get actual input/output names from the model
+        auto input_name = session_->GetInputNameAllocated(0, Ort::AllocatorWithDefaultOptions());
+        auto output_name = session_->GetOutputNameAllocated(0, Ort::AllocatorWithDefaultOptions());
+        
+        if (verbose_) {
+            std::cout << "Embedding - Using input name: " << input_name.get() << std::endl;
+            std::cout << "Embedding - Using output name: " << output_name.get() << std::endl;
+        }
+        
+        // FIXED: Create 2D input tensor for embedding model (batch_size, samples)
+        // The embedding model expects [batch, samples] not [batch, channels, samples]
+        std::vector<int64_t> input_shape = {1, static_cast<int64_t>(target_length_)};
         auto input_tensor = Ort::Value::CreateTensor<float>(
             memory_info_, prepared_audio.data(), prepared_audio.size(),
             input_shape.data(), input_shape.size());
         
-        // Run inference
-        std::vector<const char*> input_names = {"input"};
-        std::vector<const char*> output_names = {"output"};
+        // Run inference with correct names
+        std::vector<const char*> input_names = {input_name.get()};
+        std::vector<const char*> output_names = {output_name.get()};
         
         auto output_tensors = session_->Run(Ort::RunOptions{nullptr},
                                           input_names.data(), &input_tensor, 1,

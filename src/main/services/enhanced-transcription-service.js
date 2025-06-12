@@ -91,7 +91,7 @@ class EnhancedTranscriptionService extends NativeTranscriptionService {
 
     return new Promise((resolve, reject) => {
       const process = spawn(binaryPath, args, {
-        cwd: path.dirname(binaryPath) // Run from binaries directory for DLL loading
+        cwd: path.join(process.cwd(), 'binaries') // Run from binaries directory for DLL loading
       });
 
       let stdout = '';
