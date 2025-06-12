@@ -27,7 +27,7 @@
     "build:all": "npm run build:whisper && npm run build:diarization",
     "build:whisper:windows": "powershell -ExecutionPolicy Bypass -File tools/setup/compile-whisper-windows.ps1",
     "build:whisper:unix": "bash tools/setup/build-whisper.sh",
-    "electron:build": "npm run build && electron-builder && node scripts/rename-portable.js",
+    "electron:build": "npm run build && cp -r src/main dist/ && electron-builder && node scripts/rename-portable.js",
     "electron:build:win": "npm run build && electron-builder --win && node scripts/rename-portable.js",
     "dist": "npm run build:whisper && npm run electron:build",
     "dist:win": "npm run build && electron-builder --win && node scripts/rename-portable.js",
@@ -137,7 +137,7 @@
       "models/**/*"
     ],
     "files": [
-      "src/main/**/*",
+      "dist/main/**/*",
       "src/renderer/whisperdesk-ui/dist/**/*",
       "src/shared/**/*",
       "package.json",
