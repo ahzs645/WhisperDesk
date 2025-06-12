@@ -35,7 +35,12 @@ bool SpeakerSegmenter::initialize(const std::string& model_path, int sample_rate
         window_size_ = 51200;  // Exactly what pyannote segmentation-3.0 expects
         hop_size_ = 25600;     // 50% overlap
         
+#ifdef _WIN32
+        std::wstring w_model_path(model_path.begin(), model_path.end());
+        session_ = std::make_unique<Ort::Session>(env_, w_model_path.c_str(), session_options_);
+#else
         session_ = std::make_unique<Ort::Session>(env_, model_path.c_str(), session_options_);
+#endif
         
         if (verbose_) {
             auto input_count = session_->GetInputCount();

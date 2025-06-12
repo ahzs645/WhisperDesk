@@ -33,7 +33,12 @@ bool SpeakerEmbedder::initialize(const std::string& model_path, int sample_rate,
         target_length_ = static_cast<size_t>(target_duration * sample_rate);
         
         // Load ONNX model
+#ifdef _WIN32
+        std::wstring w_model_path(model_path.begin(), model_path.end());
+        session_ = std::make_unique<Ort::Session>(env_, w_model_path.c_str(), session_options_);
+#else
         session_ = std::make_unique<Ort::Session>(env_, model_path.c_str(), session_options_);
+#endif
         
         // Get output shape to determine embedding dimension
         auto output_info = session_->GetOutputTypeInfo(0);
