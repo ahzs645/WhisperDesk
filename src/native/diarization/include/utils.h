@@ -5,6 +5,23 @@
 #include <string>
 #include <map>
 
+#ifdef _WIN32
+#include <windows.h>
+
+// Helper used by multiple translation units
+static inline std::wstring string_to_wstring(const std::string& str) {
+    if (str.empty()) return std::wstring();
+
+    int size_needed = MultiByteToWideChar(CP_UTF8, 0, &str[0],
+                                          static_cast<int>(str.size()),
+                                          NULL, 0);
+    std::wstring wstr(size_needed, 0);
+    MultiByteToWideChar(CP_UTF8, 0, &str[0], static_cast<int>(str.size()),
+                        &wstr[0], size_needed);
+    return wstr;
+}
+#endif
+
 // Forward declarations
 struct AudioSegment;
 struct DiarizeOptions;
