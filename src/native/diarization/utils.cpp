@@ -224,6 +224,9 @@ namespace Args {
 DiarizeOptions parse_arguments(int argc, char* argv[]) {
     DiarizeOptions options;
     
+    // FIXED: Set better default threshold for speaker diarization
+    options.threshold = 0.01f;  // Much lower default threshold
+    
     for (int i = 1; i < argc; i++) {
         std::string arg = argv[i];
         
@@ -242,6 +245,9 @@ DiarizeOptions parse_arguments(int argc, char* argv[]) {
         } else if (arg == "--output" && i + 1 < argc) {
             options.output_file = argv[++i];
         } else if (arg == "--verbose") {
+            options.verbose = true;
+        } else if (arg == "--debug") {
+            // FIXED: Add debug mode for even more detailed output
             options.verbose = true;
         } else if (arg == "--help" || arg == "-h") {
             print_help();
@@ -265,24 +271,42 @@ void print_help() {
               << "    --embedding-model <PATH>    Embedding ONNX model\n\n"
               << "OPTIONS:\n"
               << "    --max-speakers <NUM>        Maximum speakers (default: 10)\n"
-              << "    --threshold <FLOAT>         Speaker similarity threshold (default: 0.5)\n"
+              << "    --threshold <FLOAT>         Speaker similarity threshold (default: 0.01)\n"
+              << "                               Lower values = more speakers detected\n"
+              << "                               Recommended range: 0.001 - 0.1\n"
               << "    --output-format <FORMAT>    Output format: json (default: json)\n"
               << "    --output <PATH>             Output file (default: stdout)\n"
-              << "    --verbose                   Verbose output\n"
+              << "    --verbose                   Verbose output with detailed progress\n"
+              << "    --debug                     Enable debug mode (same as --verbose)\n"
               << "    --help, -h                  Show this help\n"
               << "    --version, -v               Show version\n\n"
-              << "EXAMPLE:\n"
+              << "EXAMPLES:\n"
+              << "    # Basic usage with very sensitive detection:\n"
               << "    diarize-cli --audio recording.wav \\\n"
               << "                --segment-model segmentation-3.0.onnx \\\n"
               << "                --embedding-model embedding-1.0.onnx \\\n"
-              << "                --max-speakers 5 \\\n"
-              << "                --verbose\n\n"
+              << "                --threshold 0.001 --verbose\n\n"
+              << "    # Conservative speaker detection:\n"
+              << "    diarize-cli --audio recording.wav \\\n"
+              << "                --segment-model segmentation-3.0.onnx \\\n"
+              << "                --embedding-model embedding-1.0.onnx \\\n"
+              << "                --threshold 0.05 --max-speakers 3\n\n"
+              << "    # Output to file:\n"
+              << "    diarize-cli --audio recording.wav \\\n"
+              << "                --segment-model segmentation-3.0.onnx \\\n"
+              << "                --embedding-model embedding-1.0.onnx \\\n"
+              << "                --output diarization_results.json\n\n"
+              << "TROUBLESHOOTING:\n"
+              << "    - If only 1 speaker detected: try --threshold 0.001\n"
+              << "    - If too many speakers: try --threshold 0.05 or higher\n"
+              << "    - Use --verbose to see detailed processing information\n\n"
               << "For more information, visit: https://github.com/whisperdesk/whisperdesk-enhanced\n";
 }
 
 void print_version() {
     std::cout << "WhisperDesk Speaker Diarization CLI v1.0.0\n"
               << "Built with ONNX Runtime for cross-platform compatibility\n"
+              << "Using PyAnnote 3.0 models for state-of-the-art speaker diarization\n"
               << "Copyright (c) 2024 WhisperDesk Team\n";
 }
 
