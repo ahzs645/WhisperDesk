@@ -5,6 +5,10 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
 import { Settings, RefreshCw } from 'lucide-react'
+import { Switch } from '@/components/ui/switch'
+import { Slider } from '@/components/ui/slider'
+
+const SPEAKER_OPTIONS = [2, 3, 4, 5, 6, 8, 10, 15, 20];
 
 export function TranscriptionSettings({ 
   providers = [],
@@ -15,7 +19,10 @@ export function TranscriptionSettings({
   onModelChange,
   onRefreshProviders,
   onRefreshModels,
-  isLoading = false
+  isLoading = false,
+  diarizationAvailable,
+  settings,
+  updateSetting
 }) {
   return (
     <Card>
@@ -125,6 +132,56 @@ export function TranscriptionSettings({
             )}
           </div>
         </div>
+
+        {/* Speaker Diarization Section */}
+        {diarizationAvailable && (
+          <div className="space-y-4 border-t pt-4 mt-4">
+            <h4 className="font-medium">Speaker Diarization</h4>
+            
+            <div className="flex items-center justify-between">
+              <Label htmlFor="enable-diarization">Enable Speaker Identification</Label>
+              <Switch
+                id="enable-diarization"
+                checked={settings.enableSpeakerDiarization}
+                onCheckedChange={(checked) => updateSetting('enableSpeakerDiarization', checked)}
+              />
+            </div>
+            
+            {settings.enableSpeakerDiarization && (
+              <>
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="max-speakers">Maximum Speakers</Label>
+                  <Select 
+                    value={settings.maxSpeakers?.toString() || "2"} 
+                    onValueChange={(value) => updateSetting('maxSpeakers', parseInt(value))}
+                  >
+                    <SelectTrigger className="w-20">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {SPEAKER_OPTIONS.map(num => (
+                        <SelectItem key={num} value={num.toString()}>{num}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="speaker-threshold">Speaker Similarity Threshold</Label>
+                  <Slider
+                    id="speaker-threshold"
+                    min={0.1}
+                    max={0.9}
+                    step={0.1}
+                    value={[settings.speakerThreshold || 0.5]}
+                    onValueChange={([value]) => updateSetting('speakerThreshold', value)}
+                    className="w-32"
+                  />
+                </div>
+              </>
+            )}
+          </div>
+        )}
       </CardContent>
     </Card>
   )

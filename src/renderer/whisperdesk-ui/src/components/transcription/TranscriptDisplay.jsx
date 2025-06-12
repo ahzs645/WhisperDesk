@@ -83,8 +83,8 @@ export function TranscriptDisplay({
   const hasContent = segments.length > 0 || transcriptionResult?.text
 
   return (
-    <Card className={`h-[600px] flex flex-col ${className}`}>
-      <CardHeader className="pb-3">
+    <Card className={`w-full flex flex-col ${className}`}>
+      <CardHeader className="pb-3 flex-shrink-0">
         <div className="flex items-center justify-between">
           <div>
             <CardTitle className="flex items-center gap-2">
@@ -149,41 +149,48 @@ export function TranscriptDisplay({
         )}
       </CardHeader>
 
-      <CardContent className="flex-1 p-0">
-        <ScrollArea ref={scrollAreaRef} className="h-full px-6">
-          {segments.length === 0 && !transcriptionResult?.text ? (
-            <div className="flex items-center justify-center h-full text-muted-foreground">
-              <div className="text-center">
-                <Clock className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                <p>Waiting for transcript...</p>
-                {isTranscribing && <p className="text-sm mt-1">Processing audio...</p>}
-              </div>
-            </div>
-          ) : (
-            <div className="space-y-4 pb-4">
-              {/* Show segments if available, otherwise show plain text */}
-              {segments.length > 0 ? (
-                segments.map((segment, index) => (
-                  <TranscriptSegment 
-                    key={segment.id || index}
-                    segment={segment}
-                    speakerColor={getSpeakerColor(segment.speakerId || segment.speaker)}
-                    speakerInitials={getSpeakerInitials(segment.speakerId || segment.speaker, segment.speakerLabel)}
-                    speakerName={getSpeakerName(segment.speakerId || segment.speaker, segment.speakerLabel)}
-                    formatTime={formatTime}
-                    isLast={index === segments.length - 1}
-                    isTranscribing={isTranscribing}
-                  />
-                ))
-              ) : transcriptionResult?.text ? (
-                <div className="p-4 bg-muted/50 rounded-lg">
-                  <p className="text-sm leading-relaxed">{transcriptionResult.text}</p>
+      {/* FIXED: Proper scroll container with explicit height constraint */}
+      <CardContent className="flex-1 p-0 min-h-0">
+        <div className="h-[500px] relative">
+          <ScrollArea className="h-full w-full">
+            <div className="px-6 py-4">
+              {segments.length === 0 && !transcriptionResult?.text ? (
+                <div className="flex items-center justify-center h-[400px] text-muted-foreground">
+                  <div className="text-center">
+                    <Clock className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                    <p>Waiting for transcript...</p>
+                    {isTranscribing && <p className="text-sm mt-1">Processing audio...</p>}
+                  </div>
                 </div>
-              ) : null}
-              <div ref={bottomRef} />
+              ) : (
+                <div className="space-y-4">
+                  {/* Show segments if available, otherwise show plain text */}
+                  {segments.length > 0 ? (
+                    segments.map((segment, index) => (
+                      <TranscriptSegment 
+                        key={segment.id || index}
+                        segment={segment}
+                        speakerColor={getSpeakerColor(segment.speakerId || segment.speaker)}
+                        speakerInitials={getSpeakerInitials(segment.speakerId || segment.speaker, segment.speakerLabel)}
+                        speakerName={getSpeakerName(segment.speakerId || segment.speaker, segment.speakerLabel)}
+                        formatTime={formatTime}
+                        isLast={index === segments.length - 1}
+                        isTranscribing={isTranscribing}
+                      />
+                    ))
+                  ) : transcriptionResult?.text ? (
+                    <div className="p-4 bg-muted/50 rounded-lg">
+                      <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">
+                        {transcriptionResult.text}
+                      </p>
+                    </div>
+                  ) : null}
+                  <div ref={bottomRef} />
+                </div>
+              )}
             </div>
-          )}
-        </ScrollArea>
+          </ScrollArea>
+        </div>
       </CardContent>
     </Card>
   )
