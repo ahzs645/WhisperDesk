@@ -94,7 +94,11 @@ You can use the automated setup scripts or follow the manual steps:
     npm run build:whisper
     ```
     *(Refer to `tools/setup/build-whisper.sh` for Unix or `tools/setup/compile-whisper-windows.ps1` for Windows for more details on the native build process).*
-4.  **Download a Model:**
+4.  **Windows: Install jsoncpp via vcpkg:**
+    ```powershell
+    vcpkg install jsoncpp:x64-windows
+    ```
+5.  **Download a Model:**
     Manually download a model if needed (the application can also do this via the UI).
     ```bash
     mkdir -p ~/.config/whisperdesk/models
