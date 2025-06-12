@@ -43,7 +43,19 @@ class EnhancedDiarizationBinaryManager {
       return projectModels;
     } else {
       try {
-        return path.join(process.resourcesPath, 'models');
+        // FIXED: In production, models are in app.asar.unpacked due to asarUnpack config
+        const unpackedModels = path.join(process.resourcesPath, 'app.asar.unpacked', 'models');
+        if (require('fs').existsSync(unpackedModels)) {
+          return unpackedModels;
+        }
+        
+        // Fallback to direct path (for older builds)
+        const directModels = path.join(process.resourcesPath, 'models');
+        if (require('fs').existsSync(directModels)) {
+          return directModels;
+        }
+        
+        return unpackedModels; // Default to unpacked path
       } catch (error) {
         return projectModels;
       }
@@ -253,6 +265,34 @@ class EnhancedDiarizationBinaryManager {
       if (missingModels.length > 0) {
         console.warn(`⚠️ Missing ${missingModels.length} diarization models`);
         console.warn('💡 Run: npm run build:diarization to download models');
+        
+        // ENHANCED: Try to locate models in alternative locations
+        console.log('🔍 Searching for models in alternative locations...');
+        const alternativePaths = [
+          path.join(process.resourcesPath, 'models'),
+          path.join(process.resourcesPath, 'app.asar.unpacked', 'models'),
+          path.join(process.cwd(), 'models'),
+          path.join(__dirname, '../../models'),
+          path.join(__dirname, '../../../models')
+        ];
+        
+        for (const altPath of alternativePaths) {
+          if (require('fs').existsSync(altPath)) {
+            console.log(`   📁 Found directory: ${altPath}`);
+            try {
+              const files = await fs.readdir(altPath);
+              const modelFiles = files.filter(f => f.endsWith('.onnx'));
+              if (modelFiles.length > 0) {
+                console.log(`      Models found: ${modelFiles.join(', ')}`);
+              }
+            } catch (err) {
+              console.log(`      Could not list files: ${err.message}`);
+            }
+          } else {
+            console.log(`   ❌ Not found: ${altPath}`);
+          }
+        }
+        
         return false;
       }
       
@@ -719,6 +759,17 @@ class EnhancedDiarizationBinaryManager {
     console.log(`📍 Platform: ${this.platform} (${this.arch})`);
     console.log(`📁 Binaries directory: ${this.binariesDir}`);
     console.log(`📁 Models directory: ${this.modelsDir}`);
+
+    // ENHANCED: Debug models directory resolution
+    console.log('🔍 Models directory resolution:');
+    const projectModels = path.join(process.cwd(), 'models');
+    const unpackedModels = path.join(process.resourcesPath, 'app.asar.unpacked', 'models');
+    const directModels = path.join(process.resourcesPath, 'models');
+
+    console.log(`   • Project models: ${projectModels} (exists: ${require('fs').existsSync(projectModels)})`);
+    console.log(`   • Unpacked models: ${unpackedModels} (exists: ${require('fs').existsSync(unpackedModels)})`);
+    console.log(`   • Direct models: ${directModels} (exists: ${require('fs').existsSync(directModels)})`);
+    console.log(`   • Selected: ${this.modelsDir}`);
 
     try {
       // Ensure directories exist
