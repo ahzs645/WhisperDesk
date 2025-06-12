@@ -328,7 +328,7 @@ class EnhancedDiarizationBinaryManager {
     const {
       maxSpeakers = 10,
       threshold = 0.01,  // MUCH lower default threshold
-      verbose = true,
+      verbose = false,  // FIXED: Set to false to get clean JSON output
       outputFile = null
     } = options;
 
@@ -349,14 +349,11 @@ class EnhancedDiarizationBinaryManager {
       '--output-format', 'json'
     ];
 
-    if (verbose) {
-      args.push('--verbose');
-    }
-
     if (outputFile) {
       args.push('--output', outputFile);
     }
 
+    // FIXED: Add verbose logging in our JavaScript instead
     console.log(`🚀 Starting diarization with aggressive multi-speaker detection:`);
     console.log(`   Binary: ${binaryPath}`);
     console.log(`   Audio: ${audioPath}`);
@@ -365,7 +362,7 @@ class EnhancedDiarizationBinaryManager {
     console.log(`   Args: ${args.join(' ')}`);
 
     return new Promise((resolve, reject) => {
-      const process = spawn(binaryPath, args, {
+      const diarizationProcess = spawn(binaryPath, args, {
         cwd: this.binariesDir,
         stdio: ['pipe', 'pipe', 'pipe'],
         env: {
@@ -384,7 +381,7 @@ class EnhancedDiarizationBinaryManager {
       let stdout = '';
       let stderr = '';
 
-      process.stdout.on('data', (data) => {
+      diarizationProcess.stdout.on('data', (data) => {
         const output = data.toString();
         stdout += output;
         
@@ -398,7 +395,7 @@ class EnhancedDiarizationBinaryManager {
         }
       });
 
-      process.stderr.on('data', (data) => {
+      diarizationProcess.stderr.on('data', (data) => {
         const output = data.toString();
         stderr += output;
         if (verbose) {
@@ -406,30 +403,70 @@ class EnhancedDiarizationBinaryManager {
         }
       });
 
-      process.on('close', (code) => {
+      diarizationProcess.on('close', (code) => {
         console.log(`🏁 diarize-cli process completed with code: ${code}`);
 
         if (code === 0) {
           try {
-            const result = JSON.parse(stdout);
+            // ROBUST JSON EXTRACTION
+            let jsonOutput = stdout.trim();
             
-            // ENHANCED: Validate and enhance results
+            // Method 1: Find the first complete JSON object
+            const jsonStart = jsonOutput.indexOf('{');
+            if (jsonStart === -1) {
+              throw new Error('No JSON object found in output');
+            }
+            
+            // Extract from the first { and find the matching }
+            let braceCount = 0;
+            let jsonEnd = -1;
+            
+            for (let i = jsonStart; i < jsonOutput.length; i++) {
+              if (jsonOutput[i] === '{') {
+                braceCount++;
+              } else if (jsonOutput[i] === '}') {
+                braceCount--;
+                if (braceCount === 0) {
+                  jsonEnd = i + 1;
+                  break;
+                }
+              }
+            }
+            
+            if (jsonEnd === -1) {
+              throw new Error('Incomplete JSON object in output');
+            }
+            
+            // Extract only the JSON portion
+            const cleanJsonOutput = jsonOutput.substring(jsonStart, jsonEnd);
+            
+            console.log('🔧 Extracted clean JSON output');
+            console.log('📏 JSON length:', cleanJsonOutput.length, 'characters');
+            
+            // Debug: Show first and last 100 chars
+            console.log('🔍 JSON start:', cleanJsonOutput.substring(0, 100));
+            console.log('🔍 JSON end:', cleanJsonOutput.substring(Math.max(0, cleanJsonOutput.length - 100)));
+            
+            const result = JSON.parse(cleanJsonOutput);
+            
+            // Enhanced: Validate and enhance results
             if (result.segments && Array.isArray(result.segments)) {
               console.log(`✅ Diarization successful:`);
               console.log(`   📊 ${result.segments.length} segments detected`);
-              console.log(`   👥 ${result.total_speakers || 'unknown'} speakers identified`);
+              console.log(`   👥 ${result.total_speakers || result.speakers?.length || 'unknown'} speakers identified`);
               
               // Log speaker distribution for debugging
               const speakerCounts = {};
               result.segments.forEach(seg => {
-                const speaker = seg.speaker_id || 'unknown';
+                const speaker = seg.speaker_id || seg.speaker || 'unknown';
                 speakerCounts[speaker] = (speakerCounts[speaker] || 0) + 1;
               });
               
               console.log(`   🎯 Speaker distribution:`, speakerCounts);
               
               // If only 1 speaker detected with low threshold, suggest even lower
-              if (result.total_speakers === 1 && threshold > 0.001) {
+              const speakerCount = Object.keys(speakerCounts).length;
+              if (speakerCount === 1 && threshold > 0.001) {
                 console.log(`   💡 Only 1 speaker detected. Try even lower threshold (0.001) for more speakers.`);
               }
               
@@ -439,7 +476,21 @@ class EnhancedDiarizationBinaryManager {
             }
           } catch (parseError) {
             console.error('❌ Failed to parse diarization output:', parseError.message);
-            console.error('Raw output:', stdout.substring(0, 500));
+            console.error('Raw stdout length:', stdout.length);
+            console.error('Raw output (first 200 chars):', stdout.substring(0, 200));
+            console.error('Raw output (chars 400-600):', stdout.substring(400, 600));
+            console.error('Raw output (last 200 chars):', stdout.substring(Math.max(0, stdout.length - 200)));
+            
+            // Try to save the raw output for debugging
+            const fs = require('fs');
+            const debugPath = `/tmp/diarization-debug-${Date.now()}.txt`;
+            try {
+              fs.writeFileSync(debugPath, stdout);
+              console.error('💾 Raw output saved to:', debugPath);
+            } catch (writeError) {
+              console.error('Failed to save debug output:', writeError.message);
+            }
+            
             reject(new Error(`Failed to parse diarization output: ${parseError.message}`));
           }
         } else {
@@ -449,7 +500,7 @@ class EnhancedDiarizationBinaryManager {
         }
       });
 
-      process.on('error', (error) => {
+      diarizationProcess.on('error', (error) => {
         console.error('❌ Failed to start diarize-cli process:', error.message);
         reject(this.buildProcessStartError(error));
       });
