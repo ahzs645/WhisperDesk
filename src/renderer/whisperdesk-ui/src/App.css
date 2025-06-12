@@ -1,5 +1,6 @@
-@import "tailwindcss";
-@import "tw-animate-css";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
 @custom-variant dark (&:is(.dark *));
 
@@ -273,7 +274,6 @@ main {
   position: relative;
   z-index: 1;
   flex: 1;
-  padding-top: calc(var(--header-height) + 24px);
   padding-left: var(--header-margin);
   padding-right: var(--header-margin);
   padding-bottom: var(--header-margin);
@@ -744,5 +744,153 @@ main {
     background: var(--background) !important;
     backdrop-filter: none !important;
     -webkit-backdrop-filter: none !important;
+  }
+}
+
+/* Glass Effect Animations for File Upload */
+@keyframes glow-pulse {
+  0%, 100% {
+    opacity: 0.8;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.02);
+  }
+}
+
+@keyframes sparkle-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes slide-glow {
+  0% {
+    transform: translateX(-100%);
+    opacity: 0;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+}
+
+/* Enhanced backdrop blur support */
+.glass-overlay {
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  background: rgba(0, 0, 0, 0.4);
+}
+
+@supports not (backdrop-filter: blur(1px)) {
+  .glass-overlay {
+    background: rgba(0, 0, 0, 0.7);
+  }
+}
+
+/* Prevent scroll restoration issues */
+.scroll-container {
+  scroll-behavior: smooth;
+  overflow-anchor: none;
+}
+
+/* Enhanced glow border animation */
+.glow-border {
+  position: relative;
+  overflow: hidden;
+}
+
+.glow-border::before {
+  content: '';
+  position: absolute;
+  top: -2px;
+  left: -2px;
+  right: -2px;
+  bottom: -2px;
+  background: linear-gradient(45deg, 
+    transparent, 
+    rgba(59, 130, 246, 0.5), 
+    rgba(168, 85, 247, 0.5), 
+    rgba(236, 72, 153, 0.5), 
+    transparent
+  );
+  border-radius: inherit;
+  animation: slide-glow 2s linear infinite;
+  z-index: -1;
+}
+
+/* Tab content scroll preservation */
+.tab-content {
+  height: 100%;
+  overflow-y: auto;
+  scroll-behavior: smooth;
+}
+
+.tab-content:focus {
+  outline: none;
+}
+
+/* Improved glass effect for supported browsers */
+@supports (backdrop-filter: blur(1px)) and (-webkit-backdrop-filter: blur(1px)) {
+  .enhanced-glass {
+    background: rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(20px) saturate(180%) brightness(120%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%) brightness(120%);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    box-shadow: 
+      0 8px 32px rgba(0, 0, 0, 0.3),
+      inset 0 1px 0 rgba(255, 255, 255, 0.4);
+  }
+}
+
+/* Dark mode glass effect */
+.dark .enhanced-glass {
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 
+    0 8px 32px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+/* Prevent unwanted scroll on tab switch */
+.prevent-scroll-restoration {
+  scroll-behavior: auto !important;
+}
+
+/* Enhanced animation for file drop */
+.file-drop-active {
+  animation: glow-pulse 1.5s ease-in-out infinite;
+}
+
+/* Corner glow effects */
+.corner-glow {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(40px);
+  animation: glow-pulse 3s ease-in-out infinite;
+}
+
+.corner-glow:nth-child(1) { animation-delay: 0s; }
+.corner-glow:nth-child(2) { animation-delay: 0.5s; }
+.corner-glow:nth-child(3) { animation-delay: 1s; }
+.corner-glow:nth-child(4) { animation-delay: 1.5s; }
+
+/* Responsive glass effect */
+@media (max-width: 768px) {
+  .glass-overlay {
+    backdrop-filter: blur(15px);
+    -webkit-backdrop-filter: blur(15px);
+  }
+  
+  .enhanced-glass {
+    backdrop-filter: blur(15px);
+    -webkit-backdrop-filter: blur(15px);
   }
 }

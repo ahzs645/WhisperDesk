@@ -6,7 +6,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from './components/ui/tabs'
 import { Progress } from './components/ui/progress'
 import { Mic, Package, Clock, Settings, Video, BarChart3 } from 'lucide-react'
 import { ModelMarketplace } from './components/ModelMarketplace-WebCompatible'
-import { AnalyticsTab } from './components/AnalyticsTab'
+import { AnalyticsTab } from './components/analytics/AnalyticsTab'
 import { EnhancedTranscriptionTab } from './components/transcription/EnhancedTranscriptionTab'
 import { EnhancedSettingsTab } from './components/EnhancedSettingsTab'
 import { UnifiedWindowControls } from './components/UnifiedWindowControls'
@@ -337,7 +337,7 @@ function AppContent() {
       </header>
       
       {/* Main content */}
-      <main className="flex-1 container mx-auto py-6">
+      <main className="flex-1 container mx-auto py-6 pt-[calc(var(--header-height)+24px)]">
         <Tabs defaultValue="transcribe" className="w-full">
           <TabsList className="grid w-full grid-cols-5">
             <TabsTrigger value="transcribe" className="flex items-center space-x-2">

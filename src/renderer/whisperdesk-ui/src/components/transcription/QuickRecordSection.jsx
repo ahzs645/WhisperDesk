@@ -3,13 +3,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Video, Zap } from 'lucide-react'
-import { toast } from 'sonner'
 
-export function QuickRecordSection() {
+export function QuickRecordSection({ onQuickRecordClick }) {
   const handleQuickRecord = () => {
-    // Scroll to enhanced recorder or switch to recording tab
-    document.getElementById('enhanced-recorder')?.scrollIntoView({ behavior: 'smooth' })
-    toast.info('📹 See enhanced recording options below')
+    // FIXED: Use the passed click handler instead of auto-scrolling
+    if (onQuickRecordClick) {
+      onQuickRecordClick()
+    }
   }
 
   return (

@@ -1,5 +1,5 @@
 // src/renderer/whisperdesk-ui/src/components/transcription/EnhancedTranscriptionTab.jsx
-// Enhanced component that automatically loads providers and models on boot
+// FIXED: Prevents auto-scrolling to Enhanced Screen Recording when switching tabs
 import React, { useState, useEffect, useRef } from 'react'
 import { toast } from 'sonner'
 import { useAppState } from '@/App'
@@ -21,9 +21,61 @@ export function EnhancedTranscriptionTab() {
   const [hasLoadedInitial, setHasLoadedInitial] = useState(false)
   const [diarizationAvailable, setDiarizationAvailable] = useState(false)
   
+  // FIXED: Add scroll position preservation
+  const scrollPositionRef = useRef(0)
+  const containerRef = useRef(null)
+  
   // Refs for cleanup and toast management
   const lastToastRef = useRef(null)
   const hasShownCompletionToast = useRef(false)
+
+  // FIXED: Preserve scroll position when tab becomes active
+  useEffect(() => {
+    const preserveScrollPosition = () => {
+      if (containerRef.current && scrollPositionRef.current > 0) {
+        // Restore scroll position after a short delay to ensure content is rendered
+        requestAnimationFrame(() => {
+          if (containerRef.current) {
+            containerRef.current.scrollTop = scrollPositionRef.current
+          }
+        })
+      }
+    }
+
+    // Save scroll position when component unmounts or tab changes
+    const saveScrollPosition = () => {
+      if (containerRef.current) {
+        scrollPositionRef.current = containerRef.current.scrollTop
+      }
+    }
+
+    // Set up intersection observer to detect when tab becomes visible
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            preserveScrollPosition()
+          } else {
+            saveScrollPosition()
+          }
+        })
+      },
+      { threshold: 0.1 }
+    )
+
+    if (containerRef.current) {
+      observer.observe(containerRef.current)
+    }
+
+    // Save scroll position on page unload
+    window.addEventListener('beforeunload', saveScrollPosition)
+
+    return () => {
+      saveScrollPosition()
+      observer.disconnect()
+      window.removeEventListener('beforeunload', saveScrollPosition)
+    }
+  }, [])
 
   // Check if diarization is available for the selected provider
   useEffect(() => {
@@ -35,7 +87,7 @@ export function EnhancedTranscriptionTab() {
     checkDiarizationAvailability()
   }, [appState.selectedProvider, providers])
 
-  // 🔴 NEW: Load initial providers and models from AppInitializer on mount
+  // Load initial providers and models from AppInitializer on mount
   useEffect(() => {
     const loadInitialData = async () => {
       if (hasLoadedInitial) return
@@ -109,7 +161,8 @@ export function EnhancedTranscriptionTab() {
         // Set the file and start transcription
         updateAppState({ selectedFile: event.detail.file })
         
-        // Wait a moment for state to update, then start transcription
+        // FIXED: Don't auto-scroll to recorder when auto-transcribing
+        // Just start the transcription process
         setTimeout(() => {
           handleStartTranscription(true) // Pass flag to indicate auto-transcription
         }, 500)
@@ -193,7 +246,7 @@ export function EnhancedTranscriptionTab() {
     }
   }
 
-  // 🔴 UPDATED: Enhanced refresh functions with optional toast parameter
+  // Enhanced refresh functions with optional toast parameter
   const refreshProviders = async (showToast = true) => {
     try {
       setIsLoading(true)
@@ -331,26 +384,46 @@ export function EnhancedTranscriptionTab() {
     toast.success('🆕 Ready for new transcription')
   }
 
-  // 🔴 NEW: Manual refresh that always shows toast
+  // Manual refresh that always shows toast
   const handleManualRefreshProviders = () => refreshProviders(true)
   const handleManualRefreshModels = () => refreshModels(true)
 
+  // FIXED: Updated QuickRecordSection to not auto-scroll
+  const handleQuickRecordClick = () => {
+    // Instead of auto-scrolling, just show a gentle hint
+    toast.info('📹 See enhanced recording options below', {
+      action: {
+        label: 'Scroll to Recorder',
+        onClick: () => {
+          document.getElementById('enhanced-recorder')?.scrollIntoView({ 
+            behavior: 'smooth',
+            block: 'start'
+          })
+        }
+      }
+    })
+  }
+
   return (
-    <div className="space-y-6">
+    <div 
+      ref={containerRef}
+      className="space-y-6 h-full overflow-y-auto"
+      style={{ scrollBehavior: 'smooth' }}
+    >
       {/* Enhanced Input Section */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         
-        {/* File Upload */}
+        {/* File Upload with Glass Effect */}
         <FileUploadSection
           selectedFile={appState.selectedFile}
           onFileChange={(fileInfo) => updateAppState({ selectedFile: fileInfo })}
         />
 
-        {/* Enhanced Recording */}
-        <QuickRecordSection />
+        {/* Enhanced Recording - FIXED: No auto-scroll */}
+        <QuickRecordSection onQuickRecordClick={handleQuickRecordClick} />
       </div>
 
-      {/* Enhanced Transcription Settings - Now with diarization options */}
+      {/* Enhanced Transcription Settings */}
       <TranscriptionSettings
         providers={providers}
         models={models}
@@ -387,7 +460,7 @@ export function EnhancedTranscriptionTab() {
         onNewTranscription={handleNewTranscription}
       />
 
-      {/* Enhanced Transcript Display - Progress and Export now handled by Controls */}
+      {/* Enhanced Transcript Display */}
       <TranscriptDisplay 
         transcriptionResult={appState.lastTranscriptionResult}
         isTranscribing={appState.isTranscribing}
@@ -396,7 +469,7 @@ export function EnhancedTranscriptionTab() {
         onCopy={handleCopyText}
       />
 
-      {/* Enhanced Screen Recorder */}
+      {/* Enhanced Screen Recorder - FIXED: Scroll position preserved */}
       <div id="enhanced-recorder">
         <EnhancedScreenRecorder />
       </div>
