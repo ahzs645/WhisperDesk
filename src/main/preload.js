@@ -427,38 +427,3 @@ window.addEventListener('unhandledrejection', (event) => {
     promise: event.promise
   });
 });
-
-// 🔴 STARTUP: Enhanced startup logging and verification
-console.log('🚀 [Preload] WhisperDesk Enhanced preload script loaded');
-console.log('🚀 [Preload] Platform:', process.platform, process.arch);
-console.log('🚀 [Preload] Electron version:', process.versions.electron);
-console.log('🚀 [Preload] Node version:', process.versions.node);
-
-// Verify critical APIs are exposed
-const verifyAPI = () => {
-  const checks = {
-    windowControls: !!window.electronAPI?.window,
-    screenRecorder: !!window.electronAPI?.screenRecorder,
-    modelManagement: !!window.electronAPI?.model,
-    transcription: !!window.electronAPI?.transcription,
-    shell: !!window.electronAPI?.shell,
-    modelEvents: !!(
-      window.electronAPI?.model?.onDownloadProgress &&
-      window.electronAPI?.model?.onDownloadComplete &&
-      window.electronAPI?.model?.onDownloadQueued
-    )
-  };
-  
-  console.log('✅ [Preload] API verification:', checks);
-  
-  if (!checks.modelEvents) {
-    console.error('❌ [Preload] CRITICAL: Model events not properly exposed!');
-  }
-  
-  return checks;
-};
-
-// Run verification after a short delay to ensure everything is set up
-setTimeout(verifyAPI, 100);
-
-console.log('✅ [Preload] Setup complete with enhanced model event support');
