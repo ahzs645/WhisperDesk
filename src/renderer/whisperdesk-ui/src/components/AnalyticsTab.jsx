@@ -15,22 +15,35 @@ import {
   BarChart3, Clock, Users, Mic, Brain, Heart, Zap, 
   TrendingUp, MessageSquare, Pause, Timer, Volume2,
   Target, Eye, AlertTriangle, Languages, Download,
-  ThumbsUp, ThumbsDown, Meh
+  ThumbsUp, ThumbsDown, Meh, UserCheck, RotateCcw
 } from 'lucide-react'
 import { useAppState } from '@/App'
 import { toast } from 'sonner'
 
 // Helper function to calculate analytics from transcription result
-const calculateAnalytics = (transcriptionResult) => {
+const calculateAnalytics = (transcriptionResult, selectedSpeakerId = null) => {
   if (!transcriptionResult) {
     return null
   }
 
   const { text, segments = [], metadata = {} } = transcriptionResult
   
+  // Filter segments by selected speaker if specified
+  const filteredSegments = selectedSpeakerId === 'all' || !selectedSpeakerId 
+    ? segments 
+    : segments.filter(s => (s.speakerId || s.speaker) === selectedSpeakerId)
+  
+  // Filter text by selected speaker
+  const filteredText = selectedSpeakerId === 'all' || !selectedSpeakerId
+    ? text
+    : filteredSegments.map(s => s.text).join(' ')
+  
   // Basic metrics
-  const wordCount = text ? text.split(/\s+/).filter(word => word.length > 0).length : 0
-  const duration = metadata.duration || (segments.length > 0 ? Math.max(...segments.map(s => s.end || 0)) : 0)
+  const wordCount = filteredText ? filteredText.split(/\s+/).filter(word => word.length > 0).length : 0
+  const duration = selectedSpeakerId === 'all' || !selectedSpeakerId
+    ? (metadata.duration || (segments.length > 0 ? Math.max(...segments.map(s => s.end || 0)) : 0))
+    : (filteredSegments.length > 0 ? filteredSegments.reduce((sum, s) => sum + ((s.end || 0) - (s.start || 0)), 0) : 0)
+  
   const wpm = duration > 0 ? Math.round((wordCount / duration) * 60) : 0
   
   // Speaker analysis
@@ -38,31 +51,31 @@ const calculateAnalytics = (transcriptionResult) => {
   const speakerCount = Object.keys(speakerStats).length
   
   // Confidence calculation
-  const confidenceScores = segments.map(s => s.confidence || 0.9).filter(c => c > 0)
+  const confidenceScores = filteredSegments.map(s => s.confidence || 0.9).filter(c => c > 0)
   const avgConfidence = confidenceScores.length > 0 
     ? confidenceScores.reduce((sum, c) => sum + c, 0) / confidenceScores.length
     : 0.9
   
   // Speech pattern analysis
-  const speechPatterns = calculateSpeechPatterns(text, segments)
+  const speechPatterns = calculateSpeechPatterns(filteredText, filteredSegments)
   
   // Sentiment analysis (simplified)
-  const sentiment = calculateSentiment(text, segments)
+  const sentiment = calculateSentiment(filteredText, filteredSegments)
   
   // Topic analysis
-  const topics = extractTopics(text)
+  const topics = extractTopics(filteredText)
   
   // Quality metrics
-  const qualityMetrics = calculateQualityMetrics(segments, confidenceScores)
+  const qualityMetrics = calculateQualityMetrics(filteredSegments, confidenceScores)
   
   // Emotion distribution (based on text analysis)
-  const emotions = calculateEmotions(text)
+  const emotions = calculateEmotions(filteredText)
 
   return {
     overview: {
       duration: Math.round(duration),
       wordCount,
-      speakerCount,
+      speakerCount: selectedSpeakerId === 'all' || !selectedSpeakerId ? speakerCount : 1,
       confidence: Math.round(avgConfidence * 100 * 10) / 10,
       wpm,
       wer: 0.05 // Placeholder - would need reference text for real WER
@@ -78,7 +91,8 @@ const calculateAnalytics = (transcriptionResult) => {
       voiceQuality: avgConfidence
     },
     emotions,
-    qualityMetrics
+    qualityMetrics,
+    selectedSpeakerId: selectedSpeakerId || 'all'
   }
 }
 
@@ -290,13 +304,21 @@ const getEmotionColor = (emotion) => {
   return colors[emotion] || '#6b7280'
 }
 
-// Format helpers
+// Enhanced format helpers
 const formatTime = (seconds) => {
-  const hrs = Math.floor(seconds / 3600)
-  const mins = Math.floor((seconds % 3600) / 60)
-  const secs = seconds % 60
-  return hrs > 0 ? `${hrs}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}` 
-                  : `${mins}:${secs.toString().padStart(2, '0')}`
+  if (!seconds || seconds === 0) return '0:00'
+  
+  // Round to avoid floating point precision issues
+  const totalSeconds = Math.round(seconds)
+  const hrs = Math.floor(totalSeconds / 3600)
+  const mins = Math.floor((totalSeconds % 3600) / 60)
+  const secs = totalSeconds % 60
+  
+  if (hrs > 0) {
+    return `${hrs}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
+  } else {
+    return `${mins}:${secs.toString().padStart(2, '0')}`
+  }
 }
 
 const formatPercentage = (value) => `${value.toFixed(1)}%`
@@ -313,16 +335,38 @@ const getSentimentIcon = (sentiment) => {
   return <ThumbsDown className="w-4 h-4" />
 }
 
+// Speaker color mapping for consistent colors
+const getSpeakerColor = (speakerId, index) => {
+  const colors = [
+    'bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800',
+    'bg-green-100 text-green-800 border-green-200 dark:bg-green-900/30 dark:text-green-400 dark:border-green-800',
+    'bg-purple-100 text-purple-800 border-purple-200 dark:bg-purple-900/30 dark:text-purple-400 dark:border-purple-800',
+    'bg-orange-100 text-orange-800 border-orange-200 dark:bg-orange-900/30 dark:text-orange-400 dark:border-orange-800',
+    'bg-pink-100 text-pink-800 border-pink-200 dark:bg-pink-900/30 dark:text-pink-400 dark:border-pink-800',
+    'bg-cyan-100 text-cyan-800 border-cyan-200 dark:bg-cyan-900/30 dark:text-cyan-400 dark:border-cyan-800'
+  ]
+  
+  if (!speakerId) return colors[0]
+  
+  // Generate consistent color based on speaker ID
+  const hash = speakerId.split('').reduce((a, b) => {
+    a = ((a << 5) - a) + b.charCodeAt(0)
+    return a & a
+  }, 0)
+  
+  return colors[Math.abs(hash) % colors.length]
+}
+
 export { AnalyticsTab }
 
 export default function AnalyticsTab() {
   const { appState } = useAppState()
-  const [selectedMetric, setSelectedMetric] = useState('overview')
+  const [selectedSpeakerId, setSelectedSpeakerId] = useState('all')
 
-  // Calculate analytics from current transcription result
+  // Calculate analytics from current transcription result with speaker filter
   const analytics = useMemo(() => {
-    return calculateAnalytics(appState.lastTranscriptionResult)
-  }, [appState.lastTranscriptionResult])
+    return calculateAnalytics(appState.lastTranscriptionResult, selectedSpeakerId)
+  }, [appState.lastTranscriptionResult, selectedSpeakerId])
 
   const handleExportReport = async () => {
     if (!analytics) {
@@ -335,6 +379,7 @@ export default function AnalyticsTab() {
       const report = {
         title: 'WhisperDesk Analytics Report',
         generatedAt: new Date().toISOString(),
+        selectedSpeaker: selectedSpeakerId === 'all' ? 'All Speakers' : analytics.speakers.find(s => s.id === selectedSpeakerId)?.name || 'Unknown',
         transcription: {
           duration: analytics.overview.duration,
           wordCount: analytics.overview.wordCount,
@@ -363,6 +408,11 @@ export default function AnalyticsTab() {
     }
   }
 
+  const handleSpeakerSelection = (speakerId) => {
+    setSelectedSpeakerId(speakerId)
+    toast.success(`📊 Showing analytics for ${speakerId === 'all' ? 'All Speakers' : analytics.speakers.find(s => s.id === speakerId)?.name || 'Selected Speaker'}`)
+  }
+
   if (!analytics) {
     return (
       <Card>
@@ -379,6 +429,8 @@ export default function AnalyticsTab() {
     )
   }
 
+  const selectedSpeakerInfo = analytics.speakers.find(s => s.id === selectedSpeakerId)
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -386,13 +438,28 @@ export default function AnalyticsTab() {
         <div>
           <h2 className="text-2xl font-bold tracking-tight">Audio Analytics</h2>
           <p className="text-muted-foreground">
-            Comprehensive analysis of your transcribed audio
+            {selectedSpeakerId === 'all' 
+              ? 'Comprehensive analysis of your transcribed audio' 
+              : `Analysis for ${selectedSpeakerInfo?.name || 'Selected Speaker'}`
+            }
           </p>
         </div>
-        <Button variant="outline" size="sm" onClick={handleExportReport}>
-          <Download className="w-4 h-4 mr-2" />
-          Export Report
-        </Button>
+        <div className="flex items-center gap-2">
+          {selectedSpeakerId !== 'all' && (
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={() => handleSpeakerSelection('all')}
+            >
+              <RotateCcw className="w-4 h-4 mr-2" />
+              Show All
+            </Button>
+          )}
+          <Button variant="outline" size="sm" onClick={handleExportReport}>
+            <Download className="w-4 h-4 mr-2" />
+            Export Report
+          </Button>
+        </div>
       </div>
 
       {/* Overview Cards */}
@@ -471,42 +538,105 @@ export default function AnalyticsTab() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Speaker Analysis */}
+        {/* Enhanced Interactive Speaker Analysis */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Users className="w-5 h-5" />
               Speaker Analysis
+              {selectedSpeakerId !== 'all' && (
+                <Badge variant="secondary" className="ml-2">
+                  <UserCheck className="w-3 h-3 mr-1" />
+                  {selectedSpeakerInfo?.name}
+                </Badge>
+              )}
             </CardTitle>
             <CardDescription>
-              Speaking time, turns, and conversation dominance
+              {selectedSpeakerId === 'all' 
+                ? 'Speaking time, turns, and conversation dominance. Click a speaker to filter all analytics.'
+                : `Detailed statistics for ${selectedSpeakerInfo?.name || 'selected speaker'}`
+              }
             </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {analytics.speakers.map((speaker, index) => (
-                <div key={speaker.id} className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Avatar className="w-8 h-8">
-                        <AvatarFallback className="text-xs">
-                          {speaker.name.split(' ').map(n => n[0]).join('')}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div>
-                        <p className="font-medium text-sm">{speaker.name}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {formatTime(speaker.speakingTime)} • {speaker.turns} turns
-                        </p>
+              {/* All Speakers option */}
+              <div 
+                className={`space-y-2 p-3 rounded-lg border cursor-pointer transition-all hover:bg-muted/50 ${
+                  selectedSpeakerId === 'all' 
+                    ? 'bg-primary/10 border-primary/50 ring-2 ring-primary/20' 
+                    : 'border-border'
+                }`}
+                onClick={() => handleSpeakerSelection('all')}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Avatar className="w-8 h-8">
+                      <AvatarFallback className="text-xs bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200">
+                        ALL
+                      </AvatarFallback>
+                    </Avatar>
+                    <div>
+                      <p className="font-medium text-sm">All Speakers</p>
+                      <p className="text-xs text-muted-foreground">
+                        Combined analysis
+                      </p>
+                    </div>
+                  </div>
+                  {selectedSpeakerId === 'all' && (
+                    <Badge variant="default" className="text-xs">
+                      <UserCheck className="w-3 h-3 mr-1" />
+                      Active
+                    </Badge>
+                  )}
+                </div>
+              </div>
+
+              {/* Individual speakers */}
+              {analytics.speakers.map((speaker, index) => {
+                const isSelected = selectedSpeakerId === speaker.id
+                const speakerColor = getSpeakerColor(speaker.id, index)
+                
+                return (
+                  <div 
+                    key={speaker.id} 
+                    className={`space-y-2 p-3 rounded-lg border cursor-pointer transition-all hover:bg-muted/50 ${
+                      isSelected 
+                        ? 'bg-primary/10 border-primary/50 ring-2 ring-primary/20' 
+                        : 'border-border'
+                    }`}
+                    onClick={() => handleSpeakerSelection(speaker.id)}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Avatar className="w-8 h-8">
+                          <AvatarFallback className={`text-xs ${speakerColor}`}>
+                            {speaker.name.split(' ').map(n => n[0]).join('')}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div>
+                          <p className="font-medium text-sm">{speaker.name}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {formatTime(speaker.speakingTime)} • {speaker.turns} turns
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline" className={speakerColor}>
+                          {formatPercentage(speaker.dominance)}
+                        </Badge>
+                        {isSelected && (
+                          <Badge variant="default" className="text-xs">
+                            <UserCheck className="w-3 h-3 mr-1" />
+                            Active
+                          </Badge>
+                        )}
                       </div>
                     </div>
-                    <Badge variant="outline">
-                      {formatPercentage(speaker.dominance)}
-                    </Badge>
+                    <Progress value={speaker.dominance} className="h-2" />
                   </div>
-                  <Progress value={speaker.dominance} className="h-2" />
-                </div>
-              ))}
+                )
+              })}
             </div>
           </CardContent>
         </Card>
@@ -517,6 +647,11 @@ export default function AnalyticsTab() {
             <CardTitle className="flex items-center gap-2">
               <Heart className="w-5 h-5" />
               Sentiment Analysis
+              {selectedSpeakerId !== 'all' && (
+                <Badge variant="outline" className="ml-2">
+                  {selectedSpeakerInfo?.name}
+                </Badge>
+              )}
             </CardTitle>
             <CardDescription>
               Emotional tone throughout the conversation
@@ -593,6 +728,11 @@ export default function AnalyticsTab() {
             <CardTitle className="flex items-center gap-2">
               <Mic className="w-5 h-5" />
               Speech Patterns
+              {selectedSpeakerId !== 'all' && (
+                <Badge variant="outline" className="ml-2">
+                  {selectedSpeakerInfo?.name}
+                </Badge>
+              )}
             </CardTitle>
             <CardDescription>
               Fluency, pauses, and speaking characteristics
@@ -647,6 +787,11 @@ export default function AnalyticsTab() {
             <CardTitle className="flex items-center gap-2">
               <Brain className="w-5 h-5" />
               Emotional Tone
+              {selectedSpeakerId !== 'all' && (
+                <Badge variant="outline" className="ml-2">
+                  {selectedSpeakerInfo?.name}
+                </Badge>
+              )}
             </CardTitle>
             <CardDescription>
               Distribution of emotional states detected
@@ -696,6 +841,11 @@ export default function AnalyticsTab() {
             <CardTitle className="flex items-center gap-2">
               <BarChart3 className="w-5 h-5" />
               Topic Analysis
+              {selectedSpeakerId !== 'all' && (
+                <Badge variant="outline" className="ml-2">
+                  {selectedSpeakerInfo?.name}
+                </Badge>
+              )}
             </CardTitle>
             <CardDescription>
               Key topics discussed and their sentiment
@@ -731,6 +881,11 @@ export default function AnalyticsTab() {
           <CardTitle className="flex items-center gap-2">
             <Eye className="w-5 h-5" />
             Transcription Quality
+            {selectedSpeakerId !== 'all' && (
+              <Badge variant="outline" className="ml-2">
+                {selectedSpeakerInfo?.name}
+              </Badge>
+            )}
           </CardTitle>
           <CardDescription>
             Confidence distribution and accuracy metrics
