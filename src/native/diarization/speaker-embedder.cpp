@@ -1,9 +1,23 @@
-// src/native/diarization/speaker-embedder.cpp
+// src/native/diarization/speaker-embedder.cpp - FIXED for Windows ONNX Runtime
 #include "include/speaker-embedder.h"
 #include "include/utils.h"
 #include <iostream>
 #include <algorithm>
 #include <cmath>
+
+#ifdef _WIN32
+#include <windows.h>
+
+// Helper function to convert std::string to std::wstring on Windows
+std::wstring string_to_wstring(const std::string& str) {
+    if (str.empty()) return std::wstring();
+    
+    int size_needed = MultiByteToWideChar(CP_UTF8, 0, &str[0], (int)str.size(), NULL, 0);
+    std::wstring wstr(size_needed, 0);
+    MultiByteToWideChar(CP_UTF8, 0, &str[0], (int)str.size(), &wstr[0], size_needed);
+    return wstr;
+}
+#endif
 
 SpeakerEmbedder::SpeakerEmbedder(bool verbose)
     : env_(ORT_LOGGING_LEVEL_WARNING, "speaker-embedder"),
@@ -32,8 +46,13 @@ bool SpeakerEmbedder::initialize(const std::string& model_path, int sample_rate,
         sample_rate_ = sample_rate;
         target_length_ = static_cast<size_t>(target_duration * sample_rate);
         
-        // Load ONNX model
+        // FIXED: Windows requires wstring for ONNX Runtime model path
+#ifdef _WIN32
+        auto wmodel_path = string_to_wstring(model_path);
+        session_ = std::make_unique<Ort::Session>(env_, wmodel_path.c_str(), session_options_);
+#else
         session_ = std::make_unique<Ort::Session>(env_, model_path.c_str(), session_options_);
+#endif
         
         // Get output shape to determine embedding dimension
         auto output_info = session_->GetOutputTypeInfo(0);

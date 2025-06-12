@@ -1,10 +1,24 @@
-// src/native/diarization/speaker-segmenter.cpp - FIXED for better speaker change detection
+// src/native/diarization/speaker-segmenter.cpp - FIXED for Windows ONNX Runtime
 #include "include/speaker-segmenter.h"
 #include "include/utils.h"
 #include <iostream>
 #include <iomanip>
 #include <algorithm>
 #include <cmath>
+
+#ifdef _WIN32
+#include <windows.h>
+
+// Helper function to convert std::string to std::wstring on Windows
+std::wstring string_to_wstring(const std::string& str) {
+    if (str.empty()) return std::wstring();
+    
+    int size_needed = MultiByteToWideChar(CP_UTF8, 0, &str[0], (int)str.size(), NULL, 0);
+    std::wstring wstr(size_needed, 0);
+    MultiByteToWideChar(CP_UTF8, 0, &str[0], (int)str.size(), &wstr[0], size_needed);
+    return wstr;
+}
+#endif
 
 SpeakerSegmenter::SpeakerSegmenter(bool verbose)
     : env_(ORT_LOGGING_LEVEL_WARNING, "speaker-segmenter"),
@@ -35,7 +49,13 @@ bool SpeakerSegmenter::initialize(const std::string& model_path, int sample_rate
         window_size_ = 51200;  // Exactly what pyannote segmentation-3.0 expects
         hop_size_ = 25600;     // 50% overlap
         
+        // FIXED: Windows requires wstring for ONNX Runtime model path
+#ifdef _WIN32
+        auto wmodel_path = string_to_wstring(model_path);
+        session_ = std::make_unique<Ort::Session>(env_, wmodel_path.c_str(), session_options_);
+#else
         session_ = std::make_unique<Ort::Session>(env_, model_path.c_str(), session_options_);
+#endif
         
         if (verbose_) {
             auto input_count = session_->GetInputCount();
