@@ -1,4 +1,4 @@
-// src/main/services/screen-recorder.js - COMPLETELY REWRITTEN for proper Electron integration
+// src/main/services/screen-recorder.js - FIXED: Proper file handling and event deduplication
 const { EventEmitter } = require('events');
 const { desktopCapturer, systemPreferences } = require('electron');
 const fs = require('fs').promises;
@@ -16,11 +16,13 @@ class ScreenRecorder extends EventEmitter {
     this.duration = 0;
     this.tempDir = path.join(os.tmpdir(), 'whisperdesk-recordings');
     this.outputPath = null;
+    this.actualOutputPath = null; // FIXED: Track where file actually gets saved
     this.durationTimer = null;
     this.hasActiveProcess = false;
     this.lastError = null;
     this.availableScreens = [];
     this.availableAudioDevices = [];
+    this.lastProgressEmit = 0; // FIXED: Prevent duplicate progress events
   }
 
   async initialize() {
@@ -95,11 +97,7 @@ class ScreenRecorder extends EventEmitter {
       // Combine screens and windows
       this.availableScreens = [...this.availableScreens, ...windowSources];
       
-      // Note: Audio device enumeration happens in renderer process
-      // We'll provide a method to request audio devices from renderer
-      
       console.log(`✅ Found ${screens.length} screens and ${windows.length} windows`);
-      console.log('📱 Available screens:', this.availableScreens);
       
       return {
         screens: this.availableScreens,
@@ -127,8 +125,7 @@ class ScreenRecorder extends EventEmitter {
     }
   }
 
-  // This method will be called by renderer process to start recording
-  // The actual recording happens in renderer using MediaRecorder API
+  // FIXED: Generate expected output path that renderer can use
   async startRecording(options = {}) {
     if (this.isRecording) {
       return { success: false, error: 'Already recording' };
@@ -155,10 +152,13 @@ class ScreenRecorder extends EventEmitter {
         throw new Error(`Screen source ${screenId} not found. Available sources: ${this.availableScreens.map(s => s.id).join(', ')}`);
       }
 
-      // Generate output filename
+      // Generate output filename that renderer can use
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
       const outputDir = recordingDirectory || this.tempDir;
       this.outputPath = path.join(outputDir, `recording-${timestamp}.webm`);
+      
+      // FIXED: Initialize actual output path as null until renderer confirms
+      this.actualOutputPath = null;
 
       // Set recording state
       this.isRecording = true;
@@ -167,19 +167,17 @@ class ScreenRecorder extends EventEmitter {
       this.duration = 0;
       this.lastError = null;
       this.hasActiveProcess = true;
+      this.lastProgressEmit = 0; // Reset progress tracking
 
       // Start duration timer
       this.startDurationTimer();
 
       // Emit started event with source information
       this.emit('started', {
-        outputPath: this.outputPath,
+        outputPath: this.outputPath, // Expected path for renderer to use
         screenSource: screenSource,
         options
       });
-
-      // The actual recording will be handled by the renderer process
-      // This just manages the state and provides the configuration
 
       console.log(`✅ Recording session started for ${screenSource.name}`);
       return { 
@@ -196,6 +194,7 @@ class ScreenRecorder extends EventEmitter {
     }
   }
 
+  // FIXED: Don't emit completion until we verify the file exists
   async stopRecording() {
     if (!this.isRecording) {
       return { success: true, message: 'No recording in progress', wasAlreadyStopped: true };
@@ -208,20 +207,52 @@ class ScreenRecorder extends EventEmitter {
       this.hasActiveProcess = false;
       this.stopDurationTimer();
       
-      // Emit completion event
-      this.emit('completed', {
-        outputPath: this.outputPath,
-        duration: this.duration,
-        audioPath: this.outputPath // For transcription
-      });
-
+      // FIXED: Don't emit completion yet - wait for renderer to confirm file path
       console.log(`✅ Recording stopped successfully. Duration: ${this.duration}ms`);
+      console.log(`🔍 Waiting for file confirmation at: ${this.outputPath}`);
+      
       return { success: true };
 
     } catch (error) {
       console.error('❌ Failed to stop recording:', error);
       this.lastError = error.message;
       return { success: false, error: error.message };
+    }
+  }
+
+  // FIXED: New method for renderer to confirm actual file location
+  async confirmRecordingComplete(actualFilePath) {
+    try {
+      // Verify the file actually exists
+      await fs.access(actualFilePath);
+      const stats = await fs.stat(actualFilePath);
+      
+      this.actualOutputPath = actualFilePath;
+      
+      console.log(`✅ Recording file confirmed: ${actualFilePath} (${Math.round(stats.size / 1024)}KB)`);
+      
+      // Now emit the completion event with verified file path
+      this.emit('completed', {
+        outputPath: this.actualOutputPath,
+        expectedPath: this.outputPath,
+        duration: this.duration,
+        audioPath: this.actualOutputPath, // For transcription
+        fileSize: stats.size
+      });
+      
+      return { success: true, actualPath: this.actualOutputPath };
+      
+    } catch (error) {
+      console.error('❌ Failed to confirm recording file:', error);
+      this.lastError = `Recording file not found: ${error.message}`;
+      
+      this.emit('error', {
+        error: this.lastError,
+        expectedPath: this.outputPath,
+        actualPath: actualFilePath
+      });
+      
+      return { success: false, error: this.lastError };
     }
   }
 
@@ -257,13 +288,21 @@ class ScreenRecorder extends EventEmitter {
     }
   }
 
+  // FIXED: Throttle progress events to prevent duplicates
   startDurationTimer() {
     if (this.durationTimer) return;
     
     this.durationTimer = setInterval(() => {
       if (this.isRecording && !this.isPaused) {
-        this.duration = Date.now() - this.startTime;
-        this.emit('progress', { duration: this.duration });
+        const newDuration = Date.now() - this.startTime;
+        
+        // FIXED: Only emit progress if duration changed significantly (>500ms)
+        if (newDuration - this.lastProgressEmit > 500) {
+          this.duration = newDuration;
+          this.lastProgressEmit = newDuration;
+          
+          this.emit('progress', { duration: this.duration });
+        }
       }
     }, 1000);
   }
@@ -299,14 +338,27 @@ class ScreenRecorder extends EventEmitter {
   async getRecordings() {
     try {
       const files = await fs.readdir(this.tempDir);
-      const recordings = files
-        .filter(file => file.endsWith('.webm') || file.endsWith('.mp4'))
-        .map(file => ({
-          name: file,
-          path: path.join(this.tempDir, file),
-          createdAt: new Date().toISOString()
-        }));
-      return recordings;
+      const recordings = [];
+      
+      for (const file of files) {
+        if (file.endsWith('.webm') || file.endsWith('.mp4')) {
+          try {
+            const filePath = path.join(this.tempDir, file);
+            const stats = await fs.stat(filePath);
+            recordings.push({
+              name: file,
+              path: filePath,
+              size: stats.size,
+              createdAt: stats.birthtime.toISOString(),
+              modifiedAt: stats.mtime.toISOString()
+            });
+          } catch (error) {
+            console.warn(`Could not get stats for ${file}:`, error.message);
+          }
+        }
+      }
+      
+      return recordings.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
     } catch (error) {
       console.error('Failed to get recordings:', error);
       return [];
@@ -330,6 +382,8 @@ class ScreenRecorder extends EventEmitter {
       duration: this.duration,
       hasActiveProcess: this.hasActiveProcess,
       lastError: this.lastError,
+      outputPath: this.outputPath,
+      actualOutputPath: this.actualOutputPath, // FIXED: Include actual path info
       availableDevices: {
         screens: this.availableScreens.map(s => s.id),
         audio: [], // Will be populated by renderer
@@ -353,6 +407,8 @@ class ScreenRecorder extends EventEmitter {
     this.isPaused = false;
     this.recordingValidated = false;
     this.hasActiveProcess = false;
+    this.actualOutputPath = null; // FIXED: Reset actual path
+    this.lastProgressEmit = 0;
     this.stopDurationTimer();
     this.recordingProcess = null;
   }

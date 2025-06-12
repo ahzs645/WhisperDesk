@@ -277,6 +277,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     showOpenDialog: createSafeIPC('file:showOpenDialog'),
     showSaveDialog: createSafeIPC('file:showSaveDialog'),
     
+    // FIXED: Add new method for saving recording files
+    saveRecordingFile: createSafeIPC('file:saveRecordingFile'),
+    
     // File events
     onOpened: createEventListener('file-opened')
   },

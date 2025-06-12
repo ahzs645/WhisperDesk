@@ -1,4 +1,4 @@
-// src/main/ipc-handlers/screen-recorder-handlers.js
+// src/main/ipc-handlers/screen-recorder-handlers.js - FIXED: Add file confirmation handler
 const { ipcMain, desktopCapturer } = require('electron');
 
 class ScreenRecorderHandlers {
@@ -121,6 +121,21 @@ class ScreenRecorderHandlers {
       } catch (error) {
         console.error('❌ Failed to stop recording:', error);
         return { success: false, error: error.message, type: 'stop_error' };
+      }
+    });
+
+    // FIXED: New handler for confirming recording completion with actual file path
+    ipcMain.handle('screenRecorder:confirmComplete', async (event, actualFilePath) => {
+      try {
+        const screenRecorder = this.getScreenRecorder();
+        if (screenRecorder?.confirmRecordingComplete) {
+          return await screenRecorder.confirmRecordingComplete(actualFilePath);
+        } else {
+          return { success: false, error: 'Screen recorder service not available' };
+        }
+      } catch (error) {
+        console.error('❌ Failed to confirm recording completion:', error);
+        return { success: false, error: error.message, type: 'confirm_error' };
       }
     });
 
