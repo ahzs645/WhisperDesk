@@ -110,6 +110,14 @@ jobs:
 
       - name: Add MSBuild to PATH
         uses: microsoft/setup-msbuild@v2
+      - name: Install jsoncpp (vcpkg)
+        shell: pwsh
+        run: |
+          $vcpkgRoot = "C:/vcpkg"
+          & "$vcpkgRoot/vcpkg.exe" install jsoncpp:x64-windows
+          echo "VCPKG_ROOT=$vcpkgRoot" >> $env:GITHUB_ENV
+          echo "VCPKG_DEFAULT_TRIPLET=x64-windows" >> $env:GITHUB_ENV
+          echo "CMAKE_TOOLCHAIN_FILE=$vcpkgRoot/scripts/buildsystems/vcpkg.cmake" >> $env:GITHUB_ENV
 
       - name: Update main package.json version
         shell: pwsh
