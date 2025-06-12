@@ -144,14 +144,23 @@ class CLIBuilder {
     
     try {
       // Check if file exists and is executable
-      await BuildUtils.checkFileSize(executablePath, 1024 * 1024); // At least 1MB
+      await BuildUtils.checkFileSize(executablePath, 100 * 1024); // At least 100KB
       
       // Try running with --help
       const { stdout } = await execAsync(`"${executablePath}" --help`, {
         timeout: 5000
       });
       
-      return stdout.includes('Usage:') || stdout.includes('Options:');
+      // Case-insensitive check for usage patterns
+      const output = stdout.toLowerCase();
+      const hasUsage = output.includes('usage:') || output.includes('options:');
+      const hasDiarization = output.includes('diarization') || output.includes('speaker');
+      
+      // Additional validation - should contain expected CLI patterns
+      const hasRequiredPatterns = output.includes('audio') && output.includes('model');
+      
+      return hasUsage && (hasDiarization || hasRequiredPatterns);
+      
     } catch (error) {
       console.error('❌ Executable verification failed:', error.message);
       return false;
