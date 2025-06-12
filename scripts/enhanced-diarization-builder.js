@@ -1,4 +1,5 @@
-// enhanced-diarization-builder.js - Main orchestrator for cross-platform builds
+// scripts/enhanced-diarization-builder.js - FIXED to use correct source directory
+const path = require('path');
 const { BuildConfig } = require('./config/diarization-config');
 const { BuildUtils } = require('./utils/build-utils');
 const { PrerequisitesChecker } = require('./checkers/prerequisites-checker');
@@ -10,6 +11,10 @@ const { CLIBuilder } = require('./builders/cli-builder');
 class EnhancedDiarizationBuilder {
   constructor() {
     this.config = new BuildConfig();
+    
+    // FIXED: Override source directory to use the real implementation
+    this.config.sourceDir = path.join(this.config.projectRoot, 'src', 'native', 'diarization');
+    
     this.prerequisitesChecker = new PrerequisitesChecker(this.config);
     this.templateGenerator = new TemplateGenerator(this.config);
     this.onnxManager = new ONNXRuntimeManager(this.config);
@@ -20,6 +25,7 @@ class EnhancedDiarizationBuilder {
     console.log(`📍 Platform: ${this.config.platform} (${this.config.arch})`);
     console.log(`📁 Project root: ${this.config.projectRoot}`);
     console.log(`📁 Binaries dir: ${this.config.binariesDir}`);
+    console.log(`📁 Source dir: ${this.config.sourceDir}`); // Show the corrected path
   }
 
   async build() {
@@ -32,8 +38,8 @@ class EnhancedDiarizationBuilder {
       // 2. Setup directories
       await this.setupDirectories();
       
-      // 3. Ensure source files exist
-      await this.ensureSourceFiles();
+      // 3. FIXED: Check if real implementation exists, skip template generation
+      await this.ensureRealSourceFiles();
       
       // 4. Download and setup ONNX Runtime
       await this.setupONNXRuntime();
@@ -75,8 +81,43 @@ class EnhancedDiarizationBuilder {
     );
   }
 
-  async ensureSourceFiles() {
+  // FIXED: New method to check for real implementation
+  async ensureRealSourceFiles() {
     console.log('\n📝 Step 3: Ensuring Source Files');
+    
+    const fs = require('fs').promises;
+    
+    // Check if we have the real implementation files
+    const realImplementationFiles = [
+      'diarize-cli.cpp',
+      'speaker-embedder.cpp', 
+      'speaker-segmenter.cpp',
+      'utils.cpp',
+      'CMakeLists.txt'
+    ];
+    
+    let hasRealImplementation = true;
+    for (const file of realImplementationFiles) {
+      const filePath = path.join(this.config.sourceDir, file);
+      try {
+        const stats = await fs.stat(filePath);
+        if (stats.size < 1000) { // If file is too small, it's probably a template
+          hasRealImplementation = false;
+          break;
+        }
+        console.log(`✅ Found real implementation: ${file} (${Math.round(stats.size / 1024)}KB)`);
+      } catch (error) {
+        hasRealImplementation = false;
+        break;
+      }
+    }
+    
+    if (hasRealImplementation) {
+      console.log('✅ Real diarization implementation found, skipping template generation');
+      return;
+    }
+    
+    console.log('⚠️ Real implementation not found, generating templates...');
     await this.templateGenerator.ensureSourceFiles();
   }
 
@@ -156,7 +197,7 @@ class EnhancedDiarizationBuilder {
     console.log('🔄 Rebuilding executable only...');
     
     try {
-      await this.ensureSourceFiles();
+      await this.ensureRealSourceFiles();
       await this.buildExecutable();
       const verification = await this.verifyBuild();
       
