@@ -22,7 +22,7 @@
     "build:renderer": "cd src/renderer/whisperdesk-ui && npm run build",
     "build:main": "echo 'Main process ready'",
     "build:whisper": "node tools/setup/build-whisper-official.js",
-    "build:diarization": "node scripts/build-diarization.js",
+    "build:diarization": "node scripts/enhanced-diarization-builder.js",
     "setup:diarization": "npm run build:diarization && npm run download:diarization-models",
     "build:all": "npm run build:whisper && npm run build:diarization",
     "build:whisper:windows": "powershell -ExecutionPolicy Bypass -File tools/setup/compile-whisper-windows.ps1",

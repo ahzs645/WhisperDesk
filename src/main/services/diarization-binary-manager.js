@@ -1,4 +1,4 @@
-// src/main/services/diarization-binary-manager.js - FIXED for macOS
+// src/main/services/diarization-binary-manager.js - ENHANCED for cross-platform reliability
 const path = require('path');
 const fs = require('fs').promises;
 const os = require('os');
@@ -12,7 +12,7 @@ class EnhancedDiarizationBinaryManager {
     this.binariesDir = this.getBinariesDirectory();
     this.modelsDir = path.join(this.binariesDir, 'models', 'diarization');
     
-    // Required ONNX Runtime files per platform
+    // FIXED: Comprehensive library requirements per platform
     this.requiredFiles = this.getRequiredFiles();
     this.modelFiles = this.getRequiredModels();
     
@@ -20,7 +20,6 @@ class EnhancedDiarizationBinaryManager {
   }
 
   getBinariesDirectory() {
-    // Same logic as your whisper binary manager
     const projectBinaries = path.join(process.cwd(), 'binaries');
     
     if (process.env.NODE_ENV === 'development' || require('fs').existsSync(projectBinaries)) {
@@ -37,41 +36,51 @@ class EnhancedDiarizationBinaryManager {
   getRequiredFiles() {
     if (this.platform === 'win32') {
       return {
-        dlls: [
+        executable: 'diarize-cli.exe',
+        required: [
+          'diarize-cli.exe',
           'onnxruntime.dll',
+        ],
+        optional: [
           'onnxruntime_providers_shared.dll'
         ],
-        executable: 'diarize-cli.exe',
         all: [
+          'diarize-cli.exe',
           'onnxruntime.dll',
-          'onnxruntime_providers_shared.dll', 
-          'diarize-cli.exe'
+          'onnxruntime_providers_shared.dll'
         ]
       };
     } else if (this.platform === 'darwin') {
-      // FIXED: For macOS, only require the executable
-      // The ONNX Runtime libraries are checked more flexibly
       return {
         executable: 'diarize-cli',
-        all: [
-          'diarize-cli'  // Only require the executable
+        required: [
+          'diarize-cli'
         ],
-        // Optional - don't fail if missing
+        // FIXED: More flexible library detection for macOS
         optional: [
+          'libonnxruntime.dylib',
+          'libonnxruntime.1.16.3.dylib',
           'libonnxruntime_providers_shared.dylib'
+        ],
+        all: [
+          'diarize-cli',
+          'libonnxruntime.dylib'
         ]
       };
     } else {
       return {
-        dlls: [
-          'libonnxruntime.so',
+        executable: 'diarize-cli',
+        required: [
+          'diarize-cli',
+          'libonnxruntime.so'
+        ],
+        optional: [
           'libonnxruntime_providers_shared.so'
         ],
-        executable: 'diarize-cli',
         all: [
+          'diarize-cli',
           'libonnxruntime.so',
-          'libonnxruntime_providers_shared.so',
-          'diarize-cli'
+          'libonnxruntime_providers_shared.so'
         ]
       };
     }
@@ -83,13 +92,15 @@ class EnhancedDiarizationBinaryManager {
         id: 'segmentation-3.0',
         filename: 'segmentation-3.0.onnx',
         purpose: 'speaker_segmentation',
-        required: true
+        required: true,
+        minSize: 5000000 // 5MB minimum
       },
       {
         id: 'embedding-1.0',
         filename: 'embedding-1.0.onnx',
         purpose: 'speaker_embedding',
-        required: true
+        required: true,
+        minSize: 15000000 // 15MB minimum
       }
     ];
   }
@@ -106,57 +117,78 @@ class EnhancedDiarizationBinaryManager {
     return path.join(this.modelsDir, model.filename);
   }
 
+  // ENHANCED: Better library detection across platforms
+  async findONNXRuntimeLibraries() {
+    const libraries = {
+      found: [],
+      missing: [],
+      primary: null
+    };
+
+    // Check for primary ONNX Runtime library
+    const candidates = this.platform === 'darwin' 
+      ? [
+          'libonnxruntime.dylib',
+          'libonnxruntime.1.16.3.dylib'
+        ]
+      : this.platform === 'win32'
+      ? ['onnxruntime.dll']
+      : ['libonnxruntime.so', 'libonnxruntime.so.1.16.3'];
+
+    for (const libName of candidates) {
+      const libPath = path.join(this.binariesDir, libName);
+      try {
+        await fs.access(libPath, fs.constants.F_OK);
+        libraries.found.push(libName);
+        if (!libraries.primary) {
+          libraries.primary = libName;
+        }
+      } catch (error) {
+        // Library not found
+      }
+    }
+
+    // Check optional libraries
+    for (const libName of this.requiredFiles.optional || []) {
+      const libPath = path.join(this.binariesDir, libName);
+      try {
+        await fs.access(libPath, fs.constants.F_OK);
+        libraries.found.push(libName);
+      } catch (error) {
+        libraries.missing.push(libName);
+      }
+    }
+
+    return libraries;
+  }
+
   async ensureDiarizationBinary() {
     const binaryPath = this.getDiarizationBinaryPath();
     
     try {
+      console.log('🔍 Checking diarization binary setup...');
+      
       // Check main executable
       await fs.access(binaryPath, fs.constants.F_OK | fs.constants.X_OK);
       console.log(`✅ Diarization executable found: ${binaryPath}`);
       
-      // FIXED: For macOS, use flexible library checking
-      if (this.platform === 'darwin') {
-        console.log('🔍 Checking macOS ONNX Runtime libraries...');
+      // ENHANCED: Cross-platform library verification
+      const libraries = await this.findONNXRuntimeLibraries();
+      
+      if (libraries.primary) {
+        console.log(`✅ Found primary ONNX Runtime library: ${libraries.primary}`);
         
-        let foundRequiredLib = false;
-        
-        // Check for any acceptable ONNX Runtime library
-        if (this.requiredFiles.optional) {
-          for (const libName of this.requiredFiles.optional) {
-            const libPath = path.join(this.binariesDir, libName);
-            try {
-              await fs.access(libPath, fs.constants.F_OK);
-              console.log(`✅ Found optional library: ${libName}`);
-              foundRequiredLib = true;
-            } catch (error) {
-              console.log(`ℹ️ Optional library ${libName} not found (this is normal)`);
-            }
-          }
+        if (libraries.found.length > 1) {
+          console.log(`✅ Additional libraries: ${libraries.found.filter(f => f !== libraries.primary).join(', ')}`);
         }
         
-        if (!foundRequiredLib) {
-          console.error('❌ No ONNX Runtime library found');
-          return false;
+        if (libraries.missing.length > 0) {
+          console.log(`ℹ️ Optional libraries not found: ${libraries.missing.join(', ')} (this may be normal)`);
         }
-        
       } else {
-        // For Windows/Linux, use the original checking logic
-        const missingFiles = [];
-        for (const fileName of this.requiredFiles.all) {
-          const filePath = path.join(this.binariesDir, fileName);
-          try {
-            await fs.access(filePath, fs.constants.F_OK);
-            console.log(`✅ Found: ${fileName}`);
-          } catch (error) {
-            missingFiles.push(fileName);
-            console.error(`❌ Missing: ${fileName}`);
-          }
-        }
-        
-        if (missingFiles.length > 0) {
-          console.error(`❌ Missing required diarization files: ${missingFiles.join(', ')}`);
-          return false;
-        }
+        console.error('❌ No ONNX Runtime library found');
+        console.error('💡 Expected libraries:', this.requiredFiles.optional.join(', '));
+        return false;
       }
       
       // Test the binary functionality
@@ -187,7 +219,14 @@ class EnhancedDiarizationBinaryManager {
         const modelPath = path.join(this.modelsDir, model.filename);
         try {
           const stats = await fs.stat(modelPath);
-          console.log(`✅ Found model: ${model.filename} (${Math.round(stats.size / 1024 / 1024)} MB)`);
+          
+          // Verify model size
+          if (stats.size < model.minSize) {
+            console.warn(`⚠️ Model ${model.filename} is too small (${Math.round(stats.size / 1024 / 1024)}MB, expected >${Math.round(model.minSize / 1024 / 1024)}MB)`);
+            missingModels.push(model);
+          } else {
+            console.log(`✅ Found model: ${model.filename} (${Math.round(stats.size / 1024 / 1024)} MB)`);
+          }
         } catch (error) {
           missingModels.push(model);
           console.warn(`❌ Missing model: ${model.filename}`);
@@ -196,7 +235,7 @@ class EnhancedDiarizationBinaryManager {
       
       if (missingModels.length > 0) {
         console.warn(`⚠️ Missing ${missingModels.length} diarization models`);
-        console.warn('💡 Models will be downloaded automatically when needed');
+        console.warn('💡 Run: npm run build:diarization to download models');
         return false;
       }
       
@@ -212,46 +251,69 @@ class EnhancedDiarizationBinaryManager {
     const binaryPath = this.getDiarizationBinaryPath();
     
     try {
-      // Test with --help flag
+      console.log('🧪 Testing diarization binary...');
+      
       const options = {
         timeout: 10000,
-        cwd: this.binariesDir  // Run from binaries directory so DLLs are found
+        cwd: this.binariesDir,
+        env: {
+          ...process.env,
+          // ENHANCED: Platform-specific environment setup
+          ...(this.platform === 'darwin' && {
+            DYLD_LIBRARY_PATH: `${this.binariesDir}:${process.env.DYLD_LIBRARY_PATH || ''}`,
+            DYLD_FALLBACK_LIBRARY_PATH: this.binariesDir
+          }),
+          ...(this.platform === 'linux' && {
+            LD_LIBRARY_PATH: `${this.binariesDir}:${process.env.LD_LIBRARY_PATH || ''}`
+          })
+        }
       };
       
       const { stdout, stderr } = await execAsync(`"${binaryPath}" --help`, options);
       
       const output = stdout + stderr;
       
-      // Check for expected output
-      if (output.includes('WhisperDesk Speaker Diarization CLI') || 
-          output.includes('diarize-cli') ||
-          output.includes('--audio') ||
-          output.includes('Usage:')) {
-        
+      // Check for expected output patterns
+      const expectedPatterns = [
+        'WhisperDesk Speaker Diarization CLI',
+        'diarize-cli',
+        '--audio',
+        '--segment-model',
+        '--embedding-model'
+      ];
+      
+      const foundPatterns = expectedPatterns.filter(pattern => 
+        output.toLowerCase().includes(pattern.toLowerCase())
+      );
+      
+      if (foundPatterns.length >= 3) {
         console.log('✅ Diarization binary test passed');
         return {
           success: true,
           output: output.substring(0, 200),
-          binaryType: 'diarize-cli'
+          binaryType: 'diarize-cli',
+          foundPatterns: foundPatterns.length
         };
       } else {
         return {
           success: false,
-          error: 'Binary test produced unexpected output',
+          error: `Binary test produced unexpected output (found ${foundPatterns.length}/${expectedPatterns.length} patterns)`,
           output: output.substring(0, 200)
         };
       }
       
     } catch (error) {
-      // FIXED: Better error messages for macOS
+      console.error('❌ Binary test failed:', error.message);
+      
+      // ENHANCED: Platform-specific error diagnosis
       let errorMessage = error.message;
       
       if (this.platform === 'darwin' && error.message.includes('dylib')) {
-        if (error.message.includes('providers_shared')) {
-          errorMessage = `ONNX Runtime providers_shared library issue. This may be expected on macOS if statically linked. Original error: ${error.message}`;
-        } else {
-          errorMessage = `ONNX Runtime library loading failed: ${error.message}`;
-        }
+        errorMessage = `macOS library loading failed: ${error.message}\n💡 Try: brew install jsoncpp || check ONNX Runtime libraries`;
+      } else if (this.platform === 'win32' && error.message.includes('.dll')) {
+        errorMessage = `Windows DLL loading failed: ${error.message}\n💡 Ensure all DLL files are in binaries directory`;
+      } else if (this.platform === 'linux' && error.message.includes('.so')) {
+        errorMessage = `Linux shared library loading failed: ${error.message}\n💡 Check LD_LIBRARY_PATH and library dependencies`;
       }
       
       return {
@@ -261,11 +323,12 @@ class EnhancedDiarizationBinaryManager {
     }
   }
 
+  // ENHANCED: Better diarization with aggressive multi-speaker detection
   async performDiarization(audioPath, options = {}) {
     const {
       maxSpeakers = 10,
-      threshold = 0.5,
-      verbose = false,
+      threshold = 0.01,  // MUCH lower default threshold
+      verbose = true,
       outputFile = null
     } = options;
 
@@ -276,12 +339,13 @@ class EnhancedDiarizationBinaryManager {
     // Verify all files exist
     await this.verifyDiarizationSetup(audioPath, segmentModelPath, embeddingModelPath);
 
+    // ENHANCED: More aggressive parameters for multi-speaker detection
     const args = [
       '--audio', audioPath,
       '--segment-model', segmentModelPath,
       '--embedding-model', embeddingModelPath,
       '--max-speakers', maxSpeakers.toString(),
-      '--threshold', threshold.toString(),
+      '--threshold', threshold.toString(),  // Very low threshold
       '--output-format', 'json'
     ];
 
@@ -293,19 +357,26 @@ class EnhancedDiarizationBinaryManager {
       args.push('--output', outputFile);
     }
 
-    console.log(`🚀 Starting diarization: ${binaryPath}`);
-    console.log(`📋 Args: ${args.join(' ')}`);
+    console.log(`🚀 Starting diarization with aggressive multi-speaker detection:`);
+    console.log(`   Binary: ${binaryPath}`);
+    console.log(`   Audio: ${audioPath}`);
+    console.log(`   Max speakers: ${maxSpeakers}`);
+    console.log(`   Threshold: ${threshold} (low = more speakers detected)`);
+    console.log(`   Args: ${args.join(' ')}`);
 
     return new Promise((resolve, reject) => {
       const process = spawn(binaryPath, args, {
-        cwd: this.binariesDir, // Run from binaries directory for DLL loading
+        cwd: this.binariesDir,
         stdio: ['pipe', 'pipe', 'pipe'],
         env: {
           ...process.env,
-          // FIXED: Set library path for macOS
+          // Platform-specific library paths
           ...(this.platform === 'darwin' && {
             DYLD_LIBRARY_PATH: `${this.binariesDir}:${process.env.DYLD_LIBRARY_PATH || ''}`,
             DYLD_FALLBACK_LIBRARY_PATH: this.binariesDir
+          }),
+          ...(this.platform === 'linux' && {
+            LD_LIBRARY_PATH: `${this.binariesDir}:${process.env.LD_LIBRARY_PATH || ''}`
           })
         }
       });
@@ -330,7 +401,9 @@ class EnhancedDiarizationBinaryManager {
       process.stderr.on('data', (data) => {
         const output = data.toString();
         stderr += output;
-        console.log(`📝 diarize-cli stderr: ${output.trim()}`);
+        if (verbose) {
+          console.log(`📝 diarize-cli: ${output.trim()}`);
+        }
       });
 
       process.on('close', (code) => {
@@ -338,12 +411,35 @@ class EnhancedDiarizationBinaryManager {
 
         if (code === 0) {
           try {
-            // Parse JSON output
             const result = JSON.parse(stdout);
-            console.log(`✅ Diarization successful: ${result.segments?.length || 0} segments, ${result.total_speakers || 0} speakers`);
-            resolve(result);
+            
+            // ENHANCED: Validate and enhance results
+            if (result.segments && Array.isArray(result.segments)) {
+              console.log(`✅ Diarization successful:`);
+              console.log(`   📊 ${result.segments.length} segments detected`);
+              console.log(`   👥 ${result.total_speakers || 'unknown'} speakers identified`);
+              
+              // Log speaker distribution for debugging
+              const speakerCounts = {};
+              result.segments.forEach(seg => {
+                const speaker = seg.speaker_id || 'unknown';
+                speakerCounts[speaker] = (speakerCounts[speaker] || 0) + 1;
+              });
+              
+              console.log(`   🎯 Speaker distribution:`, speakerCounts);
+              
+              // If only 1 speaker detected with low threshold, suggest even lower
+              if (result.total_speakers === 1 && threshold > 0.001) {
+                console.log(`   💡 Only 1 speaker detected. Try even lower threshold (0.001) for more speakers.`);
+              }
+              
+              resolve(result);
+            } else {
+              reject(new Error('Invalid diarization output format - no segments found'));
+            }
           } catch (parseError) {
             console.error('❌ Failed to parse diarization output:', parseError.message);
+            console.error('Raw output:', stdout.substring(0, 500));
             reject(new Error(`Failed to parse diarization output: ${parseError.message}`));
           }
         } else {
@@ -355,16 +451,53 @@ class EnhancedDiarizationBinaryManager {
 
       process.on('error', (error) => {
         console.error('❌ Failed to start diarize-cli process:', error.message);
-        
-        if (this.platform === 'win32' && error.code === 'ENOENT') {
-          reject(new Error(`Failed to start diarize-cli.exe. Make sure all DLL files are present in ${this.binariesDir}`));
-        } else if (this.platform === 'darwin' && error.code === 'ENOENT') {
-          reject(new Error(`Failed to start diarize-cli. Make sure the binary is built and ONNX Runtime libraries are available in ${this.binariesDir}`));
-        } else {
-          reject(new Error(`Failed to start diarize-cli process: ${error.message}`));
-        }
+        reject(this.buildProcessStartError(error));
       });
     });
+  }
+
+  buildProcessStartError(error) {
+    let message = `Failed to start diarize-cli process: ${error.message}`;
+    
+    if (this.platform === 'win32' && error.code === 'ENOENT') {
+      message += `\n💡 Windows: Ensure diarize-cli.exe and all DLL files are in ${this.binariesDir}`;
+    } else if (this.platform === 'darwin' && error.code === 'ENOENT') {
+      message += `\n💡 macOS: Ensure diarize-cli binary is built and ONNX Runtime libraries are available`;
+    } else if (this.platform === 'linux' && error.code === 'ENOENT') {
+      message += `\n💡 Linux: Check binary permissions and shared library dependencies`;
+    }
+    
+    return new Error(message);
+  }
+
+  buildDiarizationErrorMessage(code, stderr) {
+    // Platform-specific error handling
+    if (this.platform === 'win32') {
+      if (code === 3221225501 || code === -1073741515) {
+        return 'ONNX Runtime DLL loading error - ensure all required DLL files are present';
+      } else if (stderr.includes('onnxruntime.dll')) {
+        return 'onnxruntime.dll not found or incompatible version';
+      }
+    } else if (this.platform === 'darwin') {
+      if (stderr.includes('dylib') && stderr.includes('image not found')) {
+        return 'ONNX Runtime library loading failed - run: npm run build:diarization';
+      } else if (stderr.includes('providers_shared')) {
+        return 'ONNX Runtime providers library issue - this may be expected if using static linking';
+      }
+    }
+    
+    // Generic errors
+    if (stderr.includes('model') && stderr.includes('not found')) {
+      return 'ONNX model file not found or corrupted - run: npm run build:diarization';
+    } else if (stderr.includes('audio') && stderr.includes('format')) {
+      return 'Unsupported audio format';
+    } else if (stderr.includes('threshold')) {
+      return 'Invalid threshold value - use range 0.001 to 1.0';
+    } else if (stderr.trim()) {
+      return `diarize-cli error: ${stderr.trim()}`;
+    } else {
+      return `diarize-cli process failed with exit code ${code}`;
+    }
   }
 
   async verifyDiarizationSetup(audioPath, segmentModelPath, embeddingModelPath) {
@@ -377,37 +510,11 @@ class EnhancedDiarizationBinaryManager {
     for (const file of filesToCheck) {
       try {
         await fs.access(file.path, fs.constants.F_OK);
+        const stats = await fs.stat(file.path);
+        console.log(`✅ ${file.name}: ${file.path} (${Math.round(stats.size / 1024 / 1024)}MB)`);
       } catch (error) {
         throw new Error(`${file.name} not found: ${file.path}`);
       }
-    }
-  }
-
-  buildDiarizationErrorMessage(code, stderr) {
-    if (this.platform === 'win32') {
-      if (code === 3221225501 || code === -1073741515) {
-        return 'ONNX Runtime DLL loading error - ensure all required DLL files are present';
-      } else if (stderr.includes('onnxruntime.dll')) {
-        return 'onnxruntime.dll not found or incompatible version';
-      }
-    } else if (this.platform === 'darwin') {
-      if (stderr.includes('dylib') && stderr.includes('image not found')) {
-        return 'ONNX Runtime library loading failed - ensure libonnxruntime.dylib is available or try rebuilding with static linking';
-      } else if (stderr.includes('providers_shared')) {
-        return 'ONNX Runtime providers library issue - this may be expected if using static linking';
-      }
-    }
-    
-    if (stderr.includes('model') && stderr.includes('not found')) {
-      return 'ONNX model file not found or corrupted';
-    } else if (stderr.includes('audio') && stderr.includes('format')) {
-      return 'Unsupported audio format';
-    } else if (stderr.includes('unknown argument') || stderr.includes('unrecognized')) {
-      return 'Binary argument error - diarize-cli may be incompatible version';
-    } else if (stderr.trim()) {
-      return `diarize-cli error: ${stderr.trim()}`;
-    } else {
-      return `diarize-cli process failed with exit code ${code}`;
     }
   }
 
@@ -418,7 +525,7 @@ class EnhancedDiarizationBinaryManager {
       binariesDir: this.binariesDir,
       modelsDir: this.modelsDir,
       diarizeBinaryPath: this.getDiarizationBinaryPath(),
-      requiredFiles: this.requiredFiles.all,
+      requiredFiles: this.requiredFiles.required,
       optionalFiles: this.requiredFiles.optional || [],
       requiredModels: this.modelFiles.map(m => m.filename),
       fileStatus: {},
@@ -426,19 +533,20 @@ class EnhancedDiarizationBinaryManager {
       binaryExists: false,
       binaryExecutable: false,
       modelsAvailable: false,
+      librariesFound: {},
       testResult: null,
       recommendation: null
     };
 
     try {
       // Check each required file
-      for (const fileName of this.requiredFiles.all) {
+      for (const fileName of this.requiredFiles.required) {
         const filePath = path.join(this.binariesDir, fileName);
         try {
           const stats = await fs.stat(filePath);
           status.fileStatus[fileName] = {
             exists: true,
-            size: Math.round(stats.size / 1024), // Size in KB
+            size: Math.round(stats.size / 1024),
             executable: fileName === this.requiredFiles.executable
           };
         } catch {
@@ -450,44 +558,26 @@ class EnhancedDiarizationBinaryManager {
         }
       }
 
-      // Check optional files
-      if (this.requiredFiles.optional) {
-        for (const fileName of this.requiredFiles.optional) {
-          const filePath = path.join(this.binariesDir, fileName);
-          try {
-            const stats = await fs.stat(filePath);
-            status.fileStatus[fileName] = {
-              exists: true,
-              size: Math.round(stats.size / 1024),
-              executable: false,
-              optional: true
-            };
-          } catch {
-            status.fileStatus[fileName] = {
-              exists: false,
-              size: 0,
-              executable: false,
-              optional: true
-            };
-          }
-        }
-      }
+      // Check library availability
+      status.librariesFound = await this.findONNXRuntimeLibraries();
 
-      // Check each required model
+      // Check models
       for (const model of this.modelFiles) {
         const modelPath = path.join(this.modelsDir, model.filename);
         try {
           const stats = await fs.stat(modelPath);
           status.modelStatus[model.filename] = {
             exists: true,
-            size: Math.round(stats.size / 1024 / 1024), // Size in MB
-            purpose: model.purpose
+            size: Math.round(stats.size / 1024 / 1024),
+            purpose: model.purpose,
+            valid: stats.size >= model.minSize
           };
         } catch {
           status.modelStatus[model.filename] = {
             exists: false,
             size: 0,
-            purpose: model.purpose
+            purpose: model.purpose,
+            valid: false
           };
         }
       }
@@ -513,35 +603,35 @@ class EnhancedDiarizationBinaryManager {
 
       // Check models availability
       const modelsExist = this.modelFiles.every(model => 
-        status.modelStatus[model.filename]?.exists
+        status.modelStatus[model.filename]?.exists && status.modelStatus[model.filename]?.valid
       );
       status.modelsAvailable = modelsExist;
 
+      // Check library availability
+      const librariesAvailable = status.librariesFound.primary !== null;
+
       if (!modelsExist) {
         const missingModels = this.modelFiles
-          .filter(model => !status.modelStatus[model.filename]?.exists)
+          .filter(model => !status.modelStatus[model.filename]?.valid)
           .map(model => model.filename);
-        status.recommendation = `Missing models: ${missingModels.join(', ')}. Run: npm run download:diarization-models`;
+        status.recommendation = `Missing/invalid models: ${missingModels.join(', ')}. Run: npm run build:diarization`;
+      } else if (!librariesAvailable) {
+        status.recommendation = `Missing ONNX Runtime libraries. Run: npm run build:diarization`;
       }
 
-      // Test binary functionality if everything looks good
-      if (status.binaryExists && status.binaryExecutable) {
+      // Test binary if everything looks good
+      if (status.binaryExists && status.binaryExecutable && librariesAvailable) {
         status.testResult = await this.testDiarizationBinary();
         
         if (!status.testResult.success) {
-          // FIXED: More specific recommendation for macOS
-          if (this.platform === 'darwin' && status.testResult.error.includes('dylib')) {
-            status.recommendation = 'Library loading issue on macOS. Try: npm run build:diarization with static linking';
-          } else {
-            status.recommendation = 'Binary exists but fails tests. Rebuild with: npm run build:diarization';
-          }
+          status.recommendation = `Binary exists but fails tests: ${status.testResult.error}`;
         }
       }
 
       // Final recommendation
       if (status.binaryExists && status.binaryExecutable && 
-          status.testResult?.success && status.modelsAvailable) {
-        status.recommendation = 'Speaker diarization is ready to use!';
+          status.testResult?.success && status.modelsAvailable && librariesAvailable) {
+        status.recommendation = 'Speaker diarization is ready! Use low threshold (0.001-0.01) for multi-speaker detection.';
       }
 
     } catch (error) {
@@ -562,17 +652,18 @@ class EnhancedDiarizationBinaryManager {
       await fs.mkdir(this.binariesDir, { recursive: true });
       await fs.mkdir(this.modelsDir, { recursive: true });
 
-      // Check binary availability
+      // Check binary and library availability
       const binaryReady = await this.ensureDiarizationBinary();
       const modelsReady = await this.checkRequiredModels();
       
       if (binaryReady && modelsReady) {
-        console.log('✅ Enhanced Diarization Binary Manager initialized with working binaries and models');
+        console.log('✅ Enhanced Diarization Binary Manager initialized - multi-speaker detection ready!');
+        console.log('💡 For best multi-speaker results, use threshold 0.001-0.01');
         return true;
       } else if (binaryReady && !modelsReady) {
         console.warn('⚠️ Diarization binary available but models are missing');
-        console.warn('💡 Models will be downloaded automatically when needed');
-        return true; // Still usable, models can be downloaded later
+        console.warn('💡 Run: npm run build:diarization');
+        return false;
       } else {
         console.warn('⚠️ Diarization Binary Manager initialized but binaries are not available');
         console.warn('💡 To fix this, run: npm run build:diarization');
@@ -588,25 +679,34 @@ class EnhancedDiarizationBinaryManager {
     const binaryPath = this.getDiarizationBinaryPath();
     
     return {
-      title: 'Speaker Diarization Not Available',
-      message: `The diarization binaries were not found at: ${this.binariesDir}`,
+      title: 'Multi-Speaker Diarization Not Available',
+      message: `The diarization system was not found or is not working properly.`,
       solutions: [
-        'Run "npm run build:diarization" to build the diarization CLI',
-        'Run "npm run download:diarization-models" to download required models',
-        this.platform === 'darwin' 
-          ? 'On macOS, ensure ONNX Runtime is available or build with static linking'
-          : 'Check that ONNX Runtime dependencies are installed',
+        'Run "npm run build:diarization" to build the complete diarization system',
+        'Ensure all ONNX Runtime libraries are installed for your platform',
+        'Verify that the required ONNX models are downloaded',
+        'Check that the binary has execute permissions (Unix systems)',
         'Restart the application after building'
       ],
+      recommendations: {
+        windows: 'Ensure Visual Studio C++ redistributables are installed',
+        macos: 'Run: brew install jsoncpp && npm run build:diarization',
+        linux: 'Install required dependencies: apt-get install libjsoncpp-dev'
+      },
       technicalInfo: {
         platform: this.platform,
         architecture: this.arch,
         executableName: this.requiredFiles.executable,
-        expectedFiles: this.requiredFiles.all,
+        expectedFiles: this.requiredFiles.required,
         optionalFiles: this.requiredFiles.optional || [],
         expectedModels: this.modelFiles.map(m => m.filename),
         binariesDirectory: this.binariesDir,
         modelsDirectory: this.modelsDir
+      },
+      troubleshooting: {
+        singleSpeaker: 'If only 1 speaker is detected, try threshold 0.001',
+        tooManySpeakers: 'If too many speakers detected, try threshold 0.05-0.1',
+        noSpeakers: 'If no speakers detected, check audio file format and models'
       }
     };
   }

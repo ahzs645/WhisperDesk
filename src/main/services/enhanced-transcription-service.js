@@ -90,22 +90,22 @@ class EnhancedTranscriptionService extends NativeTranscriptionService {
     ];
 
     return new Promise((resolve, reject) => {
-      const process = spawn(binaryPath, args, {
+      const diarizationProcess = spawn(binaryPath, args, {
         cwd: path.join(process.cwd(), 'binaries') // Run from binaries directory for DLL loading
       });
 
       let stdout = '';
       let stderr = '';
 
-      process.stdout.on('data', (data) => {
+      diarizationProcess.stdout.on('data', (data) => {
         stdout += data.toString();
       });
 
-      process.stderr.on('data', (data) => {
+      diarizationProcess.stderr.on('data', (data) => {
         stderr += data.toString();
       });
 
-      process.on('close', (code) => {
+      diarizationProcess.on('close', (code) => {
         if (code === 0) {
           try {
             const speakerSegments = JSON.parse(stdout);
@@ -118,7 +118,7 @@ class EnhancedTranscriptionService extends NativeTranscriptionService {
         }
       });
 
-      process.on('error', (error) => {
+      diarizationProcess.on('error', (error) => {
         reject(new Error(`Failed to start diarization process: ${error.message}`));
       });
     });
