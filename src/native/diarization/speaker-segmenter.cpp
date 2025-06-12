@@ -149,7 +149,7 @@ std::vector<float> SpeakerSegmenter::process_window(const std::vector<float>& au
         // Normalize audio
         normalize_audio(window);
         
-        // FIXED: Get actual input/output names from the model
+        // Get actual input/output names from the model
         auto input_name = session_->GetInputNameAllocated(0, Ort::AllocatorWithDefaultOptions());
         auto output_name = session_->GetOutputNameAllocated(0, Ort::AllocatorWithDefaultOptions());
         
@@ -172,18 +172,92 @@ std::vector<float> SpeakerSegmenter::process_window(const std::vector<float>& au
                                           input_names.data(), &input_tensor, 1,
                                           output_names.data(), 1);
         
-        // Extract probabilities
+        // Extract logits
         float* output_data = output_tensors[0].GetTensorMutableData<float>();
         auto output_shape = output_tensors[0].GetTensorTypeAndShapeInfo().GetShape();
         
-        size_t output_length = 1;
-        for (auto dim : output_shape) {
-            output_length *= static_cast<size_t>(dim);
+        // FIXED: Handle multi-class output properly
+        size_t time_steps = output_shape[1];  // 186
+        size_t num_speakers = output_shape[2]; // 7
+        
+        if (verbose_) {
+            std::cout << "Model output shape: ";
+            for (auto dim : output_shape) {
+                std::cout << dim << " ";
+            }
+            std::cout << std::endl;
+            
+            std::cout << "Time steps: " << time_steps << ", Speakers: " << num_speakers << std::endl;
+            std::cout << "Raw logits (first 10): ";
+            for (size_t i = 0; i < std::min(size_t(10), time_steps * num_speakers); i++) {
+                std::cout << output_data[i] << " ";
+            }
+            std::cout << std::endl;
         }
         
-        std::vector<float> probabilities(output_data, output_data + output_length);
+        // Convert logits to probabilities using softmax and detect changes
+        std::vector<float> change_probabilities;
+        change_probabilities.reserve(time_steps);
         
-        return probabilities;
+        int prev_dominant_speaker = -1;
+        
+        for (size_t t = 0; t < time_steps; t++) {
+            // Apply softmax to get speaker probabilities for this time step
+            std::vector<float> speaker_probs(num_speakers);
+            float max_logit = -std::numeric_limits<float>::infinity();
+            
+            // Find max for numerical stability
+            for (size_t s = 0; s < num_speakers; s++) {
+                float logit = output_data[t * num_speakers + s];
+                max_logit = std::max(max_logit, logit);
+            }
+            
+            // Compute softmax
+            float sum_exp = 0.0f;
+            for (size_t s = 0; s < num_speakers; s++) {
+                float logit = output_data[t * num_speakers + s];
+                speaker_probs[s] = std::exp(logit - max_logit);
+                sum_exp += speaker_probs[s];
+            }
+            
+            // Normalize
+            for (size_t s = 0; s < num_speakers; s++) {
+                speaker_probs[s] /= sum_exp;
+            }
+            
+            // Find dominant speaker
+            int dominant_speaker = 0;
+            float max_prob = speaker_probs[0];
+            for (size_t s = 1; s < num_speakers; s++) {
+                if (speaker_probs[s] > max_prob) {
+                    max_prob = speaker_probs[s];
+                    dominant_speaker = static_cast<int>(s);
+                }
+            }
+            
+            // Calculate change probability
+            float change_prob = 0.0f;
+            if (prev_dominant_speaker != -1 && prev_dominant_speaker != dominant_speaker) {
+                // Speaker changed - use confidence difference
+                change_prob = max_prob; // Higher confidence = more likely genuine change
+            }
+            
+            change_probabilities.push_back(change_prob);
+            prev_dominant_speaker = dominant_speaker;
+            
+            // Debug first few time steps
+            if (verbose_ && t < 3) {
+                std::cout << "Time " << t << ": dominant speaker " << dominant_speaker 
+                         << " (prob: " << max_prob << "), change_prob: " << change_prob << std::endl;
+            }
+        }
+        
+        if (verbose_) {
+            float max_change = *std::max_element(change_probabilities.begin(), change_probabilities.end());
+            std::cout << "Max change probability in window: " << max_change << std::endl;
+        }
+        
+        return change_probabilities;
         
     } catch (const std::exception& e) {
         std::cerr << "❌ Window processing failed: " << e.what() << std::endl;
@@ -218,15 +292,27 @@ std::vector<float> SpeakerSegmenter::find_peaks(const std::vector<float>& probab
         return peaks;
     }
     
+    if (verbose_) {
+        std::cout << "Finding peaks with threshold: " << threshold << std::endl;
+        std::cout << "Max probability in window: " << *std::max_element(probabilities.begin(), probabilities.end()) << std::endl;
+    }
+    
+    // FIXED: Much lower threshold since we're looking for speaker changes
+    float adaptive_threshold = std::max(threshold, 0.1f); // Minimum 0.1 threshold
+    
     // Find local maxima above threshold
     for (size_t i = 1; i < probabilities.size() - 1; i++) {
-        if (probabilities[i] > threshold && 
+        if (probabilities[i] > adaptive_threshold && 
             probabilities[i] > probabilities[i-1] && 
             probabilities[i] > probabilities[i+1]) {
             
             // Convert frame index to time
             float time_point = static_cast<float>(window_start_sample + i * samples_per_frame) / sample_rate_;
             peaks.push_back(time_point);
+            
+            if (verbose_) {
+                std::cout << "Found peak at time " << time_point << " with probability " << probabilities[i] << std::endl;
+            }
         }
     }
     
