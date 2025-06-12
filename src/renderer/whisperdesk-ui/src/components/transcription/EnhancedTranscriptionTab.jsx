@@ -387,14 +387,13 @@ export function EnhancedTranscriptionTab() {
         onNewTranscription={handleNewTranscription}
       />
 
-      {/* Enhanced Transcript Display */}
+      {/* Enhanced Transcript Display - Progress and Export now handled by Controls */}
       <TranscriptDisplay 
         transcriptionResult={appState.lastTranscriptionResult}
         isTranscribing={appState.isTranscribing}
         progress={appState.progress}
         progressMessage={appState.progressMessage}
         onCopy={handleCopyText}
-        onExport={handleExport}
       />
 
       {/* Enhanced Screen Recorder */}

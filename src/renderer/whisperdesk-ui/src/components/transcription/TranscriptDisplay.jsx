@@ -2,9 +2,8 @@ import React, { useState, useEffect, useRef } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Progress } from '@/components/ui/progress'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { User, Mic, Clock, Copy, Download } from 'lucide-react'
+import { User, Mic, Clock, Copy } from 'lucide-react'
 import { TranscriptSegment } from './TranscriptSegment'
 
 export function TranscriptDisplay({ 
@@ -13,7 +12,6 @@ export function TranscriptDisplay({
   progress = 0,
   progressMessage = '',
   onCopy,
-  onExport,
   className = "" 
 }) {
   const [autoScroll, setAutoScroll] = useState(true)
@@ -101,7 +99,7 @@ export function TranscriptDisplay({
               {segments.length > 0 
                 ? `${segments.length} segments • ${transcriptionResult?.metadata?.duration ? formatTime(transcriptionResult.metadata.duration) : 'Processing...'}`
                 : isTranscribing 
-                  ? 'Waiting for transcription...'
+                  ? progressMessage || 'Waiting for transcription...'
                   : 'Ready to transcribe'
               }
             </CardDescription>
@@ -124,29 +122,8 @@ export function TranscriptDisplay({
               <Copy className="w-4 h-4 mr-1" />
               Copy All
             </Button>
-            {onExport && (
-              <Button 
-                variant="outline" 
-                size="sm" 
-                onClick={onExport}
-                disabled={!hasContent}
-              >
-                <Download className="w-4 h-4 mr-1" />
-                Export
-              </Button>
-            )}
           </div>
         </div>
-        
-        {isTranscribing && (
-          <div className="mt-2">
-            <div className="flex justify-between text-xs text-muted-foreground mb-1">
-              <span>{progressMessage || 'Processing...'}</span>
-              <span>{Math.round(progress)}%</span>
-            </div>
-            <Progress value={progress} className="h-1.5" />
-          </div>
-        )}
       </CardHeader>
 
       {/* FIXED: Proper scroll container with explicit height constraint */}
@@ -159,7 +136,7 @@ export function TranscriptDisplay({
                   <div className="text-center">
                     <Clock className="w-8 h-8 mx-auto mb-2 opacity-50" />
                     <p>Waiting for transcript...</p>
-                    {isTranscribing && <p className="text-sm mt-1">Processing audio...</p>}
+                    {isTranscribing && <p className="text-sm mt-1">{progressMessage || 'Processing audio...'}</p>}
                   </div>
                 </div>
               ) : (
