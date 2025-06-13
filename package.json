@@ -306,5 +306,12 @@
   "engines": {
     "node": ">=20.0.0",
     "npm": ">=10.0.0"
+  },
+  "config": {
+    "forge": {
+      "packagerConfig": {
+        "icon": "resources/icons/icon.icns"
+      }
+    }
   }
 }
