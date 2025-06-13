@@ -1,3 +1,5 @@
+<img src="https://raw.githubusercontent.com/ahzs645/WhisperDesk/seperating-diarization/resources/icons/icon.png" alt="Icon" width="250"/>
+
 # WhisperDesk - Native Implementation
 
 A powerful desktop transcription application powered by native whisper.cpp with persistent state management and real-time progress feedback.
