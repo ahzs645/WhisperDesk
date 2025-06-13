@@ -1,4 +1,4 @@
-<img src="https://raw.githubusercontent.com/ahzs645/WhisperDesk/seperating-diarization/resources/icons/icon.png" alt="Icon" width="250"/>
+<img src="https://github.com/ahzs645/WhisperDesk/blob/main/resources/icons/icon.png" alt="Icon" width="250"/>
 
 # WhisperDesk - Native Implementation
 
