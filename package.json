@@ -22,7 +22,7 @@
     "build:renderer": "cd src/renderer/whisperdesk-ui && npm run build",
     "build:main": "echo 'Main process ready'",
     "build:whisper": "node tools/setup/build-whisper-official.js",
-    "build:diarization": "node scripts/enhanced-diarization-builder.js",
+    "build:diarization": "cd deps/diarization && npm run build && cp build/binaries/* ../../binaries/",
     "setup:diarization": "npm run build:diarization && npm run download:diarization-models",
     "build:all": "npm run build:whisper && npm run build:diarization",
     "build:whisper:windows": "powershell -ExecutionPolicy Bypass -File tools/setup/compile-whisper-windows.ps1",
@@ -34,7 +34,7 @@
     "dist:mac": "npm run build && electron-builder --mac && node scripts/rename-portable.js",
     "dist:linux": "npm run build && electron-builder --linux && node scripts/rename-portable.js",
     "dist:all": "npm run build && electron-builder --win --mac --linux && node scripts/rename-portable.js",
-    "postinstall": "electron-builder install-app-deps",
+    "postinstall": "git submodule update --init --recursive",
     "test": "jest",
     "test:transcription": "node test-transcription.js",
     "test:binary": "node -e \"const BinaryManager = require('./src/main/services/binary-manager-dll'); (async () => { const bm = new BinaryManager(); await bm.initialize(); const status = await bm.getStatus(); console.log(JSON.stringify(status, null, 2)); })()\"",
@@ -52,7 +52,8 @@
     "release:github": "gh release create v$npm_package_version dist/* --generate-notes",
     "version:patch": "npm version patch && git push && git push --tags",
     "version:minor": "npm version minor && git push && git push --tags",
-    "version:major": "npm version major && git push && git push --tags"
+    "version:major": "npm version major && git push && git push --tags",
+    "setup-diarization": "git submodule add https://github.com/ahzs645/whisperdesk-diarization.git deps/diarization"
   },
   "dependencies": {
     "axios": "^1.6.2",
@@ -69,7 +70,8 @@
     "electron-builder": "^24.13.3",
     "nodemon": "^3.1.10",
     "rimraf": "^5.0.5",
-    "wait-on": "^7.2.0"
+    "wait-on": "^7.2.0",
+    "whisperdesk-diarization": "file:deps/diarization"
   },
   "whisperdesk": {
     "binaryManagement": {
