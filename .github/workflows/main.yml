@@ -144,7 +144,7 @@ jobs:
   # Windows build
   build-windows:
     runs-on: windows-latest
-    needs: [determine-version, update-package-version]
+    needs: [determine-version]
 
     strategy:
       matrix:
@@ -458,7 +458,7 @@ jobs:
   # macOS build (with diarization)
   build-macos:
     runs-on: macos-latest
-    needs: [determine-version, update-package-version]
+    needs: [determine-version]
 
     strategy:
       matrix:
@@ -695,7 +695,7 @@ jobs:
   # Linux build (with diarization)
   build-linux:
     runs-on: ubuntu-22.04
-    needs: [determine-version, update-package-version]
+    needs: [determine-version]
 
     strategy:
       matrix:
