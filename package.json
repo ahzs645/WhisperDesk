@@ -40,6 +40,7 @@
     
     "_comment_helper_scripts": "=== HELPER SCRIPTS ===",
     "_ensure:submodule": "git submodule update --init --recursive || echo 'Submodule update failed or not in git repo'",
+    "_install:renderer": "cd src/renderer/whisperdesk-ui && pnpm install && cd ../../..",
     
     "_comment_electron_build_scripts": "=== ELECTRON BUILD & DISTRIBUTION ===",
     "electron:build": "npm run build && cp -r src/main dist/ && electron-builder && node scripts/rename-portable.js",
@@ -52,9 +53,11 @@
     
     "_comment_setup_scripts": "=== SETUP & INSTALLATION ===",
     "install:all": "npm install && cd src/renderer/whisperdesk-ui && pnpm install && cd ../../.. && npm run build:whisper",
-    "postinstall": "npm run _ensure:submodule",
+    "postinstall": "npm run _ensure:submodule && npm run _install:renderer",
     "setup": "./setup.sh",
     "setup:check": "node tools/setup/setup-check.js",
+    "setup:complete": "npm run build:whisper && npm run setup:diarization && npm run download:model:tiny",
+    "setup:dev": "npm run setup:complete && npm run dev",
     "setup:macos": "chmod +x tools/setup/build-whisper.sh && ./tools/setup/build-whisper.sh && npm run download:model:tiny",
     "setup:windows": "powershell -ExecutionPolicy Bypass -File tools/setup/compile-whisper-windows.ps1",
     
