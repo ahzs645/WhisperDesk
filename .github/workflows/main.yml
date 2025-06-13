@@ -37,6 +37,7 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
       tag_name: ${{ steps.version.outputs.tag_name }}
+      file_version: ${{ steps.version.outputs.file_version }}
 
     steps:
       - name: Checkout code
@@ -57,6 +58,7 @@ jobs:
             VERSION="${{ github.ref_name }}"
             VERSION="${VERSION#v}"
             TAG_NAME="${{ github.ref_name }}"
+            FILE_VERSION="$VERSION"
             echo "🏷️ Official release: $TAG_NAME"
             
             cat package.json | jq --arg version "$VERSION" '.version = $version' > package.json.tmp && mv package.json.tmp package.json
@@ -65,6 +67,7 @@ jobs:
           elif [ -n "${{ github.event.inputs.release_tag }}" ]; then
             TAG_NAME="${{ github.event.inputs.release_tag }}"
             VERSION="${TAG_NAME#v}"
+            FILE_VERSION="$VERSION"
             echo "🏷️ Manual release: $TAG_NAME"
             
             cat package.json | jq --arg version "$VERSION" '.version = $version' > package.json.tmp && mv package.json.tmp package.json
@@ -74,13 +77,17 @@ jobs:
             PACKAGE_VERSION=$(node -p "require('./package.json').version")
             VERSION="${PACKAGE_VERSION}-dev"
             TAG_NAME="dev"
+            FILE_VERSION="dev"
             echo "🚧 Development build: $VERSION"
+            echo "📁 File version: $FILE_VERSION"
           fi
           
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
+          echo "file_version=$FILE_VERSION" >> $GITHUB_OUTPUT
           echo "🏷️ Version: $VERSION"
           echo "🏷️ Tag: $TAG_NAME"
+          echo "📁 File Version: $FILE_VERSION"
 
   # Add this job after determine-version and before the build jobs
   update-package-version:
@@ -504,6 +511,9 @@ jobs:
           CSC_LINK: ${{ env.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ env.CSC_KEY_PASSWORD }}
           SIGNTOOL_PATH: ${{ env.SIGNTOOL_PATH }}
+          # NEW: Add file version for simplified dev naming
+          VERSION: ${{ needs.determine-version.outputs.version }}
+          FILE_VERSION: ${{ needs.determine-version.outputs.file_version }}
         shell: pwsh
         run: |
           Write-Host "🔧 Starting Electron build with code signing..."
@@ -514,7 +524,7 @@ jobs:
             
             Write-Host "✅ Electron build completed"
             
-            # Rename ZIP files to Portable versions
+            # Rename ZIP files to Portable versions with simplified dev naming
             Write-Host "🔧 Renaming ZIP files to Portable versions..."
             node scripts/rename-portable.js
             
@@ -1175,18 +1185,18 @@ jobs:
             ### 📦 Download Options:
             
             **🖥️ Windows (64-bit)**:
-            - `WhisperDesk-Setup-${{ needs.determine-version.outputs.version }}-win-x64.exe` - Installer (recommended)
-            - `WhisperDesk-Portable-${{ needs.determine-version.outputs.version }}-win-x64.zip` - **True Portable** (extract and run)
+            - `WhisperDesk-Setup-${{ needs.determine-version.outputs.file_version }}-win-x64.exe` - Installer (recommended)
+            - `WhisperDesk-Portable-${{ needs.determine-version.outputs.file_version }}-win-x64.zip` - **True Portable** (extract and run)
             
             **🍎 macOS**:
-            - `WhisperDesk-Portable-${{ needs.determine-version.outputs.version }}-mac-x64.zip` - Intel Mac portable
-            - `WhisperDesk-Portable-${{ needs.determine-version.outputs.version }}-mac-arm64.zip` - Apple Silicon portable
+            - `WhisperDesk-Portable-${{ needs.determine-version.outputs.file_version }}-mac-x64.zip` - Intel Mac portable
+            - `WhisperDesk-Portable-${{ needs.determine-version.outputs.file_version }}-mac-arm64.zip` - Apple Silicon portable
             
             **🐧 Linux (64-bit)**:
-            - `WhisperDesk-${{ needs.determine-version.outputs.version }}-linux-x64.AppImage` - Portable (recommended)
-            - `WhisperDesk-${{ needs.determine-version.outputs.version }}-linux-x64.deb` - Debian/Ubuntu package
-            - `WhisperDesk-${{ needs.determine-version.outputs.version }}-linux-x64.rpm` - Red Hat/Fedora package
-            - `WhisperDesk-${{ needs.determine-version.outputs.version }}-linux-x64.tar.gz` - Generic archive
+            - `WhisperDesk-${{ needs.determine-version.outputs.file_version }}-linux-x64.AppImage` - Portable (recommended)
+            - `WhisperDesk-${{ needs.determine-version.outputs.file_version }}-linux-x64.deb` - Debian/Ubuntu package
+            - `WhisperDesk-${{ needs.determine-version.outputs.file_version }}-linux-x64.rpm` - Red Hat/Fedora package
+            - `WhisperDesk-${{ needs.determine-version.outputs.file_version }}-linux-x64.tar.gz` - Generic archive
             
             ### ✨ NEW: Enhanced Multi-Speaker Features:
             - 🎭 **Advanced Speaker Diarization** - Built-in PyAnnote 3.0 ONNX models
