@@ -77,7 +77,7 @@ jobs:
             PACKAGE_VERSION=$(node -p "require('./package.json').version")
             VERSION="${PACKAGE_VERSION}-dev"
             TAG_NAME="dev"
-            FILE_VERSION="dev"
+            FILE_VERSION="dev"   # <-- Force clean dev filenames
             echo "🚧 Development build: $VERSION"
             echo "📁 File version: $FILE_VERSION"
           fi
