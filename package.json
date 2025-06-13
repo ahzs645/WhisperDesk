@@ -5,8 +5,8 @@
   "main": "src/main/main.js",
   "homepage": "https://whisperdesk.com",
   "author": {
-    "name": "WhisperDesk Team",
-    "email": "support@whisperdesk.com"
+    "name": "first form Labs",
+    "email": "support@firstform.com"
   },
   "license": "MIT",
   "private": true,
@@ -18,15 +18,18 @@
     "dev:start": "concurrently \"npm run dev:renderer\" \"wait-on http://localhost:3000 && npm run dev:main\"",
     "dev:renderer": "cd src/renderer/whisperdesk-ui && pnpm run dev",
     "dev:main": "cross-env NODE_ENV=development nodemon --watch src/main --exec electron .",
+    
     "_comment_build_scripts": "=== BUILD SCRIPTS ===",
     "build": "npm run build:renderer && npm run build:main",
     "build:renderer": "cd src/renderer/whisperdesk-ui && npm run build",
     "build:main": "echo 'Main process ready'",
     "build:whisper": "node tools/setup/build-whisper-official.js",
     "build:all": "npm run build:whisper && npm run build:diarization",
+    
     "_comment_whisper_platform_scripts": "=== WHISPER PLATFORM-SPECIFIC ===",
     "build:whisper:windows": "powershell -ExecutionPolicy Bypass -File tools/setup/compile-whisper-windows.ps1",
     "build:whisper:unix": "bash tools/setup/build-whisper.sh",
+    
     "_comment_diarization_scripts": "=== DIARIZATION SCRIPTS ===",
     "setup:diarization": "npm run _ensure:submodule && node scripts/setup-diarization.js",
     "setup:diarization:verbose": "npm run _ensure:submodule && node scripts/setup-diarization.js --verbose",
@@ -34,9 +37,11 @@
     "build:diarization": "npm run setup:diarization",
     "clean:diarization": "rm -rf binaries/diarize-cli* binaries/*onnxruntime* models/*.onnx",
     "rebuild:diarization": "npm run clean:diarization && npm run setup:diarization",
+    
     "_comment_helper_scripts": "=== HELPER SCRIPTS ===",
     "_ensure:submodule": "git submodule update --init --recursive || echo 'Submodule update failed or not in git repo'",
     "_install:renderer": "cd src/renderer/whisperdesk-ui && pnpm install && cd ../../..",
+    
     "_comment_electron_build_scripts": "=== ELECTRON BUILD & DISTRIBUTION ===",
     "electron:build": "npm run build && cp -r src/main dist/ && electron-builder && node scripts/rename-portable.js",
     "electron:build:win": "npm run build && electron-builder --win && node scripts/rename-portable.js",
@@ -45,6 +50,7 @@
     "dist:mac": "npm run build && electron-builder --mac && node scripts/rename-portable.js",
     "dist:linux": "npm run build && electron-builder --linux && node scripts/rename-portable.js",
     "dist:all": "npm run build && electron-builder --win --mac --linux && node scripts/rename-portable.js",
+    
     "_comment_setup_scripts": "=== SETUP & INSTALLATION ===",
     "install:all": "npm install && cd src/renderer/whisperdesk-ui && pnpm install && cd ../../.. && npm run build:whisper",
     "postinstall": "npm run _ensure:submodule && npm run _install:renderer",
@@ -54,19 +60,24 @@
     "setup:dev": "npm run setup:complete && npm run dev",
     "setup:macos": "chmod +x tools/setup/build-whisper.sh && ./tools/setup/build-whisper.sh && npm run download:model:tiny",
     "setup:windows": "powershell -ExecutionPolicy Bypass -File tools/setup/compile-whisper-windows.ps1",
+    
     "_comment_model_scripts": "=== MODEL MANAGEMENT ===",
     "download:model:tiny": "mkdir -p models && curl -L -o models/ggml-tiny.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin",
+    
     "_comment_testing_scripts": "=== TESTING & VALIDATION ===",
     "test": "jest",
     "test:transcription": "node test-transcription.js",
     "test:binary": "node -e \"const BinaryManager = require('./src/main/services/binary-manager-dll'); (async () => { const bm = new BinaryManager(); await bm.initialize(); const status = await bm.getStatus(); console.log(JSON.stringify(status, null, 2)); })()\"",
+    
     "_comment_dev_server_scripts": "=== DEVELOPMENT SERVERS ===",
     "web": "concurrently \"npm run server\" \"cd src/renderer/whisperdesk-ui && pnpm run dev\"",
+    
     "_comment_utility_scripts": "=== UTILITY SCRIPTS ===",
     "lint": "eslint src/",
     "clean": "rimraf dist build node_modules/.cache temp",
     "clean:all": "npm run clean && rimraf binaries models",
     "clean:binary": "rimraf binaries",
+    
     "_comment_release_scripts": "=== RELEASE MANAGEMENT ===",
     "release:prepare": "npm run clean && npm run build && npm run dist:all",
     "release:github": "gh release create v$npm_package_version dist/* --generate-notes",
@@ -349,10 +360,10 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/whisperdesk/whisperdesk-enhanced.git"
+    "url": "https://github.com/ahzs645/WhisperDesk.git"
   },
   "bugs": {
-    "url": "https://github.com/whisperdesk/whisperdesk-enhanced/issues"
+    "url": "https://github.com/ahzs645/WhisperDesk/issues"
   },
   "engines": {
     "node": ">=20.0.0",
