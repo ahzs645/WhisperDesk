@@ -160,16 +160,15 @@ jobs:
           echo "No changes to commit - icons are already up to date"
         else
           echo "Committing generated icons..."
-          git commit -m "🎨 Auto-generate app icons
-
-- Generated from assets/icon-source.png  
-- Updated package.json with icon paths
-- Ready for platform builds
-
-Files created:
-- resources/icons/icon.icns (macOS)
-- resources/icons/icon.ico (Windows)  
-- resources/icons/icon.png (Linux)"
+          git commit -m "🎨 Auto-generate app icons" \
+            -m "Changes made:
+            • Generated from assets/icon-source.png
+            • Updated package.json with icon paths
+            • Ready for platform builds" \
+            -m "Files created:
+            • resources/icons/icon.icns (macOS)
+            • resources/icons/icon.ico (Windows)
+            • resources/icons/icon.png (Linux)"
           
           # Push changes with error handling
           if git push; then
