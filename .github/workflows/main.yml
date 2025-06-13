@@ -82,10 +82,69 @@ jobs:
           echo "🏷️ Version: $VERSION"
           echo "🏷️ Tag: $TAG_NAME"
 
+  # Add this job after determine-version and before the build jobs
+  update-package-version:
+    if: github.ref_type == 'tag' || github.event.inputs.create_release == 'true'
+    runs-on: ubuntu-latest
+    needs: determine-version
+    permissions:
+      contents: write
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Update package.json versions
+        run: |
+          VERSION="${{ needs.determine-version.outputs.version }}"
+          echo "🏷️ Updating package.json to version: $VERSION"
+          
+          # Update main package.json
+          if [ -f "package.json" ]; then
+            cat package.json | jq --arg version "$VERSION" '.version = $version' > package.json.tmp
+            mv package.json.tmp package.json
+            echo "✅ Updated main package.json to $VERSION"
+          fi
+          
+          # Update renderer package.json if it exists
+          if [ -f "src/renderer/whisperdesk-ui/package.json" ]; then
+            cd src/renderer/whisperdesk-ui
+            cat package.json | jq --arg version "$VERSION" '.version = $version' > package.json.tmp
+            mv package.json.tmp package.json
+            echo "✅ Updated renderer package.json to $VERSION"
+            cd "$GITHUB_WORKSPACE"
+          fi
+
+      - name: Commit version updates
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          
+          if git diff --quiet; then
+            echo "No changes to commit"
+          else
+            git add package.json
+            if [ -f "src/renderer/whisperdesk-ui/package.json" ]; then
+              git add src/renderer/whisperdesk-ui/package.json
+            fi
+            
+            git commit -m "🔖 Update version to ${{ needs.determine-version.outputs.version }}"
+            git push origin HEAD:${{ github.ref_name }}
+            echo "✅ Version updates committed and pushed"
+          fi
+
   # Windows build
   build-windows:
     runs-on: windows-latest
-    needs: determine-version
+    needs: [determine-version, update-package-version]
 
     strategy:
       matrix:
@@ -399,7 +458,7 @@ jobs:
   # macOS build (with diarization)
   build-macos:
     runs-on: macos-latest
-    needs: determine-version
+    needs: [determine-version, update-package-version]
 
     strategy:
       matrix:
@@ -636,7 +695,7 @@ jobs:
   # Linux build (with diarization)
   build-linux:
     runs-on: ubuntu-22.04
-    needs: determine-version
+    needs: [determine-version, update-package-version]
 
     strategy:
       matrix:
