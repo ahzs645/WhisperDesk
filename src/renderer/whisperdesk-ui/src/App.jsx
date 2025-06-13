@@ -314,11 +314,11 @@ function AppContent() {
               </div>
               <div>
                 <h1 className="text-xl font-bold tracking-tight">WhisperDesk Enhanced</h1>
-                {appState.isElectron && (
-                  <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded inline-block mt-1">
-                    Electron
+                  <span className="text-xs px-2 py-0.5 rounded inline-block mt-1
+                  bg-gray-200 text-gray-800 
+                  dark:bg-gray-700 dark:text-gray-100">
+                    by first form
                   </span>
-                )}
               </div>
             </div>
           </div>
