@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './components/ui/tabs'
 import { Progress } from './components/ui/progress'
 import { Mic, Package, Clock, Settings, Video, BarChart3 } from 'lucide-react'
+import CustomMicIcon from './components/icons/CustomMicIcon'
 import { ModelMarketplace } from './components/ModelMarketplace-WebCompatible'
 import { AnalyticsTab } from './components/analytics/AnalyticsTab'
 import { EnhancedTranscriptionTab } from './components/transcription/EnhancedTranscriptionTab'
@@ -309,7 +310,7 @@ function AppContent() {
           <div className={`header-section header-center ${isMacOS ? 'macos-center' : ''}`}>
             <div className="flex items-center space-x-3">
               <div className="frosted-glass p-2 rounded-lg shadow-lg">
-                <Mic className="w-6 h-6 text-primary" />
+                <CustomMicIcon className="w-6 h-6 text-primary" />
               </div>
               <div>
                 <h1 className="text-xl font-bold tracking-tight">WhisperDesk Enhanced</h1>
