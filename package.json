@@ -189,7 +189,6 @@
       "!src/renderer/whisperdesk-ui/src/**/*",
       "!src/renderer/whisperdesk-ui/public/**/*",
       "!src/renderer/whisperdesk-ui/node_modules/**/*",
-      "!src/renderer/whisperdesk-ui/package*.json",
       "!**/node_modules/.cache/**/*",
       "!deps/**/*"
     ],
@@ -197,16 +196,12 @@
       {
         "from": "binaries/",
         "to": "binaries/",
-        "filter": [
-          "**/*"
-        ]
+        "filter": ["**/*"]
       },
       {
         "from": "models/",
         "to": "models/",
-        "filter": [
-          "**/*"
-        ]
+        "filter": ["**/*"]
       }
     ],
     "win": {
@@ -214,20 +209,21 @@
       "target": [
         {
           "target": "nsis",
-          "arch": [
-            "x64"
-          ]
+          "arch": ["x64"]
         },
         {
           "target": "zip",
-          "arch": [
-            "x64"
-          ]
+          "arch": ["x64"]
         }
       ],
       "publisherName": "WhisperDesk",
       "verifyUpdateCodeSignature": false,
       "requestedExecutionLevel": "asInvoker",
+      "certificateFile": null,
+      "certificatePassword": null,
+      "signingHashAlgorithms": ["sha256"],
+      "signAndEditExecutable": true,
+      "signDlls": false,
       "extraFiles": [
         {
           "from": "binaries/whisper.dll",
@@ -272,17 +268,16 @@
       "installerIcon": "resources/icons/icon.ico",
       "uninstallerIcon": "resources/icons/icon.ico",
       "artifactName": "${productName}-Setup-${version}-${os}-${arch}.${ext}",
-      "include": "build/installer.nsh"
+      "include": "resources/installer.nsh",
+      "warningsAsErrors": false,
+      "deleteAppDataOnUninstall": false
     },
     "mac": {
       "icon": "resources/icons/icon.icns",
       "target": [
         {
           "target": "zip",
-          "arch": [
-            "x64",
-            "arm64"
-          ]
+          "arch": ["x64", "arm64"]
         }
       ],
       "category": "public.app-category.productivity",
@@ -290,6 +285,9 @@
       "entitlementsInherit": "resources/entitlements.mac.plist",
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
+      "identity": null,
+      "type": "development",
+      "notarize": false,
       "extraFiles": [
         {
           "from": "binaries/whisper-cli",
@@ -314,27 +312,19 @@
       "target": [
         {
           "target": "AppImage",
-          "arch": [
-            "x64"
-          ]
+          "arch": ["x64"]
         },
         {
           "target": "deb",
-          "arch": [
-            "x64"
-          ]
+          "arch": ["x64"]
         },
         {
           "target": "rpm",
-          "arch": [
-            "x64"
-          ]
+          "arch": ["x64"]
         },
         {
           "target": "tar.gz",
-          "arch": [
-            "x64"
-          ]
+          "arch": ["x64"]
         }
       ],
       "category": "AudioVideo",

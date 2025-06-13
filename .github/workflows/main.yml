@@ -406,17 +406,110 @@ jobs:
           
           Write-Host "✅ All build prerequisites verified"
 
-      # 🔴 FIXED: Simplified electron-builder command
+      # 🔐 NEW: Setup Windows Code Signing
+      - name: Setup Windows Code Signing
+        shell: pwsh
+        run: |
+          Write-Host "🔐 Setting up Windows code signing..."
+          
+          # Create a self-signed certificate for GitHub Actions
+          try {
+            $cert = New-SelfSignedCertificate `
+              -DnsName "WhisperDesk" `
+              -Type CodeSigning `
+              -CertStoreLocation "cert:\LocalMachine\My" `
+              -FriendlyName "WhisperDesk Self-Signed Certificate" `
+              -NotAfter (Get-Date).AddDays(30)
+            
+            $password = ConvertTo-SecureString -String "temppass123" -Force -AsPlainText
+            $certPath = Join-Path $env:GITHUB_WORKSPACE "temp-cert.pfx"
+            
+            Export-PfxCertificate -Cert $cert -FilePath $certPath -Password $password | Out-Null
+            
+            # Set environment variables for electron-builder
+            echo "WIN_CSC_LINK=$certPath" >> $env:GITHUB_ENV
+            echo "WIN_CSC_KEY_PASSWORD=temppass123" >> $env:GITHUB_ENV
+            echo "CSC_LINK=$certPath" >> $env:GITHUB_ENV
+            echo "CSC_KEY_PASSWORD=temppass123" >> $env:GITHUB_ENV
+            
+            Write-Host "✅ Self-signed certificate created: $certPath"
+            
+            # Install signtool if not available
+            $signtoolPath = Get-Command signtool.exe -ErrorAction SilentlyContinue
+            if (-not $signtoolPath) {
+              Write-Host "📦 Installing Windows SDK for signtool..."
+              choco install windows-sdk-10-version-2004-all -y --no-progress --limitoutput
+              $env:SIGNTOOL_PATH = "C:\Program Files (x86)\Windows Kits\10\bin\10.0.19041.0\x64\signtool.exe"
+              echo "SIGNTOOL_PATH=$env:SIGNTOOL_PATH" >> $env:GITHUB_ENV
+            } else {
+              echo "SIGNTOOL_PATH=$($signtoolPath.Source)" >> $env:GITHUB_ENV
+            }
+            
+          } catch {
+            Write-Host "⚠️ Certificate creation failed: $($_.Exception.Message)"
+            Write-Host "ℹ️ Build will continue without code signing"
+            echo "WIN_CSC_LINK=" >> $env:GITHUB_ENV
+            echo "CSC_LINK=" >> $env:GITHUB_ENV
+          }
+
+      # 🔐 NEW: Create Windows signing script
+      - name: Create Windows signing script
+        shell: pwsh
+        run: |
+          $scriptContent = @'
+          #!/usr/bin/env node
+          const { execSync } = require('child_process');
+          const path = require('path');
+          const fs = require('fs');
+          
+          async function signWindows(configuration) {
+            const { path: filePath, isWin } = configuration;
+            
+            if (!isWin) return;
+            
+            console.log('🔐 Signing Windows executable:', path.basename(filePath));
+            
+            try {
+              const certFile = process.env.CSC_LINK;
+              const certPassword = process.env.CSC_KEY_PASSWORD;
+              const signtoolPath = process.env.SIGNTOOL_PATH || 'signtool';
+              
+              if (certFile && fs.existsSync(certFile)) {
+                const command = `"${signtoolPath}" sign /f "${certFile}" /p "${certPassword}" /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 "${filePath}"`;
+                execSync(command, { stdio: 'inherit' });
+                console.log('✅ Windows executable signed');
+              } else {
+                console.log('⚠️ No certificate available');
+              }
+            } catch (error) {
+              console.warn('⚠️ Signing failed (non-critical):', error.message);
+            }
+          }
+          
+          module.exports = signWindows;
+          '@
+          
+          New-Item -ItemType Directory -Force -Path "scripts" | Out-Null
+          $scriptContent | Set-Content -Path "scripts/sign-windows.js" -Encoding UTF8
+          Write-Host "✅ Windows signing script created"
+
+      # 🔴 MODIFIED: Build Electron app (Windows) - Add signing environment
       - name: Build Electron app
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
           DEBUG: electron-builder
+          # 🔐 Code signing environment
+          WIN_CSC_LINK: ${{ env.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ env.WIN_CSC_KEY_PASSWORD }}
+          CSC_LINK: ${{ env.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ env.CSC_KEY_PASSWORD }}
+          SIGNTOOL_PATH: ${{ env.SIGNTOOL_PATH }}
         shell: pwsh
         run: |
-          Write-Host "🔧 Starting Electron build..."
+          Write-Host "🔧 Starting Electron build with code signing..."
           
           try {
-            # FIXED: Much simpler electron-builder command
+            # Build with signing
             npx electron-builder --win --x64 --publish=never
             
             Write-Host "✅ Electron build completed"
@@ -439,10 +532,36 @@ jobs:
             }
           } catch {
             Write-Host "❌ Electron build failed: $($_.Exception.Message)"
-            Write-Host "📋 Error details:"
-            $Error[0] | Format-List * -Force
             exit 1
           }
+
+      # 🔐 NEW: Verify Code Signing
+      - name: Verify Code Signing
+        shell: bash
+        run: |
+          echo "🔍 Verifying code signing status..."
+          
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            # Check Windows executable signatures
+            for exe in dist/*.exe; do
+              if [ -f "$exe" ]; then
+                echo "Checking: $(basename "$exe")"
+                # Use Get-AuthenticodeSignature if available
+                powershell -Command "
+                  try {
+                    \$sig = Get-AuthenticodeSignature '$exe'
+                    if (\$sig.Status -eq 'Valid') {
+                      Write-Host '✅ Signed: $(basename "$exe")'
+                    } else {
+                      Write-Host '⚠️ Status: ' \$sig.Status ' - $(basename "$exe")'
+                    }
+                  } catch {
+                    Write-Host 'ℹ️ Could not verify signature for $(basename "$exe")'
+                  }
+                " || echo "ℹ️ Signature verification not available"
+              fi
+            done
+          fi
 
       # Upload artifacts
       - name: Upload Windows artifacts
@@ -664,24 +783,127 @@ jobs:
             exit 1
           fi
 
-      # 🔴 FIXED: Simplified electron-builder for macOS
+      # 🔐 NEW: Setup macOS Code Signing
+      - name: Setup macOS Code Signing
+        run: |
+          echo "🔐 Setting up macOS ad-hoc code signing..."
+          
+          # Disable automatic code signing by electron-builder
+          export CSC_IDENTITY_AUTO_DISCOVERY=false
+          echo "CSC_IDENTITY_AUTO_DISCOVERY=false" >> $GITHUB_ENV
+          
+          # Set ad-hoc signing mode
+          echo "APPLE_ID=" >> $GITHUB_ENV
+          echo "APPLE_APP_SPECIFIC_PASSWORD=" >> $GITHUB_ENV
+          echo "APPLE_TEAM_ID=" >> $GITHUB_ENV
+          
+          echo "✅ macOS signing environment configured for ad-hoc signing"
+
+      # 🔐 NEW: Create macOS signing script  
+      - name: Create macOS signing script
+        run: |
+          mkdir -p scripts
+          cat > scripts/sign-macos.js << 'EOF'
+          #!/usr/bin/env node
+          const { execSync } = require('child_process');
+          const path = require('path');
+          
+          async function signMacOS(appPath) {
+            console.log('🔐 Ad-hoc signing macOS app:', path.basename(appPath));
+            
+            try {
+              # Ad-hoc sign the app and all nested executables
+              execSync(`codesign --force --deep --sign - "${appPath}"`, { stdio: 'inherit' });
+              
+              # Sign specific binaries if they exist
+              const binaries = ['whisper-cli', 'diarize-cli'];
+              for (const binary of binaries) {
+                const binaryPath = path.join(appPath, 'Contents', 'Resources', 'binaries', binary);
+                try {
+                  execSync(`codesign --force --sign - "${binaryPath}"`, { stdio: 'pipe' });
+                  console.log(`✅ Signed binary: ${binary}`);
+                } catch (e) {
+                  console.log(`ℹ️ Binary not found or already signed: ${binary}`);
+                }
+              }
+              
+              console.log('✅ macOS app ad-hoc signed successfully');
+            } catch (error) {
+              console.warn('⚠️ macOS signing failed (non-critical):', error.message);
+            }
+          }
+          
+          # CLI usage
+          if (require.main === module) {
+            const appPath = process.argv[2];
+            if (appPath) {
+              signMacOS(appPath);
+            }
+          }
+          
+          module.exports = signMacOS;
+          EOF
+          
+          chmod +x scripts/sign-macos.js
+          echo "✅ macOS signing script created"
+
+      # 🔴 MODIFIED: Build Electron app (macOS) - Add post-build signing
       - name: Build Electron app
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
         run: |
           echo "🔧 Building Electron app for macOS ${{ matrix.arch }}..."
           
-          # FIXED: Much simpler command
+          # Build the app
           if [ "${{ matrix.arch }}" = "arm64" ]; then
             npx electron-builder --mac --arm64 --publish=never
           else
             npx electron-builder --mac --x64 --publish=never
           fi
           
+          # 🔐 NEW: Post-build ad-hoc signing
+          echo "🔐 Applying ad-hoc signatures to macOS app..."
+          
+          # Find the built app
+          APP_PATH=$(find dist -name "*.app" -type d | head -1)
+          if [ -n "$APP_PATH" ]; then
+            echo "Found app: $APP_PATH"
+            node scripts/sign-macos.js "$APP_PATH"
+          else
+            echo "⚠️ No .app found for signing"
+          fi
+          
           # Rename ZIP files to Portable versions
           node scripts/rename-portable.js
           
           echo "✅ macOS build completed"
+
+      # 🔐 NEW: Verify Code Signing
+      - name: Verify Code Signing
+        shell: bash
+        run: |
+          echo "🔍 Verifying code signing status..."
+          
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            # Check macOS app signatures
+            for app in dist/*.app; do
+              if [ -d "$app" ]; then
+                echo "Checking: $(basename "$app")"
+                if codesign -v "$app" 2>/dev/null; then
+                  echo "✅ Signed: $(basename "$app")"
+                else
+                  echo "⚠️ Signature issue: $(basename "$app")"
+                fi
+              fi
+            done
+            
+            # Check ZIP contents if they contain apps
+            for zip in dist/*.zip; do
+              if [ -f "$zip" ]; then
+                echo "ℹ️ ZIP archive: $(basename "$zip")"
+              fi
+            done
+          fi
 
       # Upload artifacts
       - name: Upload macOS artifacts
@@ -854,15 +1076,17 @@ jobs:
             exit 1
           fi
           
-          # Check binary
-          if [ -f "binaries/whisper-cli" ] && [ -x "binaries/whisper-cli" ]; then
-            echo "✅ whisper-cli binary ready"
+          # Check binary exists and is executable
+          BINARY_PATH="binaries/whisper-cli"
+          if [ -f "$BINARY_PATH" ] && [ -x "$BINARY_PATH" ]; then
+            echo "✅ whisper-cli binary found and executable"
+            echo "📊 Size: $(ls -lh $BINARY_PATH | awk '{print $5}')"
           else
-            echo "❌ whisper-cli binary missing"
+            echo "❌ whisper-cli binary missing or not executable"
             exit 1
           fi
           
-          # Check model
+          # Check model exists
           if [ -f "models/ggml-tiny.bin" ]; then
             echo "✅ Model ready"
           else
@@ -870,7 +1094,7 @@ jobs:
             exit 1
           fi
           
-          # Check renderer
+          # Check renderer build
           if [ -d "src/renderer/whisperdesk-ui/dist" ]; then
             echo "✅ Renderer ready"
           else

@@ -1,27 +1,70 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
-<dict>
+  <dict>
+    <!-- Basic app entitlements for WhisperDesk -->
+    
+    <!-- Allow hardened runtime (required for notarization) -->
     <key>com.apple.security.cs.allow-jit</key>
     <true/>
-    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
-    <true/>
+    
+    <!-- Allow loading of dynamically linked libraries -->
     <key>com.apple.security.cs.allow-dyld-environment-variables</key>
     <true/>
+    
+    <!-- Allow unsigned executable memory (needed for some audio processing) -->
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    
+    <!-- Disable library validation (allows loading whisper.cpp binaries) -->
     <key>com.apple.security.cs.disable-library-validation</key>
     <true/>
-    <key>com.apple.security.device.audio-input</key>
-    <true/>
-    <key>com.apple.security.device.microphone</key>
-    <true/>
+    
+    <!-- Network access for model downloads -->
     <key>com.apple.security.network.client</key>
     <true/>
-    <key>com.apple.security.network.server</key>
+    
+    <!-- File system access for audio file processing -->
+    <key>com.apple.security.files.user-selected.read-only</key>
     <true/>
+    
     <key>com.apple.security.files.user-selected.read-write</key>
     <true/>
+    
+    <!-- Audio input access for recording features -->
+    <key>com.apple.security.device.audio-input</key>
+    <true/>
+    
+    <!-- Screen recording access (for screen recording features) -->
+    <key>com.apple.security.device.screen-recording</key>
+    <true/>
+    
+    <!-- Camera access (if needed for future features) -->
+    <key>com.apple.security.device.camera</key>
+    <false/>
+    
+    <!-- Location access (typically not needed for transcription) -->
+    <key>com.apple.security.personal-information.location</key>
+    <false/>
+    
+    <!-- Print access (for exporting transcripts) -->
+    <key>com.apple.security.print</key>
+    <true/>
+    
+    <!-- App Sandbox (disabled for easier file access) -->
+    <key>com.apple.security.app-sandbox</key>
+    <false/>
+    
+    <!-- Inherit entitlements for child processes -->
+    <key>com.apple.security.inherit</key>
+    <true/>
+    
+    <!-- Allow access to user downloads folder -->
     <key>com.apple.security.files.downloads.read-write</key>
     <true/>
-</dict>
+    
+    <!-- Allow access to user documents folder -->
+    <key>com.apple.security.files.user-selected.executable</key>
+    <true/>
+  </dict>
 </plist>
-
