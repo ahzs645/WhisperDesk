@@ -1,0 +1,146 @@
+name: Generate App Icons
+
+on:
+  push:
+    paths:
+      - 'assets/icon-template.svg'
+      - 'assets/icon-source.png'
+      - '.github/workflows/generate-icons.yml'
+  workflow_dispatch:
+
+jobs:
+  generate-icons:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        
+    - name: Install dependencies
+      run: |
+        npm install -g electron-icon-maker
+        sudo apt-get update
+        sudo apt-get install -y inkscape imagemagick
+        
+    - name: Convert SVG to PNG (if SVG exists)
+      run: |
+        if [ -f "assets/icon-template.svg" ]; then
+          echo "Converting SVG to PNG..."
+          inkscape --export-type=png --export-filename=assets/icon-source.png --export-width=1024 --export-height=1024 assets/icon-template.svg
+        fi
+        
+    - name: Verify source image exists
+      run: |
+        if [ ! -f "assets/icon-source.png" ]; then
+          echo "Error: No source image found. Please provide either:"
+          echo "- assets/icon-template.svg (will be converted to PNG)"
+          echo "- assets/icon-source.png (1024x1024 minimum)"
+          exit 1
+        fi
+        
+    - name: Create icons directory
+      run: mkdir -p resources/icons
+      
+    - name: Generate platform icons
+      run: |
+        cd assets
+        electron-icon-maker --input=icon-source.png --output=../resources/icons
+        
+    - name: Organize icon files
+      run: |
+        # Ensure we have the required PNG for Linux (rename if needed)
+        if [ -f "resources/icons/1024x1024.png" ] && [ ! -f "resources/icons/icon.png" ]; then
+          cp resources/icons/1024x1024.png resources/icons/icon.png
+        elif [ ! -f "resources/icons/icon.png" ]; then
+          cp assets/icon-source.png resources/icons/icon.png
+        fi
+        
+    - name: Update package.json with icon paths
+      run: |
+        # Create a Node.js script to update package.json
+        cat > update-package.js << 'EOF'
+        const fs = require('fs');
+        const path = require('path');
+        
+        const packagePath = './package.json';
+        const packageJson = JSON.parse(fs.readFileSync(packagePath, 'utf8'));
+        
+        // Ensure config.forge.packagerConfig exists
+        if (!packageJson.config) packageJson.config = {};
+        if (!packageJson.config.forge) packageJson.config.forge = {};
+        if (!packageJson.config.forge.packagerConfig) packageJson.config.forge.packagerConfig = {};
+        
+        // Set icon paths to match build script expectations
+        packageJson.config.forge.packagerConfig.icon = 'resources/icons/icon.icns';
+        
+        // If makers array exists, ensure Windows and Linux have proper icon configs
+        if (packageJson.config.forge.makers) {
+          packageJson.config.forge.makers.forEach(maker => {
+            if (maker.name === '@electron-forge/maker-squirrel') {
+              if (!maker.config) maker.config = {};
+              maker.config.iconUrl = 'resources/icons/icon.ico';
+              maker.config.setupIcon = 'resources/icons/icon.ico';
+            }
+            if (maker.name === '@electron-forge/maker-deb') {
+              if (!maker.config) maker.config = {};
+              maker.config.options = maker.config.options || {};
+              maker.config.options.icon = 'resources/icons/icon.png';
+            }
+            if (maker.name === '@electron-forge/maker-rpm') {
+              if (!maker.config) maker.config = {};
+              maker.config.options = maker.config.options || {};
+              maker.config.options.icon = 'resources/icons/icon.png';
+            }
+            if (maker.name === '@electron-forge/maker-appimage') {
+              if (!maker.config) maker.config = {};
+              maker.config.options = maker.config.options || {};
+              maker.config.options.icon = 'resources/icons/icon.png';
+            }
+          });
+        }
+        
+        fs.writeFileSync(packagePath, JSON.stringify(packageJson, null, 2) + '\n');
+        console.log('Updated package.json with icon paths');
+        EOF
+        
+        node update-package.js
+        
+    - name: List generated files
+      run: |
+        echo "Generated icon files:"
+        find resources/icons -type f -name "*" | sort
+        
+    - name: Create summary
+      run: |
+        echo "## 🎨 Icon Generation Complete!" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### Generated Files:" >> $GITHUB_STEP_SUMMARY
+        echo "- **Windows**: \`resources/icons/icon.ico\`" >> $GITHUB_STEP_SUMMARY
+        echo "- **macOS**: \`resources/icons/icon.icns\`" >> $GITHUB_STEP_SUMMARY
+        echo "- **Linux**: \`resources/icons/icon.png\`" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### Next Steps:" >> $GITHUB_STEP_SUMMARY
+        echo "1. Run your build scripts - icons are ready!" >> $GITHUB_STEP_SUMMARY
+        echo "2. Icons are automatically configured in package.json" >> $GITHUB_STEP_SUMMARY
+        
+    - name: Commit generated icons
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add resources/icons/ package.json
+        
+        if git diff --staged --quiet; then
+          echo "No changes to commit"
+        else
+          git commit -m "🎨 Auto-generate app icons
+          
+          - Generated from assets/icon-source.png
+          - Updated package.json with icon paths
+          - Ready for platform builds"
+          git push
+        fi
