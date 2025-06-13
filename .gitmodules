@@ -1,0 +1,3 @@
+[submodule "deps/diarization"]
+	path = deps/diarization
+	url = https://github.com/ahzs645/whisperdesk-diarization.git
