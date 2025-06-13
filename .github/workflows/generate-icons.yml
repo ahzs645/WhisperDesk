@@ -8,6 +8,10 @@ on:
       - '.github/workflows/generate-icons.yml'
   workflow_dispatch:
 
+# Add permissions for the action to write to the repository
+permissions:
+  contents: write
+
 jobs:
   generate-icons:
     runs-on: ubuntu-latest
@@ -53,7 +57,22 @@ jobs:
         
     - name: Organize icon files
       run: |
-        # Ensure we have the required PNG for Linux (rename if needed)
+        # electron-icon-maker creates nested structure, move files to correct locations
+        if [ -d "resources/icons/icons" ]; then
+          # Move main icon files to root of resources/icons/
+          if [ -f "resources/icons/icons/mac/icon.icns" ]; then
+            mv resources/icons/icons/mac/icon.icns resources/icons/icon.icns
+          fi
+          
+          if [ -f "resources/icons/icons/win/icon.ico" ]; then
+            mv resources/icons/icons/win/icon.ico resources/icons/icon.ico
+          fi
+          
+          # Remove the nested icons directory after moving files
+          rm -rf resources/icons/icons/
+        fi
+        
+        # Ensure we have the required PNG for Linux
         if [ -f "resources/icons/1024x1024.png" ] && [ ! -f "resources/icons/icon.png" ]; then
           cp resources/icons/1024x1024.png resources/icons/icon.png
         elif [ ! -f "resources/icons/icon.png" ]; then
@@ -132,15 +151,33 @@ jobs:
       run: |
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
-        git add resources/icons/ package.json
         
+        # Add files to staging
+        git add resources/icons/ package.json 2>/dev/null || true
+        
+        # Check if there are any changes to commit
         if git diff --staged --quiet; then
-          echo "No changes to commit"
+          echo "No changes to commit - icons are already up to date"
         else
+          echo "Committing generated icons..."
           git commit -m "🎨 Auto-generate app icons
+
+- Generated from assets/icon-source.png  
+- Updated package.json with icon paths
+- Ready for platform builds
+
+Files created:
+- resources/icons/icon.icns (macOS)
+- resources/icons/icon.ico (Windows)  
+- resources/icons/icon.png (Linux)"
           
-          - Generated from assets/icon-source.png
-          - Updated package.json with icon paths
-          - Ready for platform builds"
-          git push
+          # Push changes with error handling
+          if git push; then
+            echo "✅ Successfully pushed icon changes"
+          else
+            echo "❌ Failed to push changes. You may need to:"
+            echo "1. Enable 'Allow GitHub Actions to create and approve pull requests' in Settings > Actions"
+            echo "2. Or manually commit the generated icons"
+            exit 1
+          fi
         fi
