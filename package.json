@@ -22,8 +22,14 @@
     "build:renderer": "cd src/renderer/whisperdesk-ui && npm run build",
     "build:main": "echo 'Main process ready'",
     "build:whisper": "node tools/setup/build-whisper-official.js",
-    "build:diarization": "cd deps/diarization && npm run build && cp build/binaries/* ../../binaries/",
-    "setup:diarization": "npm run build:diarization && npm run download:diarization-models",
+    "_comment_diarization_scripts": "=== DIARIZATION SCRIPTS ===",
+    "setup:diarization": "node scripts/setup-diarization.js",
+    "setup:diarization:verbose": "node scripts/setup-diarization.js --verbose",
+    "check:diarization": "node scripts/check-diarization.js",
+    "build:diarization": "cd deps/diarization && npm run build && cp binaries/* ../../binaries/ && cp models/*.onnx ../../models/",
+    "clean:diarization": "rm -rf binaries/diarize-cli* binaries/*onnxruntime* models/*.onnx",
+    "rebuild:diarization": "npm run clean:diarization && npm run setup:diarization",
+    
     "build:all": "npm run build:whisper && npm run build:diarization",
     "build:whisper:windows": "powershell -ExecutionPolicy Bypass -File tools/setup/compile-whisper-windows.ps1",
     "build:whisper:unix": "bash tools/setup/build-whisper.sh",
@@ -34,7 +40,7 @@
     "dist:mac": "npm run build && electron-builder --mac && node scripts/rename-portable.js",
     "dist:linux": "npm run build && electron-builder --linux && node scripts/rename-portable.js",
     "dist:all": "npm run build && electron-builder --win --mac --linux && node scripts/rename-portable.js",
-    "postinstall": "git submodule update --init --recursive",
+    "postinstall": "git submodule update --init --recursive && npm run setup:diarization",
     "test": "jest",
     "test:transcription": "node test-transcription.js",
     "test:binary": "node -e \"const BinaryManager = require('./src/main/services/binary-manager-dll'); (async () => { const bm = new BinaryManager(); await bm.initialize(); const status = await bm.getStatus(); console.log(JSON.stringify(status, null, 2)); })()\"",
@@ -52,8 +58,7 @@
     "release:github": "gh release create v$npm_package_version dist/* --generate-notes",
     "version:patch": "npm version patch && git push && git push --tags",
     "version:minor": "npm version minor && git push && git push --tags",
-    "version:major": "npm version major && git push && git push --tags",
-    "setup-diarization": "git submodule add https://github.com/ahzs645/whisperdesk-diarization.git deps/diarization"
+    "version:major": "npm version major && git push && git push --tags"
   },
   "dependencies": {
     "axios": "^1.6.2",
@@ -208,6 +213,14 @@
         {
           "from": "binaries/whisper-cli.exe",
           "to": "binaries/whisper-cli.exe"
+        },
+        {
+          "from": "binaries/diarize-cli.exe",
+          "to": "binaries/diarize-cli.exe"
+        },
+        {
+          "from": "binaries/onnxruntime.dll",
+          "to": "binaries/onnxruntime.dll"
         }
       ]
     },
@@ -242,6 +255,18 @@
         {
           "from": "binaries/whisper-cli",
           "to": "binaries/whisper-cli"
+        },
+        {
+          "from": "binaries/diarize-cli",
+          "to": "binaries/diarize-cli"
+        },
+        {
+          "from": "binaries/libonnxruntime.dylib",
+          "to": "binaries/libonnxruntime.dylib"
+        },
+        {
+          "from": "binaries/libonnxruntime.1.16.3.dylib",
+          "to": "binaries/libonnxruntime.1.16.3.dylib"
         }
       ]
     },
