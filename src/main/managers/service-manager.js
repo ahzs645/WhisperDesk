@@ -1,11 +1,13 @@
 // src/main/managers/service-manager.js
 const EventEmitter = require('events');
+const { createScreenRecorderSystem } = require('../screen-recorder');
 
 class ServiceManager extends EventEmitter {
   constructor() {
     super();
     this.services = {};
     this.mainWindow = null;
+    this.screenRecorderSystem = null;
   }
 
   async initialize() {
@@ -18,7 +20,7 @@ class ServiceManager extends EventEmitter {
       await this.initializeSettingsService();
       await this.initializeExportService();
       await this.initializeEnhancedDeviceManager();
-      await this.initializeEnhancedScreenRecorder();
+      await this.initializeScreenRecorder();
       
       console.log('✅ Services initialization completed');
       return true;
@@ -94,23 +96,19 @@ class ServiceManager extends EventEmitter {
     }
   }
 
-  async initializeEnhancedScreenRecorder() {
+  async initializeScreenRecorder() {
     try {
-      console.log('🔧 Initializing Centralized Screen Recorder System...');
-      const { createScreenRecorderSystem } = require('../screen-recorder');
+      console.log('🔧 Initializing Screen Recorder System...');
       
       // Create the complete screen recorder system
-      const screenRecorderSystem = await createScreenRecorderSystem();
+      this.screenRecorderSystem = await createScreenRecorderSystem();
       
-      // Store the service for compatibility
-      this.services.screenRecorder = screenRecorderSystem.service;
+      // Add the service to your services object
+      this.services.screenRecorder = this.screenRecorderSystem.service;
       
-      // Store the system for cleanup
-      this.screenRecorderSystem = screenRecorderSystem;
-      
-      console.log('✅ Centralized Screen Recorder System initialized successfully');
+      console.log('✅ Screen Recorder System initialized');
     } catch (error) {
-      console.error('❌ Centralized Screen Recorder System failed to initialize:', error);
+      console.error('❌ Failed to initialize Screen Recorder System:', error);
       console.warn('⚠️ Screen recorder will use fallback mode');
     }
   }
@@ -300,18 +298,17 @@ class ServiceManager extends EventEmitter {
     return this.services[serviceName];
   }
 
+  getScreenRecorderHandlers() {
+    return this.screenRecorderSystem?.handlers;
+  }
+
   async cleanup() {
     console.log('🔧 Cleaning up services...');
     
     // Cleanup screen recorder system first
-    if (this.screenRecorderSystem) {
+    if (this.screenRecorderSystem?.handlers) {
       try {
-        if (this.screenRecorderSystem.handlers) {
-          this.screenRecorderSystem.handlers.cleanup();
-        }
-        if (this.screenRecorderSystem.service) {
-          this.screenRecorderSystem.service.destroy();
-        }
+        this.screenRecorderSystem.handlers.cleanup();
         console.log('✅ Screen recorder system cleaned up');
       } catch (error) {
         console.error('❌ Failed to cleanup screen recorder system:', error);

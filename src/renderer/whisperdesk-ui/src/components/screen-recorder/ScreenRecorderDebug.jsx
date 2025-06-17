@@ -166,6 +166,171 @@ export const ScreenRecorderDebug = () => {
     }
   };
 
+  const testElectronAPIs = async () => {
+    console.log('🧪 Testing Electron APIs...');
+    addToEventLog('🧪 Starting comprehensive API tests...');
+    
+    // Test 1: Check if APIs exist
+    console.log('1. Checking API availability...');
+    console.log('electronAPI exists:', !!window.electronAPI);
+    console.log('file API exists:', !!window.electronAPI?.file);
+    console.log('screenRecorder API exists:', !!window.electronAPI?.screenRecorder);
+    
+    addToEventLog(`electronAPI exists: ${!!window.electronAPI}`);
+    addToEventLog(`file API exists: ${!!window.electronAPI?.file}`);
+    addToEventLog(`screenRecorder API exists: ${!!window.electronAPI?.screenRecorder}`);
+    
+    if (window.electronAPI?.file) {
+      const fileMethods = Object.keys(window.electronAPI.file);
+      console.log('Available file methods:', fileMethods);
+      addToEventLog(`Available file methods: ${fileMethods.join(', ')}`);
+    }
+    
+    // Test 2: Test screen recorder status
+    if (window.electronAPI?.screenRecorder?.getStatus) {
+      try {
+        const status = await window.electronAPI.screenRecorder.getStatus();
+        console.log('2. Screen recorder status test:', status);
+        addToEventLog(`✅ Screen recorder status: ${JSON.stringify(status)}`);
+      } catch (error) {
+        console.error('2. Screen recorder status test FAILED:', error);
+        addToEventLog(`❌ Screen recorder status test FAILED: ${error.message}`);
+      }
+    }
+    
+    // Test 3: Test file write (with small test data)
+    if (window.electronAPI?.file?.writeFile) {
+      try {
+        const testData = new TextEncoder().encode('test file content');
+        const testPath = 'test-recording.txt';
+        
+        await window.electronAPI.file.writeFile(testPath, testData);
+        console.log('3. File write test: SUCCESS');
+        addToEventLog('✅ File write test: SUCCESS');
+        
+        // Test if file exists
+        if (window.electronAPI.file.exists) {
+          const exists = await window.electronAPI.file.exists(testPath);
+          console.log('3. File exists test:', exists);
+          addToEventLog(`File exists test: ${exists}`);
+        }
+      } catch (error) {
+        console.error('3. File write test FAILED:', error);
+        addToEventLog(`❌ File write test FAILED: ${error.message}`);
+      }
+    }
+    
+    // Test 4: Test save dialog availability
+    if (window.electronAPI?.file?.showSaveDialog) {
+      console.log('4. Save dialog API: Available');
+      addToEventLog('✅ Save dialog API: Available');
+    } else {
+      console.log('4. Save dialog API: NOT Available');
+      addToEventLog('❌ Save dialog API: NOT Available');
+    }
+    
+    console.log('🧪 API tests completed');
+    addToEventLog('🧪 API tests completed');
+  };
+
+  const testSaveRecordingAPI = async () => {
+    console.log('🧪 Testing saveRecordingFile API specifically...');
+    addToEventLog('🧪 Testing saveRecordingFile API specifically...');
+    
+    try {
+      // Create a small test video blob
+      const canvas = document.createElement('canvas');
+      canvas.width = 100;
+      canvas.height = 100;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = 'red';
+      ctx.fillRect(0, 0, 100, 100);
+      
+      // Create a small test recording
+      const stream = canvas.captureStream();
+      const recorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
+      const chunks = [];
+      
+      recorder.ondataavailable = (e) => chunks.push(e.data);
+      
+      console.log('📹 Started test recording...');
+      addToEventLog('📹 Started test recording...');
+      recorder.start();
+      
+      // Record for 1 second
+      setTimeout(async () => {
+        recorder.stop();
+        
+        recorder.onstop = async () => {
+          try {
+            const blob = new Blob(chunks, { type: 'video/webm' });
+            const arrayBuffer = await blob.arrayBuffer();
+            const uint8Array = new Uint8Array(arrayBuffer);
+            
+            console.log(`📦 Created test blob: ${blob.size} bytes`);
+            addToEventLog(`📦 Created test blob: ${blob.size} bytes`);
+            
+            // Test saveRecordingFile with correct parameters
+            if (window.electronAPI?.file?.saveRecordingFile) {
+              const testPath = `test-recording-${Date.now()}.webm`;
+              
+              console.log('📋 Calling saveRecordingFile with path:', testPath, ', dataLength:', uint8Array.length);
+              addToEventLog(`📋 Calling saveRecordingFile with path: ${testPath}, dataLength: ${uint8Array.length}`);
+              
+              // Call with correct parameter order: filePath, data
+              const result = await window.electronAPI.file.saveRecordingFile(testPath, uint8Array);
+              console.log('✅ saveRecordingFile test result:', JSON.stringify(result));
+              addToEventLog(`✅ saveRecordingFile test result: ${JSON.stringify(result)}`);
+              
+              if (result && result.success) {
+                console.log('🎉 File save test PASSED! File saved to:', result.path);
+                addToEventLog(`🎉 File save test PASSED! File saved to: ${result.path}`);
+                
+                // Only test file existence if the exists API is available and doesn't cause errors
+                try {
+                  if (window.electronAPI.file.exists) {
+                    const exists = await window.electronAPI.file.exists(result.path);
+                    console.log('✅ File exists verification:', exists);
+                    addToEventLog(`✅ File exists verification: ${exists}`);
+                  }
+                } catch (existsError) {
+                  console.warn('⚠️ File existence check failed (but save was successful):', existsError.message);
+                  addToEventLog(`⚠️ File existence check failed (but save was successful): ${existsError.message}`);
+                }
+              } else {
+                console.error('❌ File save test FAILED:', result?.error);
+                addToEventLog(`❌ File save test FAILED: ${result?.error}`);
+              }
+            } else {
+              console.log('❌ saveRecordingFile not available');
+              addToEventLog('❌ saveRecordingFile not available');
+            }
+            
+            // Test default directory
+            try {
+              if (window.electronAPI?.file?.getDefaultRecordingsDirectory) {
+                const defaultDir = await window.electronAPI.file.getDefaultRecordingsDirectory();
+                console.log('📁 Default recordings directory:', defaultDir);
+                addToEventLog(`📁 Default recordings directory: ${defaultDir}`);
+              }
+            } catch (dirError) {
+              console.warn('⚠️ Could not get default directory:', dirError.message);
+              addToEventLog(`⚠️ Could not get default directory: ${dirError.message}`);
+            }
+            
+          } catch (error) {
+            console.error('❌ saveRecordingFile test failed:', error.message);
+            addToEventLog(`❌ saveRecordingFile test failed: ${error.message}`);
+          }
+        };
+      }, 1000);
+      
+    } catch (error) {
+      console.error('❌ Test setup failed:', error);
+      addToEventLog(`❌ Test setup failed: ${error.message}`);
+    }
+  };
+
   useEffect(() => {
     refreshDebugInfo();
     const interval = setInterval(refreshDebugInfo, 5000);
@@ -196,6 +361,14 @@ export const ScreenRecorderDebug = () => {
           <Button variant="outline" size="sm" onClick={testRecordingAPI}>
             <Play className="w-4 h-4 mr-2" />
             Test API
+          </Button>
+          <Button variant="outline" size="sm" onClick={testElectronAPIs}>
+            <Play className="w-4 h-4 mr-2" />
+            Test APIs
+          </Button>
+          <Button variant="outline" size="sm" onClick={testSaveRecordingAPI}>
+            <Play className="w-4 h-4 mr-2" />
+            Test Save Recording API
           </Button>
           <Button variant="outline" size="sm" onClick={analyzeConfiguration}>
             <CheckCircle className="w-4 h-4 mr-2" />

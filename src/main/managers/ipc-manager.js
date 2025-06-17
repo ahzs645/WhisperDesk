@@ -38,9 +38,32 @@ class IpcManager {
         }
       });
 
+      // Setup screen recorder handlers
+      this.setupScreenRecorderHandlers();
+
       console.log('✅ All IPC handlers set up successfully');
     } catch (error) {
       console.error('❌ Failed to setup IPC handlers:', error);
+    }
+  }
+
+  setupScreenRecorderHandlers() {
+    try {
+      console.log('🔧 Setting up Screen Recorder IPC handlers...');
+      
+      // Get the screen recorder handlers from service manager
+      const screenRecorderHandlers = this.serviceManager.getScreenRecorderHandlers();
+      
+      if (screenRecorderHandlers) {
+        // The handlers are already set up in the ScreenRecorderHandlers class
+        // We just need to ensure they're initialized
+        console.log('✅ Screen Recorder IPC handlers registered');
+      } else {
+        console.warn('⚠️ Screen Recorder handlers not available');
+      }
+    } catch (error) {
+      console.error('❌ Failed to set up Screen Recorder IPC handlers:', error);
+      throw error;
     }
   }
 
@@ -66,6 +89,12 @@ class IpcManager {
 
   cleanup() {
     console.log('🔧 Cleaning up IPC handlers...');
+    
+    // Clean up screen recorder handlers
+    const screenRecorderHandlers = this.serviceManager.getScreenRecorderHandlers();
+    if (screenRecorderHandlers) {
+      screenRecorderHandlers.cleanup();
+    }
     
     // Remove all registered handlers
     this.registeredHandlers.forEach(channel => {

@@ -245,6 +245,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     validateRecording: createSafeIPC('screenRecorder:validateRecording'),
     handleError: createSafeIPC('screenRecorder:handleError'),
     
+    // Additional methods from the requested API
+    confirmComplete: createSafeIPC('screenRecorder:confirmComplete'),
+    
     // Recording events
     onRecordingStarted: createEventListener('screenRecorder:started'),
     onRecordingValidated: createEventListener('screenRecorder:validated'),
@@ -272,7 +275,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     copy: createSafeIPC('export:copy')
   },
 
-  // File operations
+  // Enhanced File operations with complete API
   file: {
     showOpenDialog: createSafeIPC('file:showOpenDialog'),
     showSaveDialog: createSafeIPC('file:showSaveDialog'),
@@ -283,9 +286,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     /**
      * Write a file to the file system
      * @param {string} filePath - Path where to save the file
-     * @param {Buffer} buffer - File content as buffer
+     * @param {Buffer|string} data - File content as buffer or string
      */
-    async writeFile(filePath, buffer) {
+    async writeFile(filePath, data) {
       const fs = require('fs').promises;
       const path = require('path');
       const os = require('os');
@@ -303,13 +306,42 @@ contextBridge.exposeInMainWorld('electronAPI', {
         }
         
         // Write the file
-        await fs.writeFile(filePath, buffer);
+        await fs.writeFile(filePath, data);
         
         console.log(`✅ File written to: ${filePath}`);
         return { success: true, path: filePath };
       } catch (error) {
         console.error('❌ Failed to write file:', error);
         throw error;
+      }
+    },
+
+    /**
+     * Read file from the file system
+     * @param {string} filePath - Path to the file to read
+     * @param {object} options - Read options (encoding, etc.)
+     */
+    async readFile(filePath, options = {}) {
+      const fs = require('fs').promises;
+      try {
+        return await fs.readFile(filePath, options);
+      } catch (error) {
+        console.error('❌ Failed to read file:', error);
+        throw error;
+      }
+    },
+
+    /**
+     * Check if file exists
+     * @param {string} filePath - Path to check
+     */
+    async exists(filePath) {
+      const fs = require('fs').promises;
+      try {
+        await fs.access(filePath);
+        return true;
+      } catch {
+        return false;
       }
     },
 
@@ -323,16 +355,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
 
     /**
-     * Check if file exists
+     * Legacy method for backward compatibility
      */
     async fileExists(filePath) {
-      const fs = require('fs').promises;
-      try {
-        await fs.access(filePath);
-        return true;
-      } catch {
-        return false;
-      }
+      return this.exists(filePath);
     },
     
     // File events

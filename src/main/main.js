@@ -59,11 +59,11 @@ class WhisperDeskApp {
       this.storeManager = new StoreManager();
       await this.storeManager.initialize();
 
-      // Step 2: Initialize services
+      // Step 2: Initialize services (including screen recorder)
       this.serviceManager = new ServiceManager();
       await this.serviceManager.initialize();
 
-      // Step 3: Setup IPC handlers
+      // Step 3: Setup IPC handlers (including screen recorder handlers)
       this.ipcManager = new IpcManager(this.serviceManager);
       this.ipcManager.setupAllHandlers();
 
@@ -78,7 +78,7 @@ class WhisperDeskApp {
         }
       }
 
-      // Step 4: Create window manager
+      // Step 4: Create window manager (AFTER all handlers are set up)
       this.windowManager = new WindowManager(this.serviceManager);
       await this.windowManager.createMainWindow();
 
@@ -99,10 +99,38 @@ class WhisperDeskApp {
       });
 
       console.log('✅ WhisperDesk initialization completed');
+      
+      // Log registered IPC handlers for debugging
+      this.logRegisteredHandlers();
+      
       return true;
     } catch (error) {
       console.error('❌ WhisperDesk initialization failed:', error);
       return false;
+    }
+  }
+
+  // Add this method to help debug IPC handler registration
+  logRegisteredHandlers() {
+    try {
+      const { ipcMain } = require('electron');
+      console.log('📋 Checking IPC handlers...');
+      
+      // Test if screen recorder handlers are available
+      const testChannels = [
+        'screenRecorder:getStatus',
+        'screenRecorder:startRecording',
+        'screenRecorder:stopRecording'
+      ];
+      
+      testChannels.forEach(channel => {
+        // Note: There's no direct way to check if a handler exists,
+        // but we can log what we expect to be registered
+        console.log(`📋 Expected handler: ${channel}`);
+      });
+      
+    } catch (error) {
+      console.warn('⚠️ Could not log IPC handlers:', error);
     }
   }
 
