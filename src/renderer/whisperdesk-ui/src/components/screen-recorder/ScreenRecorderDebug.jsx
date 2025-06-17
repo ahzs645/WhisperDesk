@@ -331,6 +331,182 @@ export const ScreenRecorderDebug = () => {
     }
   };
 
+  const testAudioRecording = async () => {
+    console.log('🧪 Testing audio recording specifically...');
+    addToEventLog('🧪 Testing audio recording specifically...');
+    
+    try {
+      // Test microphone access
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        audio: {
+          deviceId: selectedAudioInput === 'default' ? undefined : { exact: selectedAudioInput },
+          autoGainControl: true,
+          echoCancellation: true,
+          noiseSuppression: true
+        }, 
+        video: false 
+      });
+      
+      console.log('✅ Audio stream obtained:', stream.getAudioTracks());
+      addToEventLog(`✅ Audio stream obtained with ${stream.getAudioTracks().length} audio tracks`);
+      
+      // Test that we can record from it
+      const recorder = new MediaRecorder(stream);
+      const chunks = [];
+      
+      recorder.ondataavailable = (e) => chunks.push(e.data);
+      recorder.onstop = () => {
+        const audioBlob = new Blob(chunks, { type: 'audio/webm' });
+        console.log('✅ Audio recording test successful:', audioBlob.size, 'bytes');
+        addToEventLog(`✅ Audio recording test successful: ${audioBlob.size} bytes`);
+        
+        // Create a URL to test playback
+        const audioUrl = URL.createObjectURL(audioBlob);
+        const audio = new Audio(audioUrl);
+        
+        addToEventLog('🔊 Test audio created - check browser console for playback URL');
+        console.log('🔊 Test audio playback URL:', audioUrl);
+        
+        // Cleanup
+        stream.getTracks().forEach(track => track.stop());
+      };
+      
+      // Record for 2 seconds
+      recorder.start();
+      setTimeout(() => recorder.stop(), 2000);
+      
+      addToEventLog('🎤 Recording 2 seconds of audio for test...');
+      
+    } catch (error) {
+      console.error('❌ Audio test failed:', error);
+      addToEventLog(`❌ Audio test failed: ${error.message}`);
+      
+      if (error.name === 'NotAllowedError') {
+        addToEventLog('❌ Microphone permission denied - check browser permissions');
+      } else if (error.name === 'NotFoundError') {
+        addToEventLog('❌ Audio device not found - check device selection');
+      }
+    }
+  };
+
+  const debugRecordingOptions = async () => {
+    console.log('🔍 Debugging recording options flow...');
+    addToEventLog('🔍 Debugging recording options flow...');
+    
+    try {
+      // 1. Check the current state
+      console.log('📋 Current state:', {
+        selectedScreen,
+        selectedAudioInput,
+        recordingSettings,
+        availableDevices
+      });
+      
+      addToEventLog(`📋 Selected screen: ${selectedScreen}`);
+      addToEventLog(`📋 Selected audio: ${selectedAudioInput}`);
+      addToEventLog(`📋 Include microphone: ${recordingSettings.includeMicrophone}`);
+      addToEventLog(`📋 Include system audio: ${recordingSettings.includeSystemAudio}`);
+      
+      // 2. Build the options object exactly like startRecording does
+      const recordingOptions = {
+        screenId: selectedScreen,
+        audioInputId: selectedAudioInput,
+        ...recordingSettings
+      };
+      
+      console.log('🎯 Recording options that would be sent:', recordingOptions);
+      addToEventLog(`🎯 Recording options: ${JSON.stringify(recordingOptions, null, 2)}`);
+      
+      // 3. Check if the audio device exists
+      const audioDevice = availableDevices.audio.find(device => device.id === selectedAudioInput);
+      if (audioDevice) {
+        console.log('✅ Audio device found:', audioDevice);
+        addToEventLog(`✅ Audio device found: ${audioDevice.name}`);
+      } else {
+        console.log('❌ Audio device NOT found');
+        addToEventLog(`❌ Audio device NOT found for ID: ${selectedAudioInput}`);
+      }
+      
+      // 4. Test what the service's cleanOptionsForIPC would do
+      const allowedKeys = [
+        'screenId',
+        'audioInputId', 
+        'includeMicrophone',
+        'includeSystemAudio',
+        'videoQuality',
+        'audioQuality',
+        'recordingDirectory',
+        'filename'
+      ];
+      
+      const cleanOptions = {};
+      allowedKeys.forEach(key => {
+        if (recordingOptions[key] !== undefined && recordingOptions[key] !== null) {
+          try {
+            JSON.stringify(recordingOptions[key]);
+            cleanOptions[key] = recordingOptions[key];
+          } catch (error) {
+            console.warn(`Skipping non-serializable option ${key}:`, error);
+          }
+        }
+      });
+      
+      console.log('🧹 Clean options for IPC:', cleanOptions);
+      addToEventLog(`🧹 Clean options: ${JSON.stringify(cleanOptions, null, 2)}`);
+      
+      // 5. Check validation
+      if (!cleanOptions.screenId) {
+        addToEventLog('❌ ISSUE: No screenId in clean options');
+      }
+      
+      if (cleanOptions.includeMicrophone && !cleanOptions.audioInputId) {
+        addToEventLog('❌ ISSUE: Microphone enabled but no audioInputId');
+      }
+      
+      if (!cleanOptions.includeMicrophone) {
+        addToEventLog('⚠️ NOTE: Microphone is disabled in settings');
+      }
+      
+      // 6. Test the actual getUserMedia call that would be made
+      if (cleanOptions.includeMicrophone && cleanOptions.audioInputId) {
+        try {
+          console.log('🧪 Testing getUserMedia with exact options...');
+          const audioConstraints = {
+            deviceId: cleanOptions.audioInputId === 'default' ? undefined : { exact: cleanOptions.audioInputId },
+            autoGainControl: true,
+            echoCancellation: true,
+            noiseSuppression: true,
+            sampleRate: 44100,
+            sampleSize: 16,
+            channelCount: 2
+          };
+          
+          console.log('🎤 Audio constraints:', audioConstraints);
+          addToEventLog(`🎤 Audio constraints: ${JSON.stringify(audioConstraints)}`);
+          
+          const testStream = await navigator.mediaDevices.getUserMedia({
+            video: false,
+            audio: audioConstraints
+          });
+          
+          console.log('✅ getUserMedia test successful:', testStream.getAudioTracks());
+          addToEventLog(`✅ getUserMedia test successful: ${testStream.getAudioTracks().length} tracks`);
+          
+          // Cleanup
+          testStream.getTracks().forEach(track => track.stop());
+          
+        } catch (error) {
+          console.error('❌ getUserMedia test failed:', error);
+          addToEventLog(`❌ getUserMedia test failed: ${error.message}`);
+        }
+      }
+      
+    } catch (error) {
+      console.error('❌ Debug failed:', error);
+      addToEventLog(`❌ Debug failed: ${error.message}`);
+    }
+  };
+
   useEffect(() => {
     refreshDebugInfo();
     const interval = setInterval(refreshDebugInfo, 5000);
@@ -369,6 +545,14 @@ export const ScreenRecorderDebug = () => {
           <Button variant="outline" size="sm" onClick={testSaveRecordingAPI}>
             <Play className="w-4 h-4 mr-2" />
             Test Save Recording API
+          </Button>
+          <Button variant="outline" size="sm" onClick={testAudioRecording}>
+            <Play className="w-4 h-4 mr-2" />
+            Test Audio Recording
+          </Button>
+          <Button variant="outline" size="sm" onClick={debugRecordingOptions}>
+            <CheckCircle className="w-4 h-4 mr-2" />
+            Debug Recording Options
           </Button>
           <Button variant="outline" size="sm" onClick={analyzeConfiguration}>
             <CheckCircle className="w-4 h-4 mr-2" />

@@ -1,12 +1,14 @@
 /**
  * @fileoverview Handles the actual screen recording in the renderer process
- * This includes MediaRecorder management and file saving
+ * This includes MediaRecorder management and file saving with AUDIO SUPPORT
  */
 
 class ScreenRecorderHandler {
   constructor() {
     this.mediaRecorder = null;
     this.mediaStream = null;
+    this.audioStream = null; // NEW: Separate audio stream
+    this.combinedStream = null; // NEW: Combined audio/video stream
     this.recordedChunks = [];
     this.isRecording = false;
     this.isPaused = false;
@@ -69,13 +71,15 @@ class ScreenRecorderHandler {
         throw new Error('Already recording');
       }
 
-      // Get the media stream
-      this.mediaStream = await this.getMediaStream(options);
+      console.log('🎬 Starting recording with options:', options);
+
+      // Get the media streams
+      await this.setupMediaStreams(options);
       this.expectedOutputPath = options.outputPath;
       
-      // Set up MediaRecorder
+      // Set up MediaRecorder with the combined stream
       const mimeType = this.getSupportedMimeType();
-      this.mediaRecorder = new MediaRecorder(this.mediaStream, {
+      this.mediaRecorder = new MediaRecorder(this.combinedStream, {
         mimeType: mimeType,
         videoBitsPerSecond: this.getVideoBitrate(options.videoQuality),
         audioBitsPerSecond: this.getAudioBitrate(options.audioQuality)
@@ -97,6 +101,8 @@ class ScreenRecorderHandler {
 
       console.log('🎬 MediaRecorder started with:', {
         mimeType,
+        videoTracks: this.combinedStream.getVideoTracks().length,
+        audioTracks: this.combinedStream.getAudioTracks().length,
         videoBitsPerSecond: this.getVideoBitrate(options.videoQuality),
         audioBitsPerSecond: this.getAudioBitrate(options.audioQuality)
       });
@@ -117,6 +123,129 @@ class ScreenRecorderHandler {
       }
       throw error;
     }
+  }
+
+  /**
+   * Set up media streams (video + audio)
+   * @param {Object} options - Recording options
+   */
+  async setupMediaStreams(options) {
+    try {
+      // 1. Get screen/video stream
+      console.log('📹 Getting video stream for screen:', options.screenId);
+      this.mediaStream = await this.getVideoStream(options);
+      
+      // 2. Get audio stream if needed
+      if (options.includeMicrophone && options.audioInputId) {
+        console.log('🎤 Getting audio stream for device:', options.audioInputId);
+        this.audioStream = await this.getAudioStream(options.audioInputId);
+      }
+      
+      // 3. Combine streams
+      this.combinedStream = this.combineStreams();
+      
+      console.log('✅ Media streams setup complete:', {
+        video: this.mediaStream.getVideoTracks().length,
+        audio: this.combinedStream.getAudioTracks().length,
+        total: this.combinedStream.getTracks().length
+      });
+      
+    } catch (error) {
+      console.error('❌ Failed to setup media streams:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get video stream for screen recording
+   * @param {Object} options - Recording options
+   */
+  async getVideoStream(options) {
+    const constraints = {
+      audio: false, // Video stream doesn't include audio
+      video: {
+        mandatory: {
+          chromeMediaSource: 'desktop',
+          chromeMediaSourceId: options.screenId,
+          ...this.getVideoConstraints(options.videoQuality)
+        }
+      }
+    };
+
+    const stream = await navigator.mediaDevices.getUserMedia(constraints);
+    
+    console.log('📹 Got video stream:', {
+      video: stream.getVideoTracks().length,
+      audio: stream.getAudioTracks().length
+    });
+
+    return stream;
+  }
+
+  /**
+   * Get audio stream for microphone recording
+   * @param {string} audioDeviceId - Audio device ID
+   */
+  async getAudioStream(audioDeviceId) {
+    try {
+      const constraints = {
+        video: false,
+        audio: {
+          deviceId: audioDeviceId === 'default' ? undefined : { exact: audioDeviceId },
+          autoGainControl: true,
+          echoCancellation: true,
+          noiseSuppression: true,
+          sampleRate: 44100,
+          sampleSize: 16,
+          channelCount: 2
+        }
+      };
+
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      
+      console.log('🎤 Got audio stream:', {
+        audioTracks: stream.getAudioTracks().length,
+        settings: stream.getAudioTracks()[0]?.getSettings()
+      });
+
+      return stream;
+    } catch (error) {
+      console.error('❌ Failed to get audio stream:', error);
+      // Don't throw here - continue without audio if mic fails
+      console.warn('⚠️ Continuing without audio due to microphone error');
+      return null;
+    }
+  }
+
+  /**
+   * Combine video and audio streams
+   */
+  combineStreams() {
+    const combinedStream = new MediaStream();
+    
+    // Add video tracks
+    if (this.mediaStream) {
+      this.mediaStream.getVideoTracks().forEach(track => {
+        combinedStream.addTrack(track);
+        console.log('➕ Added video track:', track.label);
+      });
+    }
+    
+    // Add audio tracks
+    if (this.audioStream) {
+      this.audioStream.getAudioTracks().forEach(track => {
+        combinedStream.addTrack(track);
+        console.log('➕ Added audio track:', track.label);
+      });
+    }
+    
+    console.log('🔗 Combined stream created:', {
+      videoTracks: combinedStream.getVideoTracks().length,
+      audioTracks: combinedStream.getAudioTracks().length,
+      totalTracks: combinedStream.getTracks().length
+    });
+    
+    return combinedStream;
   }
 
   /**
@@ -228,39 +357,6 @@ class ScreenRecorderHandler {
   }
 
   /**
-   * Get media stream for recording
-   * @param {Object} options - Recording options
-   */
-  async getMediaStream(options) {
-    const constraints = {
-      audio: false, // We'll handle audio separately if needed
-      video: {
-        mandatory: {
-          chromeMediaSource: 'desktop',
-          chromeMediaSourceId: options.screenId,
-          ...this.getVideoConstraints(options.videoQuality)
-        }
-      }
-    };
-
-    // Add audio if required
-    if (options.includeMicrophone || options.includeSystemAudio) {
-      // For now, we'll handle audio separately
-      // This is a limitation of the current setup
-      console.log('Audio recording requested but handled separately');
-    }
-
-    const stream = await navigator.mediaDevices.getUserMedia(constraints);
-    
-    console.log('📹 Got media stream:', {
-      video: stream.getVideoTracks().length,
-      audio: stream.getAudioTracks().length
-    });
-
-    return stream;
-  }
-
-  /**
    * Set up MediaRecorder event handlers
    */
   setupMediaRecorderEvents() {
@@ -308,6 +404,16 @@ class ScreenRecorderHandler {
   }
 
   /**
+   * Stop duration timer
+   */
+  stopDurationTimer() {
+    if (this.progressInterval) {
+      clearInterval(this.progressInterval);
+      this.progressInterval = null;
+    }
+  }
+
+  /**
    * Save the recording to file
    */
   async saveRecording() {
@@ -336,7 +442,7 @@ class ScreenRecorderHandler {
         outputPath = `recording-${timestamp}${extension}`;
       }
 
-      // FIXED: Use saveRecordingFile instead of writeFile
+      // Use saveRecordingFile
       if (window.electronAPI?.file?.saveRecordingFile) {
         console.log(`💾 Calling saveRecordingFile with path: ${outputPath}, dataLength: ${uint8Array.length}`);
         const result = await window.electronAPI.file.saveRecordingFile(outputPath, uint8Array);
@@ -394,10 +500,12 @@ class ScreenRecorderHandler {
 
     for (const type of types) {
       if (MediaRecorder.isTypeSupported(type)) {
+        console.log('✅ Using MIME type:', type);
         return type;
       }
     }
 
+    console.log('⚠️ Using fallback MIME type: video/webm');
     return 'video/webm'; // Fallback
   }
 
@@ -448,10 +556,7 @@ class ScreenRecorderHandler {
   cleanup() {
     console.log('🧹 Cleaning up screen recorder handler');
 
-    if (this.progressInterval) {
-      clearInterval(this.progressInterval);
-      this.progressInterval = null;
-    }
+    this.stopDurationTimer();
 
     if (this.mediaRecorder) {
       try {
@@ -464,11 +569,26 @@ class ScreenRecorderHandler {
       this.mediaRecorder = null;
     }
 
+    // Clean up all streams
+    if (this.combinedStream) {
+      this.combinedStream.getTracks().forEach(track => {
+        track.stop();
+      });
+      this.combinedStream = null;
+    }
+
     if (this.mediaStream) {
       this.mediaStream.getTracks().forEach(track => {
         track.stop();
       });
       this.mediaStream = null;
+    }
+
+    if (this.audioStream) {
+      this.audioStream.getTracks().forEach(track => {
+        track.stop();
+      });
+      this.audioStream = null;
     }
 
     this.recordedChunks = [];
