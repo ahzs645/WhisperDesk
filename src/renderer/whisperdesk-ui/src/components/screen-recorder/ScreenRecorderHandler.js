@@ -1,15 +1,14 @@
 /**
- * @fileoverview Enhanced screen recording handler with comprehensive macOS system audio support
- * Includes multiple fallback methods and detailed debugging
+ * @fileoverview Crash-safe screen recording handler - completely avoids Error 263
+ * Only uses proven safe methods for macOS system audio capture
  */
 
 class ScreenRecorderHandler {
   constructor() {
     this.mediaRecorder = null;
     this.mediaStream = null;
-    this.audioStream = null; // Microphone stream
-    this.systemAudioStream = null; // System audio stream
-    this.combinedStream = null; // Combined stream
+    this.audioStream = null; // Microphone stream only
+    this.combinedStream = null;
     this.recordedChunks = [];
     this.isRecording = false;
     this.isPaused = false;
@@ -24,59 +23,44 @@ class ScreenRecorderHandler {
     this.onPaused = null;
     this.onResumed = null;
     
-    // Debug system capabilities
-    this.debugSystemCapabilities();
+    console.log('🛡️ Initializing CRASH-SAFE screen recorder handler');
+    this.debugSafeCapabilities();
   }
 
   /**
-   * Debug system capabilities for audio capture
+   * Debug only safe capabilities (no crash-prone calls)
    */
-  async debugSystemCapabilities() {
-    console.log('🔍 Debugging system audio capabilities...');
+  debugSafeCapabilities() {
+    console.log('🔍 Debugging SAFE capabilities only...');
     
-    // Check browser/platform info
     console.log('🖥️ Platform info:', {
       platform: navigator.platform,
-      userAgent: navigator.userAgent,
-      language: navigator.language
+      isMac: navigator.platform.includes('Mac'),
+      electronUserAgent: navigator.userAgent.includes('Electron')
     });
 
-    // Check MediaDevices API support
+    // Check safe API support
     if (navigator.mediaDevices) {
-      console.log('✅ MediaDevices API is supported');
-      
-      if (navigator.mediaDevices.getDisplayMedia) {
-        console.log('✅ getDisplayMedia is supported');
-      } else {
-        console.log('❌ getDisplayMedia is NOT supported');
-      }
-      
-      if (navigator.mediaDevices.getUserMedia) {
-        console.log('✅ getUserMedia is supported');
-      } else {
-        console.log('❌ getUserMedia is NOT supported');
-      }
-    } else {
-      console.log('❌ MediaDevices API is NOT supported');
+      console.log('✅ MediaDevices API supported');
+      console.log('✅ getUserMedia supported:', !!navigator.mediaDevices.getUserMedia);
+      console.log('✅ getDisplayMedia supported:', !!navigator.mediaDevices.getDisplayMedia);
     }
 
-    // Check MediaRecorder support for audio codecs
-    const audioCodecs = [
-      'audio/webm;codecs=opus',
-      'audio/webm;codecs=vorbis',
-      'audio/mp4;codecs=aac',
-      'audio/ogg;codecs=opus'
+    // Check safe MediaRecorder codecs
+    const safeCodecs = [
+      'video/webm;codecs=vp9,opus',
+      'video/webm;codecs=vp8,opus', 
+      'video/webm'
     ];
-
-    console.log('🎵 Audio codec support:');
-    audioCodecs.forEach(codec => {
-      const supported = MediaRecorder.isTypeSupported(codec);
-      console.log(`  ${supported ? '✅' : '❌'} ${codec}`);
+    
+    console.log('🎵 Safe codec support:');
+    safeCodecs.forEach(codec => {
+      console.log(`  ${MediaRecorder.isTypeSupported(codec) ? '✅' : '❌'} ${codec}`);
     });
   }
 
   /**
-   * Start recording with enhanced audio capture
+   * Start recording with crash-safe approach
    */
   async startRecording(options) {
     try {
@@ -84,14 +68,14 @@ class ScreenRecorderHandler {
         throw new Error('Already recording');
       }
 
-      console.log('🎬 Starting ENHANCED recording with options:', options);
+      console.log('🛡️ Starting CRASH-SAFE recording:', options);
 
-      // Enhanced media stream setup
-      await this.setupEnhancedMediaStreams(options);
+      // Use only safe stream capture methods
+      await this.setupSafeMediaStreams(options);
       this.expectedOutputPath = options.outputPath;
       
-      // Set up MediaRecorder
-      const mimeType = this.getSupportedMimeType();
+      // Set up MediaRecorder with safe settings
+      const mimeType = this.getSafeMimeType();
       this.mediaRecorder = new MediaRecorder(this.combinedStream, {
         mimeType: mimeType,
         videoBitsPerSecond: this.getVideoBitrate(options.videoQuality),
@@ -106,25 +90,29 @@ class ScreenRecorderHandler {
       this.startTime = Date.now();
       this.startProgressTracking();
 
-      console.log('🎬 Enhanced MediaRecorder started:', {
+      const audioTracks = this.combinedStream.getAudioTracks().length;
+      const hasSystemAudio = audioTracks > (this.audioStream?.getAudioTracks().length || 0);
+
+      console.log('🛡️ Safe recording started:', {
         mimeType,
         videoTracks: this.combinedStream.getVideoTracks().length,
-        audioTracks: this.combinedStream.getAudioTracks().length,
-        audioBitsPerSecond: this.getAudioBitrate(options.audioQuality)
+        audioTracks,
+        hasSystemAudio,
+        hasMicrophone: this.audioStream?.getAudioTracks().length > 0
       });
 
       if (this.onStarted) {
         this.onStarted({
           outputPath: this.expectedOutputPath,
-          mimeType: mimeType,
-          hasSystemAudio: this.systemAudioStream?.getAudioTracks().length > 0,
-          hasMicrophoneAudio: this.audioStream?.getAudioTracks().length > 0
+          mimeType,
+          hasSystemAudio,
+          hasMicrophone: this.audioStream?.getAudioTracks().length > 0
         });
       }
 
       return true;
     } catch (error) {
-      console.error('❌ Failed to start enhanced recording:', error);
+      console.error('❌ Safe recording start failed:', error);
       this.cleanup();
       if (this.onError) {
         this.onError(error);
@@ -134,67 +122,111 @@ class ScreenRecorderHandler {
   }
 
   /**
-   * Enhanced media stream setup with comprehensive fallbacks
+   * Set up media streams using only safe methods
    */
-  async setupEnhancedMediaStreams(options) {
-    console.log('🔧 Setting up ENHANCED media streams:', {
+  async setupSafeMediaStreams(options) {
+    console.log('🛡️ Setting up SAFE media streams:', {
       screenId: options.screenId,
       includeMicrophone: options.includeMicrophone,
-      includeSystemAudio: options.includeSystemAudio,
-      audioInputId: options.audioInputId
+      includeSystemAudio: options.includeSystemAudio
     });
 
-    // Step 1: Get video stream
-    this.mediaStream = await this.getVideoStream(options);
-
-    // Step 2: Get system audio if requested
+    // Step 1: Get screen stream (with or without system audio)
     if (options.includeSystemAudio) {
-      console.log('🔊 Attempting comprehensive system audio capture...');
-      this.systemAudioStream = await this.getSystemAudioStreamEnhanced(options);
-      
-      if (!this.systemAudioStream || this.systemAudioStream.getAudioTracks().length === 0) {
-        console.log('⚠️ System audio capture failed - trying integrated approach...');
-        // Try to get video + audio together
-        this.mediaStream = await this.getVideoWithSystemAudioStream(options);
-      }
+      console.log('🔊 Attempting SAFE system audio capture...');
+      this.mediaStream = await this.getSafeScreenWithAudioStream(options);
+    } else {
+      console.log('📹 Getting video-only stream...');
+      this.mediaStream = await this.getSafeVideoStream(options);
     }
 
-    // Step 3: Get microphone audio if requested
+    // Step 2: Get microphone if requested
     if (options.includeMicrophone && options.audioInputId) {
-      console.log('🎤 Getting microphone stream...');
-      this.audioStream = await this.getMicrophoneStream(options.audioInputId);
+      console.log('🎤 Getting safe microphone stream...');
+      this.audioStream = await this.getSafeMicrophoneStream(options.audioInputId);
     }
 
-    // Step 4: Combine all streams
+    // Step 3: Combine streams
     this.combinedStream = this.combineStreams();
 
     const result = {
       video: this.mediaStream.getVideoTracks().length,
-      systemAudio: this.systemAudioStream?.getAudioTracks().length || 0,
+      screenAudio: this.mediaStream.getAudioTracks().length,
       microphoneAudio: this.audioStream?.getAudioTracks().length || 0,
       totalAudio: this.combinedStream.getAudioTracks().length,
       total: this.combinedStream.getTracks().length
     };
 
-    console.log('✅ Enhanced media streams setup complete:', result);
+    console.log('✅ Safe media streams setup complete:', result);
 
-    // Warning if no audio captured when requested
-    if (options.includeSystemAudio && result.systemAudio === 0) {
-      console.warn('⚠️ System audio was requested but could not be captured!');
-    }
-    if (options.includeMicrophone && result.microphoneAudio === 0) {
-      console.warn('⚠️ Microphone audio was requested but could not be captured!');
+    // Warn about missing audio
+    if (options.includeSystemAudio && result.screenAudio === 0) {
+      console.warn('⚠️ System audio requested but not captured - this is common on macOS');
     }
   }
 
   /**
-   * Get video stream only
+   * Get screen stream with audio using only the safest method
    */
-  async getVideoStream(options) {
-    console.log('📹 Getting video stream for screen:', options.screenId);
+  async getSafeScreenWithAudioStream(options) {
+    console.log('🔊 Trying SAFE getDisplayMedia with video+audio...');
+    
+    try {
+      // This is the ONLY safe way to get system audio on macOS
+      const stream = await navigator.mediaDevices.getDisplayMedia({
+        video: {
+          ...this.getVideoConstraints(options.videoQuality),
+          cursor: 'always'
+        },
+        audio: {
+          autoGainControl: false,
+          echoCancellation: false,
+          noiseSuppression: false,
+          sampleRate: 48000,
+          channelCount: 2
+        }
+      });
+
+      console.log('✅ Safe getDisplayMedia result:', {
+        videoTracks: stream.getVideoTracks().length,
+        audioTracks: stream.getAudioTracks().length,
+        audioSettings: stream.getAudioTracks()[0]?.getSettings()
+      });
+
+      if (stream.getAudioTracks().length > 0) {
+        console.log('🎉 System audio captured safely!');
+      } else {
+        console.log('📹 Video captured, no system audio available');
+      }
+
+      return stream;
+
+    } catch (error) {
+      console.log('❌ Safe getDisplayMedia failed:', error.message);
+      
+      // Provide helpful error messages
+      if (error.name === 'NotAllowedError') {
+        console.log('💡 Permission denied - user cancelled or no permission');
+      } else if (error.name === 'NotSupportedError' || error.message.includes('Not supported')) {
+        console.log('💡 System audio not supported in this environment');
+      } else if (error.message.includes('video must be requested')) {
+        console.log('💡 Audio-only capture not allowed, need video+audio');
+      }
+      
+      // Fallback to video-only
+      console.log('↩️ Falling back to video-only capture...');
+      return await this.getSafeVideoStream(options);
+    }
+  }
+
+  /**
+   * Get safe video-only stream (guaranteed to work)
+   */
+  async getSafeVideoStream(options) {
+    console.log('📹 Getting safe video-only stream...');
     
     const constraints = {
-      audio: false,
+      audio: false, // Never request audio here to avoid crashes
       video: {
         mandatory: {
           chromeMediaSource: 'desktop',
@@ -205,7 +237,8 @@ class ScreenRecorderHandler {
     };
 
     const stream = await navigator.mediaDevices.getUserMedia(constraints);
-    console.log('📹 Video stream obtained:', {
+    
+    console.log('✅ Safe video stream:', {
       videoTracks: stream.getVideoTracks().length,
       audioTracks: stream.getAudioTracks().length
     });
@@ -214,162 +247,9 @@ class ScreenRecorderHandler {
   }
 
   /**
-   * Enhanced system audio capture with multiple methods
+   * Get safe microphone stream
    */
-  async getSystemAudioStreamEnhanced(options) {
-    const methods = [
-      {
-        name: 'getDisplayMedia with audio only',
-        attempt: async () => {
-          console.log('🔊 Trying getDisplayMedia audio-only...');
-          return await navigator.mediaDevices.getDisplayMedia({
-            video: false,
-            audio: {
-              autoGainControl: false,
-              echoCancellation: false,
-              noiseSuppression: false,
-              sampleRate: 48000,
-              channelCount: 2
-            }
-          });
-        }
-      },
-      {
-        name: 'getDisplayMedia with video+audio then extract audio',
-        attempt: async () => {
-          console.log('🔊 Trying getDisplayMedia video+audio...');
-          const stream = await navigator.mediaDevices.getDisplayMedia({
-            video: true,
-            audio: {
-              autoGainControl: false,
-              echoCancellation: false,
-              noiseSuppression: false,
-              sampleRate: 48000,
-              channelCount: 2
-            }
-          });
-          
-          // Extract only audio tracks
-          if (stream.getAudioTracks().length > 0) {
-            const audioOnlyStream = new MediaStream();
-            stream.getAudioTracks().forEach(track => {
-              audioOnlyStream.addTrack(track);
-            });
-            
-            // Stop video tracks
-            stream.getVideoTracks().forEach(track => track.stop());
-            
-            return audioOnlyStream;
-          }
-          
-          throw new Error('No audio tracks in combined stream');
-        }
-      },
-      {
-        name: 'getUserMedia with screen audio (macOS specific)',
-        attempt: async () => {
-          console.log('🔊 Trying getUserMedia screen audio...');
-          // Note: This might be risky, but worth trying as last resort
-          const constraints = {
-            video: false,
-            audio: {
-              mandatory: {
-                chromeMediaSource: 'desktop',
-                chromeMediaSourceId: options.screenId,
-                autoGainControl: false,
-                echoCancellation: false,
-                noiseSuppression: false
-              }
-            }
-          };
-          return await navigator.mediaDevices.getUserMedia(constraints);
-        }
-      }
-    ];
-
-    for (const method of methods) {
-      try {
-        console.log(`🧪 Attempting: ${method.name}`);
-        const stream = await method.attempt();
-        
-        if (stream && stream.getAudioTracks().length > 0) {
-          console.log(`✅ SUCCESS: ${method.name}`, {
-            audioTracks: stream.getAudioTracks().length,
-            audioSettings: stream.getAudioTracks()[0]?.getSettings(),
-            audioLabel: stream.getAudioTracks()[0]?.label
-          });
-          return stream;
-        } else {
-          console.log(`⚠️ ${method.name} returned stream with no audio tracks`);
-        }
-      } catch (error) {
-        console.log(`❌ ${method.name} failed:`, error.message);
-        
-        // Provide specific guidance for different errors
-        if (error.name === 'NotSupportedError') {
-          console.log(`💡 ${method.name}: Not supported on this platform/browser`);
-        } else if (error.name === 'NotAllowedError') {
-          console.log(`💡 ${method.name}: Permission denied - check system preferences`);
-        } else if (error.name === 'NotFoundError') {
-          console.log(`💡 ${method.name}: No audio source found`);
-        }
-      }
-    }
-
-    console.log('❌ All system audio capture methods failed');
-    return null;
-  }
-
-  /**
-   * Try to get video + system audio in one stream (integrated approach)
-   */
-  async getVideoWithSystemAudioStream(options) {
-    console.log('🔧 Trying integrated video+audio capture...');
-    
-    try {
-      // Try getUserMedia with both video and audio for the screen
-      const constraints = {
-        video: {
-          mandatory: {
-            chromeMediaSource: 'desktop',
-            chromeMediaSourceId: options.screenId,
-            ...this.getVideoConstraints(options.videoQuality)
-          }
-        },
-        audio: {
-          mandatory: {
-            chromeMediaSource: 'desktop',
-            chromeMediaSourceId: options.screenId,
-            autoGainControl: false,
-            echoCancellation: false,
-            noiseSuppression: false
-          }
-        }
-      };
-
-      const stream = await navigator.mediaDevices.getUserMedia(constraints);
-      
-      console.log('✅ Integrated capture successful:', {
-        videoTracks: stream.getVideoTracks().length,
-        audioTracks: stream.getAudioTracks().length,
-        audioSettings: stream.getAudioTracks()[0]?.getSettings()
-      });
-      
-      return stream;
-      
-    } catch (error) {
-      console.log('❌ Integrated capture failed:', error.message);
-      
-      // If integrated approach fails, return the video-only stream we already have
-      console.log('↩️ Falling back to video-only stream');
-      return this.mediaStream;
-    }
-  }
-
-  /**
-   * Get microphone stream
-   */
-  async getMicrophoneStream(audioDeviceId) {
+  async getSafeMicrophoneStream(audioDeviceId) {
     try {
       const constraints = {
         video: false,
@@ -385,10 +265,9 @@ class ScreenRecorderHandler {
 
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
       
-      console.log('🎤 Microphone stream obtained:', {
+      console.log('✅ Safe microphone stream:', {
         audioTracks: stream.getAudioTracks().length,
-        settings: stream.getAudioTracks()[0]?.getSettings(),
-        label: stream.getAudioTracks()[0]?.label
+        settings: stream.getAudioTracks()[0]?.getSettings()
       });
 
       return stream;
@@ -399,7 +278,7 @@ class ScreenRecorderHandler {
   }
 
   /**
-   * Combine all streams intelligently
+   * Combine streams safely
    */
   combineStreams() {
     const combinedStream = new MediaStream();
@@ -411,30 +290,18 @@ class ScreenRecorderHandler {
         console.log('➕ Added video track:', track.label);
       });
       
-      // Add system audio from main stream if present
+      // Add system audio tracks from display stream
       this.mediaStream.getAudioTracks().forEach(track => {
         Object.defineProperty(track, 'label', { 
-          value: `System Audio (Integrated): ${track.label}`, 
+          value: `System Audio: ${track.label}`, 
           writable: false 
         });
         combinedStream.addTrack(track);
-        console.log('➕ Added integrated system audio:', track.label);
+        console.log('➕ Added system audio track:', track.label);
       });
     }
     
-    // Add separate system audio stream if we have one
-    if (this.systemAudioStream) {
-      this.systemAudioStream.getAudioTracks().forEach(track => {
-        Object.defineProperty(track, 'label', { 
-          value: `System Audio (Separate): ${track.label}`, 
-          writable: false 
-        });
-        combinedStream.addTrack(track);
-        console.log('➕ Added separate system audio:', track.label);
-      });
-    }
-    
-    // Add microphone audio
+    // Add microphone tracks
     if (this.audioStream) {
       this.audioStream.getAudioTracks().forEach(track => {
         Object.defineProperty(track, 'label', { 
@@ -442,39 +309,28 @@ class ScreenRecorderHandler {
           writable: false 
         });
         combinedStream.addTrack(track);
-        console.log('➕ Added microphone audio:', track.label);
+        console.log('➕ Added microphone track:', track.label);
       });
     }
     
-    const result = {
+    console.log('🔗 Safe combined stream:', {
       videoTracks: combinedStream.getVideoTracks().length,
       audioTracks: combinedStream.getAudioTracks().length,
-      totalTracks: combinedStream.getTracks().length,
-      audioTrackLabels: combinedStream.getAudioTracks().map(t => t.label)
-    };
+      totalTracks: combinedStream.getTracks().length
+    });
     
-    console.log('🔗 Final combined stream:', result);
     return combinedStream;
   }
 
   /**
-   * Comprehensive system audio testing function
+   * Safe system audio testing (no crash-prone methods)
    */
-  async testSystemAudioCapture() {
-    console.log('🧪 COMPREHENSIVE System Audio Testing...');
+  async testSafeSystemAudio() {
+    console.log('🧪 Testing SAFE system audio methods only...');
     
-    const testMethods = [
+    const safeMethods = [
       {
-        name: 'getDisplayMedia audio-only',
-        test: async () => {
-          return await navigator.mediaDevices.getDisplayMedia({
-            video: false,
-            audio: true
-          });
-        }
-      },
-      {
-        name: 'getDisplayMedia video+audio',
+        name: 'getDisplayMedia with video+audio (SAFE)',
         test: async () => {
           return await navigator.mediaDevices.getDisplayMedia({
             video: true,
@@ -483,32 +339,15 @@ class ScreenRecorderHandler {
         }
       },
       {
-        name: 'getDisplayMedia with detailed audio constraints',
+        name: 'getDisplayMedia with detailed constraints (SAFE)',
         test: async () => {
           return await navigator.mediaDevices.getDisplayMedia({
-            video: false,
+            video: { cursor: 'always' },
             audio: {
               autoGainControl: false,
               echoCancellation: false,
               noiseSuppression: false,
-              sampleRate: 48000,
-              channelCount: 2
-            }
-          });
-        }
-      },
-      {
-        name: 'getUserMedia desktop audio (RISKY)',
-        test: async () => {
-          return await navigator.mediaDevices.getUserMedia({
-            video: false,
-            audio: {
-              mandatory: {
-                chromeMediaSource: 'desktop',
-                autoGainControl: false,
-                echoCancellation: false,
-                noiseSuppression: false
-              }
+              sampleRate: 48000
             }
           });
         }
@@ -517,76 +356,51 @@ class ScreenRecorderHandler {
 
     const results = [];
     
-    for (const method of testMethods) {
-      const result = {
-        name: method.name,
-        success: false,
-        audioTracks: 0,
-        error: null,
-        details: null
-      };
-      
+    for (const method of safeMethods) {
       try {
         console.log(`🧪 Testing: ${method.name}`);
         const stream = await method.test();
         
-        result.success = true;
-        result.audioTracks = stream.getAudioTracks().length;
-        result.details = {
-          videoTracks: stream.getVideoTracks().length,
-          audioSettings: stream.getAudioTracks()[0]?.getSettings(),
-          audioLabel: stream.getAudioTracks()[0]?.label
+        const result = {
+          name: method.name,
+          success: true,
+          audioTracks: stream.getAudioTracks().length,
+          videoTracks: stream.getVideoTracks().length
         };
         
-        console.log(`✅ ${method.name} SUCCESS:`, result.details);
+        console.log(`✅ ${method.name} SUCCESS:`, result);
         
         // Test MediaRecorder compatibility
         if (stream.getAudioTracks().length > 0) {
           try {
-            const testRecorder = new MediaRecorder(stream);
+            new MediaRecorder(stream);
             console.log(`✅ ${method.name} is MediaRecorder compatible`);
-            result.mediaRecorderCompatible = true;
           } catch (recorderError) {
-            console.log(`❌ ${method.name} NOT MediaRecorder compatible:`, recorderError.message);
-            result.mediaRecorderCompatible = false;
+            console.log(`❌ ${method.name} NOT MediaRecorder compatible`);
           }
         }
         
         // Clean up
         stream.getTracks().forEach(track => track.stop());
+        results.push(result);
         
       } catch (error) {
-        result.error = error.message;
         console.log(`❌ ${method.name} FAILED:`, error.message);
+        results.push({
+          name: method.name,
+          success: false,
+          error: error.message
+        });
       }
-      
-      results.push(result);
     }
 
-    // Summary
-    const workingMethods = results.filter(r => r.success && r.audioTracks > 0);
-    console.log('\n🎉 SYSTEM AUDIO TEST SUMMARY:');
-    console.log(`Working methods: ${workingMethods.length}/${results.length}`);
+    const working = results.filter(r => r.success && r.audioTracks > 0);
+    console.log(`🎉 Safe test complete: ${working.length}/${results.length} methods can capture system audio`);
     
-    if (workingMethods.length > 0) {
-      console.log('✅ Working methods:');
-      workingMethods.forEach(method => {
-        console.log(`  • ${method.name} (${method.audioTracks} audio tracks)`);
-      });
-    } else {
-      console.log('❌ No working methods found');
-      console.log('💡 Suggestions:');
-      console.log('  • Check System Preferences > Security & Privacy > Screen Recording');
-      console.log('  • Ensure apps are playing audio during capture');
-      console.log('  • Try different browsers (Chrome vs Safari vs Firefox)');
-      console.log('  • Check if SoundFlower or similar audio routing software is needed');
-    }
-
     return results;
   }
 
-  // ... (rest of the methods remain the same: stopRecording, pauseRecording, etc.)
-  
+  // Standard methods (stop, pause, resume, etc.)
   async stopRecording() {
     try {
       if (!this.isRecording || !this.mediaRecorder) {
@@ -596,7 +410,7 @@ class ScreenRecorderHandler {
       return new Promise((resolve, reject) => {
         const handleStop = async () => {
           try {
-            console.log('🛑 MediaRecorder stopped, processing chunks...');
+            console.log('🛑 Safe recording stop...');
             const actualPath = await this.saveRecording();
             this.cleanup();
             
@@ -629,9 +443,6 @@ class ScreenRecorderHandler {
     } catch (error) {
       console.error('Failed to stop recording:', error);
       this.cleanup();
-      if (this.onError) {
-        this.onError(error);
-      }
       throw error;
     }
   }
@@ -682,7 +493,7 @@ class ScreenRecorderHandler {
     this.mediaRecorder.ondataavailable = (event) => {
       if (event.data && event.data.size > 0) {
         this.recordedChunks.push(event.data);
-        console.log(`📊 Chunk received: ${event.data.size} bytes, total chunks: ${this.recordedChunks.length}`);
+        console.log(`📊 Chunk: ${event.data.size} bytes, total: ${this.recordedChunks.length}`);
       }
     };
 
@@ -694,15 +505,15 @@ class ScreenRecorderHandler {
     };
 
     this.mediaRecorder.onstart = () => {
-      console.log('📹 MediaRecorder onstart event');
+      console.log('📹 MediaRecorder started');
     };
 
     this.mediaRecorder.onpause = () => {
-      console.log('⏸️ MediaRecorder onpause event');
+      console.log('⏸️ MediaRecorder paused');
     };
 
     this.mediaRecorder.onresume = () => {
-      console.log('▶️ MediaRecorder onresume event');
+      console.log('▶️ MediaRecorder resumed');
     };
   }
 
@@ -728,13 +539,13 @@ class ScreenRecorderHandler {
 
   async saveRecording() {
     try {
-      console.log(`💾 Saving recording with ${this.recordedChunks.length} chunks`);
+      console.log(`💾 Saving ${this.recordedChunks.length} chunks...`);
       
       if (this.recordedChunks.length === 0) {
         throw new Error('No recording data available');
       }
 
-      const mimeType = this.getSupportedMimeType();
+      const mimeType = this.getSafeMimeType();
       const blob = new Blob(this.recordedChunks, { type: mimeType });
       
       console.log(`📦 Created blob: ${blob.size} bytes, type: ${blob.type}`);
@@ -745,27 +556,21 @@ class ScreenRecorderHandler {
       let outputPath = this.expectedOutputPath;
       if (!outputPath) {
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-        const extension = mimeType.includes('webm') ? '.webm' : '.mp4';
-        outputPath = `recording-${timestamp}${extension}`;
+        outputPath = `recording-${timestamp}.webm`;
       }
 
       if (window.electronAPI?.file?.saveRecordingFile) {
-        console.log(`💾 Calling saveRecordingFile with path: ${outputPath}, dataLength: ${uint8Array.length}`);
         const result = await window.electronAPI.file.saveRecordingFile(outputPath, uint8Array);
         
         if (result && result.success) {
-          console.log(`✅ Recording saved successfully to: ${result.path}`);
+          console.log(`✅ Recording saved: ${result.path}`);
           return result.actualPath || result.path;
         } else {
           throw new Error(`Save failed: ${result?.error || 'Unknown error'}`);
         }
-      } else if (window.electronAPI?.file?.writeFile) {
-        await window.electronAPI.file.writeFile(outputPath, uint8Array);
-        console.log(`✅ Recording saved to: ${outputPath}`);
-        return outputPath;
       } else {
+        // Fallback to download
         this.downloadBlob(blob, outputPath);
-        console.log(`📥 Recording downloaded as: ${outputPath}`);
         return outputPath;
       }
     } catch (error) {
@@ -786,18 +591,16 @@ class ScreenRecorderHandler {
     URL.revokeObjectURL(url);
   }
 
-  getSupportedMimeType() {
-    const types = [
+  getSafeMimeType() {
+    const safeTypes = [
       'video/webm;codecs=vp9,opus',
       'video/webm;codecs=vp8,opus',
-      'video/webm;codecs=h264,opus',
-      'video/webm',
-      'video/mp4'
+      'video/webm'
     ];
 
-    for (const type of types) {
+    for (const type of safeTypes) {
       if (MediaRecorder.isTypeSupported(type)) {
-        console.log('✅ Using MIME type:', type);
+        console.log('✅ Using safe MIME type:', type);
         return type;
       }
     }
@@ -810,8 +613,7 @@ class ScreenRecorderHandler {
     const constraints = {
       low: { minWidth: 1280, maxWidth: 1280, minHeight: 720, maxHeight: 720 },
       medium: { minWidth: 1920, maxWidth: 1920, minHeight: 1080, maxHeight: 1080 },
-      high: { minWidth: 2560, maxWidth: 2560, minHeight: 1440, maxHeight: 1440 },
-      ultra: { minWidth: 3840, maxWidth: 3840, minHeight: 2160, maxHeight: 2160 }
+      high: { minWidth: 2560, maxWidth: 2560, minHeight: 1440, maxHeight: 1440 }
     };
 
     return constraints[quality] || constraints.medium;
@@ -821,8 +623,7 @@ class ScreenRecorderHandler {
     const bitrates = {
       low: 1000000,
       medium: 3000000,
-      high: 8000000,
-      ultra: 15000000
+      high: 8000000
     };
 
     return bitrates[quality] || bitrates.medium;
@@ -839,7 +640,7 @@ class ScreenRecorderHandler {
   }
 
   cleanup() {
-    console.log('🧹 Cleaning up enhanced screen recorder handler');
+    console.log('🧹 Safe cleanup...');
 
     this.stopDurationTimer();
 
@@ -854,7 +655,7 @@ class ScreenRecorderHandler {
       this.mediaRecorder = null;
     }
 
-    [this.combinedStream, this.mediaStream, this.audioStream, this.systemAudioStream].forEach(stream => {
+    [this.combinedStream, this.mediaStream, this.audioStream].forEach(stream => {
       if (stream) {
         stream.getTracks().forEach(track => track.stop());
       }
@@ -863,7 +664,6 @@ class ScreenRecorderHandler {
     this.combinedStream = null;
     this.mediaStream = null;
     this.audioStream = null;
-    this.systemAudioStream = null;
     this.recordedChunks = [];
     this.isRecording = false;
     this.isPaused = false;
