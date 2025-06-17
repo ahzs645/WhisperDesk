@@ -56,7 +56,15 @@ export class RendererScreenRecorder {
       // Note: This may trigger AVCaptureDeviceTypeExternal deprecation warnings on macOS
       // This is a known Electron issue when enumerating camera devices for Continuity Cameras
       // The warning is harmless and will be resolved in future Electron versions
-      const devices = await navigator.mediaDevices.enumerateDevices();
+      let devices = [];
+      try {
+        devices = await navigator.mediaDevices.enumerateDevices();
+        // Immediately filter to only audio devices to minimize camera device access
+        devices = devices.filter(device => device.kind === 'audioinput' || device.kind === 'audiooutput');
+      } catch (error) {
+        console.warn('Failed to enumerate devices, using fallback audio devices:', error);
+        devices = [];
+      }
       
       this.availableAudioDevices = [
         // Add default device

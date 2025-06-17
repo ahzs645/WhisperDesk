@@ -12,6 +12,14 @@ console.log('🚀 WhisperDesk Enhanced starting...');
 console.log('🚀 Platform:', process.platform);
 console.log('🚀 Electron version:', process.versions.electron);
 
+// Handle macOS-specific Electron issues
+if (process.platform === 'darwin') {
+  // Note: AVCaptureDeviceTypeExternal deprecation warnings may appear during device enumeration
+  // This is a known Electron/macOS issue with Continuity Cameras that will be resolved in future versions
+  // The warnings are harmless and don't affect functionality
+  console.log('ℹ️  Running on macOS - some AVCapture warnings are expected and harmless');
+}
+
 // Prevent multiple instances
 if (!app.requestSingleInstanceLock()) {
   console.log('❌ Another instance is already running');
