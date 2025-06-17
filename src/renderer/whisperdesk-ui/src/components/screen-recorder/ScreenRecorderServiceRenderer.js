@@ -1,6 +1,8 @@
 /**
- * @fileoverview Renderer-side screen recorder service - communicates with main process via IPC
+ * @fileoverview Renderer-side screen recorder service - integrates with recording handler
  */
+
+import ScreenRecorderHandler from './ScreenRecorderHandler.js';
 
 /**
  * Renderer-side screen recorder service
@@ -11,6 +13,8 @@ class ScreenRecorderServiceRenderer {
     this.updateStateCallback = null;
     this.addToEventLogCallback = null;
     this.statusPollingInterval = null;
+    this.recordingHandler = new ScreenRecorderHandler();
+    this.isInitialized = false;
   }
 
   /**
@@ -30,6 +34,9 @@ class ScreenRecorderServiceRenderer {
 
       this.addToEventLog('Initializing screen recorder service...');
 
+      // Set up recording handler callbacks
+      this.setupRecordingHandlerEvents();
+
       // Get initial status and devices
       await this.refreshDevices();
       await this.refreshStatus();
@@ -37,6 +44,7 @@ class ScreenRecorderServiceRenderer {
       // Start periodic status polling
       this.startStatusPolling();
 
+      this.isInitialized = true;
       this.addToEventLog('Screen recorder service initialized');
       return true;
     } catch (error) {
@@ -46,28 +54,107 @@ class ScreenRecorderServiceRenderer {
   }
 
   /**
+   * Set up recording handler event callbacks
+   */
+  setupRecordingHandlerEvents() {
+    this.recordingHandler.onStarted = (data) => {
+      this.addToEventLog(`Recording started: ${data.outputPath}`);
+      if (this.updateStateCallback) {
+        this.updateStateCallback({
+          isRecording: true,
+          recordingValidated: true,
+          isPaused: false
+        });
+      }
+    };
+
+    this.recordingHandler.onStopped = async (data) => {
+      this.addToEventLog(`Recording stopped: ${data.outputPath}`);
+      
+      // Confirm with backend
+      try {
+        if (window.electronAPI?.screenRecorder?.confirmComplete) {
+          const confirmResult = await window.electronAPI.screenRecorder.confirmComplete(data.outputPath);
+          if (confirmResult.success) {
+            this.addToEventLog(`✅ Recording confirmed with backend: ${confirmResult.outputPath}`);
+          } else {
+            this.addToEventLog(`❌ Backend confirmation failed: ${confirmResult.error}`);
+          }
+        }
+      } catch (error) {
+        this.addToEventLog(`❌ Backend confirmation error: ${error.message}`);
+      }
+
+      if (this.updateStateCallback) {
+        this.updateStateCallback({
+          isRecording: false,
+          recordingValidated: false,
+          isPaused: false,
+          recordingDuration: 0
+        });
+      }
+    };
+
+    this.recordingHandler.onError = (error) => {
+      this.addToEventLog(`Recording error: ${error.message}`);
+      if (this.updateStateCallback) {
+        this.updateStateCallback({
+          isRecording: false,
+          recordingValidated: false,
+          isPaused: false,
+          localError: error.message
+        });
+      }
+    };
+
+    this.recordingHandler.onProgress = (data) => {
+      if (this.updateStateCallback) {
+        this.updateStateCallback({
+          recordingDuration: data.duration
+        });
+      }
+    };
+
+    this.recordingHandler.onPaused = () => {
+      this.addToEventLog('Recording paused');
+      if (this.updateStateCallback) {
+        this.updateStateCallback({ isPaused: true });
+      }
+    };
+
+    this.recordingHandler.onResumed = () => {
+      this.addToEventLog('Recording resumed');
+      if (this.updateStateCallback) {
+        this.updateStateCallback({ isPaused: false });
+      }
+    };
+  }
+
+  /**
    * Start recording with given options
    * @param {Object} options - Recording options
    */
   async startRecording(options) {
     try {
-      // Clean the options object FIRST to ensure it's serializable
+      // Clean the options object for IPC
       const cleanOptions = this.cleanOptionsForIPC(options);
-      
-      // Now safe to log the cleaned options
       this.addToEventLog(`Starting recording with options: ${JSON.stringify(cleanOptions)}`);
       
-      const result = await window.electronAPI.screenRecorder.startRecording(cleanOptions);
+      // First, notify the backend that we're starting
+      const backendResult = await window.electronAPI.screenRecorder.startRecording(cleanOptions);
       
-      if (result.success) {
-        this.addToEventLog('Recording started successfully');
-        await this.refreshStatus();
-      } else {
-        this.addToEventLog(`Recording failed: ${result.error}`);
-        throw new Error(result.error);
+      if (!backendResult.success) {
+        throw new Error(backendResult.error);
       }
 
-      return result;
+      // Now start the actual recording in the renderer
+      await this.recordingHandler.startRecording({
+        ...cleanOptions,
+        outputPath: backendResult.outputPath
+      });
+
+      this.addToEventLog('Recording started successfully');
+      return backendResult;
     } catch (error) {
       this.addToEventLog(`Start recording error: ${error.message}`);
       throw error;
@@ -81,16 +168,18 @@ class ScreenRecorderServiceRenderer {
     try {
       this.addToEventLog('Stopping recording...');
       
-      const result = await window.electronAPI.screenRecorder.stopRecording();
+      // Stop the renderer recording first
+      const rendererResult = await this.recordingHandler.stopRecording();
       
-      if (result.success) {
-        this.addToEventLog('Recording stopped successfully');
-        await this.refreshStatus();
-      } else {
-        this.addToEventLog(`Stop failed: ${result.error}`);
-      }
-
-      return result;
+      // Then notify the backend
+      const backendResult = await window.electronAPI.screenRecorder.stopRecording();
+      
+      this.addToEventLog('Recording stopped successfully');
+      return {
+        success: true,
+        outputPath: rendererResult.outputPath,
+        duration: rendererResult.duration
+      };
     } catch (error) {
       this.addToEventLog(`Stop recording error: ${error.message}`);
       throw error;
@@ -104,11 +193,12 @@ class ScreenRecorderServiceRenderer {
     try {
       this.addToEventLog('Pausing recording...');
       
-      const result = await window.electronAPI.screenRecorder.pauseRecording();
+      // Pause renderer recording
+      const result = this.recordingHandler.pauseRecording();
       
       if (result.success) {
-        this.addToEventLog('Recording paused');
-        await this.refreshStatus();
+        // Notify backend
+        await window.electronAPI.screenRecorder.pauseRecording();
       }
 
       return result;
@@ -125,11 +215,12 @@ class ScreenRecorderServiceRenderer {
     try {
       this.addToEventLog('Resuming recording...');
       
-      const result = await window.electronAPI.screenRecorder.resumeRecording();
+      // Resume renderer recording
+      const result = this.recordingHandler.resumeRecording();
       
       if (result.success) {
-        this.addToEventLog('Recording resumed');
-        await this.refreshStatus();
+        // Notify backend
+        await window.electronAPI.screenRecorder.resumeRecording();
       }
 
       return result;
@@ -212,12 +303,38 @@ class ScreenRecorderServiceRenderer {
         this.updateStateCallback({
           isRecording: status.isRecording || false,
           isPaused: status.isPaused || false,
-          recordingDuration: status.duration || 0, // Keep in milliseconds - formatDuration expects milliseconds
+          recordingDuration: status.duration || 0,
           recordingValidated: status.recordingValidated || false
         });
       }
     } catch (error) {
       console.warn('Failed to refresh status:', error);
+    }
+  }
+
+  /**
+   * Get current status (for debug panel)
+   * @returns {Promise<Object>} Current recording status
+   */
+  async getStatus() {
+    try {
+      const backendStatus = await window.electronAPI.screenRecorder.getStatus();
+      
+      // Combine with renderer status
+      return {
+        ...backendStatus,
+        rendererRecording: this.recordingHandler.isRecording,
+        rendererPaused: this.recordingHandler.isPaused,
+        recordedChunks: this.recordingHandler.recordedChunks.length
+      };
+    } catch (error) {
+      console.warn('Failed to get status:', error);
+      return {
+        isRecording: false,
+        isPaused: false,
+        duration: 0,
+        error: error.message
+      };
     }
   }
 
@@ -296,8 +413,10 @@ class ScreenRecorderServiceRenderer {
    */
   cleanup() {
     this.stopStatusPolling();
+    this.recordingHandler.cleanup();
     this.updateStateCallback = null;
     this.addToEventLogCallback = null;
+    this.isInitialized = false;
   }
 }
 

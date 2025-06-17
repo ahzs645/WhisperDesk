@@ -280,6 +280,61 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // FIXED: Add new method for saving recording files
     saveRecordingFile: createSafeIPC('file:saveRecordingFile'),
     
+    /**
+     * Write a file to the file system
+     * @param {string} filePath - Path where to save the file
+     * @param {Buffer} buffer - File content as buffer
+     */
+    async writeFile(filePath, buffer) {
+      const fs = require('fs').promises;
+      const path = require('path');
+      const os = require('os');
+      
+      try {
+        // Ensure the directory exists
+        const dir = path.dirname(filePath);
+        await fs.mkdir(dir, { recursive: true });
+        
+        // If no full path provided, save to default recordings directory
+        if (!path.isAbsolute(filePath)) {
+          const recordingsDir = path.join(os.homedir(), 'Documents', 'WhisperDesk Recordings');
+          await fs.mkdir(recordingsDir, { recursive: true });
+          filePath = path.join(recordingsDir, filePath);
+        }
+        
+        // Write the file
+        await fs.writeFile(filePath, buffer);
+        
+        console.log(`✅ File written to: ${filePath}`);
+        return { success: true, path: filePath };
+      } catch (error) {
+        console.error('❌ Failed to write file:', error);
+        throw error;
+      }
+    },
+
+    /**
+     * Get default recordings directory
+     */
+    getDefaultRecordingsDirectory() {
+      const path = require('path');
+      const os = require('os');
+      return path.join(os.homedir(), 'Documents', 'WhisperDesk Recordings');
+    },
+
+    /**
+     * Check if file exists
+     */
+    async fileExists(filePath) {
+      const fs = require('fs').promises;
+      try {
+        await fs.access(filePath);
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    
     // File events
     onOpened: createEventListener('file-opened')
   },

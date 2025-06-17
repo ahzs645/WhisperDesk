@@ -26,6 +26,7 @@ export const ScreenRecorderDebug = () => {
 
   const refreshDebugInfo = async () => {
     try {
+      // Use the service's getStatus method (which calls IPC)
       const status = await service.getStatus();
       
       setDebugInfo({
@@ -53,15 +54,23 @@ export const ScreenRecorderDebug = () => {
     try {
       addToEventLog('Testing recording API...');
       
-      if (window.electronAPI?.debug?.test) {
-        const result = await window.electronAPI.debug.test();
-        addToEventLog(`API test result: ${JSON.stringify(result)}`);
+      // Test if the API is available
+      if (window.electronAPI?.screenRecorder) {
+        addToEventLog('✅ Screen recorder API is available');
+        
+        // Test getting status
+        const status = await window.electronAPI.screenRecorder.getStatus();
+        addToEventLog(`✅ API test result: ${JSON.stringify(status)}`);
+        
+        // Test getting screens
+        const screens = await window.electronAPI.screenRecorder.getAvailableScreens();
+        addToEventLog(`✅ Available screens: ${screens.length}`);
+        
       } else {
-        const status = await service.getStatus();
-        addToEventLog(`Screen recorder status: ${JSON.stringify(status)}`);
+        addToEventLog('❌ Screen recorder API is not available');
       }
     } catch (error) {
-      addToEventLog(`API test failed: ${error.message}`);
+      addToEventLog(`❌ API test failed: ${error.message}`);
     }
   };
 
@@ -71,14 +80,14 @@ export const ScreenRecorderDebug = () => {
       
       if (window.electronAPI?.screenRecorder?.forceCleanup) {
         const result = await window.electronAPI.screenRecorder.forceCleanup();
-        addToEventLog(`Cleanup result: ${JSON.stringify(result)}`);
+        addToEventLog(`✅ Cleanup result: ${JSON.stringify(result)}`);
       } else {
-        addToEventLog('Force cleanup not available');
+        addToEventLog('❌ Force cleanup not available');
       }
       
       await refreshDebugInfo();
     } catch (error) {
-      addToEventLog(`Force cleanup failed: ${error.message}`);
+      addToEventLog(`❌ Force cleanup failed: ${error.message}`);
     }
   };
 
@@ -110,12 +119,50 @@ export const ScreenRecorderDebug = () => {
       issues.push('No audio devices available');
     }
     
+    // Check file permissions
+    if (recordingSettings.recordingDirectory) {
+      addToEventLog(`Recording directory: ${recordingSettings.recordingDirectory}`);
+    } else {
+      addToEventLog('Using default recording directory');
+    }
+    
     if (issues.length === 0) {
       addToEventLog('✅ Configuration looks good');
     } else {
       issues.forEach((issue, index) => {
         addToEventLog(`❌ Issue ${index + 1}: ${issue}`);
       });
+    }
+  };
+
+  const testFileSystem = async () => {
+    try {
+      addToEventLog('Testing file system access...');
+      
+      if (window.electronAPI?.file) {
+        addToEventLog('✅ File API is available');
+        
+        // Test if we can access file dialog
+        if (window.electronAPI.file.showSaveDialog) {
+          addToEventLog('✅ Save dialog available');
+        }
+        
+        if (window.electronAPI.file.showOpenDialog) {
+          addToEventLog('✅ Open dialog available');
+        }
+      } else {
+        addToEventLog('❌ File API not available');
+      }
+      
+      // Test recording directory
+      if (recordingSettings.recordingDirectory) {
+        addToEventLog(`📁 Custom recording directory: ${recordingSettings.recordingDirectory}`);
+      } else {
+        addToEventLog('📁 Using default recording directory');
+      }
+      
+    } catch (error) {
+      addToEventLog(`❌ File system test failed: ${error.message}`);
     }
   };
 
@@ -153,6 +200,10 @@ export const ScreenRecorderDebug = () => {
           <Button variant="outline" size="sm" onClick={analyzeConfiguration}>
             <CheckCircle className="w-4 h-4 mr-2" />
             Analyze Config
+          </Button>
+          <Button variant="outline" size="sm" onClick={testFileSystem}>
+            <CheckCircle className="w-4 h-4 mr-2" />
+            Test File System
           </Button>
           <Button variant="outline" size="sm" onClick={forceCleanup} disabled={isRecording}>
             <XCircle className="w-4 h-4 mr-2" />
@@ -196,6 +247,30 @@ export const ScreenRecorderDebug = () => {
 
         <Separator />
 
+        {/* Configuration Details */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+          <div>
+            <div className="font-medium mb-2">Current Settings</div>
+            <div className="space-y-1 text-muted-foreground">
+              <div>Microphone: {recordingSettings.includeMicrophone ? '✅' : '❌'}</div>
+              <div>System Audio: {recordingSettings.includeSystemAudio ? '✅' : '❌'}</div>
+              <div>Video Quality: {recordingSettings.videoQuality}</div>
+              <div>Audio Quality: {recordingSettings.audioQuality}</div>
+              <div>Auto Transcribe: {recordingSettings.autoTranscribe ? '✅' : '❌'}</div>
+            </div>
+          </div>
+          <div>
+            <div className="font-medium mb-2">Device Selection</div>
+            <div className="space-y-1 text-muted-foreground">
+              <div>Screen ID: {selectedScreen || 'None'}</div>
+              <div>Audio ID: {selectedAudioInput || 'None'}</div>
+              <div className="truncate">Recording Dir: {recordingSettings.recordingDirectory || 'Default'}</div>
+            </div>
+          </div>
+        </div>
+
+        <Separator />
+
         {/* Event Log */}
         <div>
           <div className="flex items-center justify-between mb-2">
@@ -233,4 +308,4 @@ export const ScreenRecorderDebug = () => {
       </CardContent>
     </Card>
   );
-}; 
+};
