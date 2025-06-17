@@ -96,13 +96,21 @@ class ServiceManager extends EventEmitter {
 
   async initializeEnhancedScreenRecorder() {
     try {
-      console.log('🔧 Initializing Enhanced Screen Recorder...');
-      const ScreenRecorder = require('../services/screen-recorder');
-      this.services.screenRecorder = new ScreenRecorder();
-      await this.services.screenRecorder.initialize();
-      console.log('✅ Enhanced Screen Recorder initialized successfully');
+      console.log('🔧 Initializing Centralized Screen Recorder System...');
+      const { createScreenRecorderSystem } = require('../screen-recorder');
+      
+      // Create the complete screen recorder system
+      const screenRecorderSystem = await createScreenRecorderSystem();
+      
+      // Store the service for compatibility
+      this.services.screenRecorder = screenRecorderSystem.service;
+      
+      // Store the system for cleanup
+      this.screenRecorderSystem = screenRecorderSystem;
+      
+      console.log('✅ Centralized Screen Recorder System initialized successfully');
     } catch (error) {
-      console.error('❌ Enhanced Screen Recorder failed to initialize:', error);
+      console.error('❌ Centralized Screen Recorder System failed to initialize:', error);
       console.warn('⚠️ Screen recorder will use fallback mode');
     }
   }
@@ -294,6 +302,22 @@ class ServiceManager extends EventEmitter {
 
   async cleanup() {
     console.log('🔧 Cleaning up services...');
+    
+    // Cleanup screen recorder system first
+    if (this.screenRecorderSystem) {
+      try {
+        if (this.screenRecorderSystem.handlers) {
+          this.screenRecorderSystem.handlers.cleanup();
+        }
+        if (this.screenRecorderSystem.service) {
+          this.screenRecorderSystem.service.destroy();
+        }
+        console.log('✅ Screen recorder system cleaned up');
+      } catch (error) {
+        console.error('❌ Failed to cleanup screen recorder system:', error);
+      }
+      this.screenRecorderSystem = null;
+    }
     
     // Cleanup services that have cleanup methods
     for (const [name, service] of Object.entries(this.services)) {

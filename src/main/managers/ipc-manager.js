@@ -4,7 +4,7 @@ const { ipcMain } = require('electron');
 const BasicHandlers = require('../ipc-handlers/basic-handlers');
 const ModelHandlers = require('../ipc-handlers/model-handlers');
 const TranscriptionHandlers = require('../ipc-handlers/transcription-handlers');
-const ScreenRecorderHandlers = require('../ipc-handlers/screen-recorder-handlers');
+// Note: Screen recorder handlers are now managed by the centralized system
 const SettingsHandlers = require('../ipc-handlers/settings-handlers');
 const FileHandlers = require('../ipc-handlers/file-handlers');
 const ExportHandlers = require('../ipc-handlers/export-handlers');
@@ -25,7 +25,7 @@ class IpcManager {
       this.handlers.basic = new BasicHandlers(this.serviceManager);
       this.handlers.model = new ModelHandlers(this.serviceManager);
       this.handlers.transcription = new TranscriptionHandlers(this.serviceManager);
-      this.handlers.screenRecorder = new ScreenRecorderHandlers(this.serviceManager);
+      // Screen recorder handlers are managed by the centralized system
       this.handlers.settings = new SettingsHandlers(this.serviceManager);
       this.handlers.file = new FileHandlers(this.serviceManager);
       this.handlers.export = new ExportHandlers(this.serviceManager);

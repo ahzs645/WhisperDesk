@@ -272,8 +272,8 @@ class AppInitializer {
       const status = await window.electronAPI.screenRecorder.getStatus();
       console.log('📊 Initial screen recorder status:', status);
       
-      // Format and set available devices
-      const devices = this.formatDevices(status.availableDevices || {});
+      // Use devices directly from backend (already formatted)
+      const devices = status.availableDevices || { screens: [], audio: [] };
       
       // Set default selections (first available device of each type)
       const defaultScreen = devices.screens[0]?.id || '';
@@ -329,7 +329,7 @@ class AppInitializer {
       this.notifyStateChange({ loadingDevices: true });
       
       const status = await window.electronAPI.screenRecorder.getStatus();
-      const devices = this.formatDevices(status.availableDevices || {});
+      const devices = status.availableDevices || { screens: [], audio: [] };
       
       // Validate current selections against new device list
       const { selectedScreen, selectedAudioInput } = this.centralState;
@@ -645,21 +645,7 @@ class AppInitializer {
     }
   }
 
-  formatDevices(devices) {
-    return {
-      screens: devices.screens?.map(deviceId => ({
-        id: deviceId,
-        name: devices.deviceNames?.screens?.[deviceId] || `Screen ${parseInt(deviceId) + 1}`,
-        type: 'screen'
-      })) || [],
-      
-      audio: devices.audio?.map(deviceId => ({
-        id: deviceId,
-        name: devices.deviceNames?.audio?.[deviceId] || `Audio Input ${parseInt(deviceId) + 1}`,
-        type: 'input'
-      })) || []
-    };
-  }
+  // formatDevices function removed - backend now sends pre-formatted device objects
 
   cleanupEventHandlers() {
     console.log('🧹 Cleaning up CENTRALIZED event handlers...');

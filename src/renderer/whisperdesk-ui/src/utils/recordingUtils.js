@@ -19,24 +19,7 @@ export const createDeviceHash = (devices) => {
   });
 };
 
-/**
- * Format devices from backend response
- */
-export const formatDevices = (devices) => {
-  return {
-    screens: devices.screens?.map(deviceId => ({
-      id: deviceId,
-      name: devices.deviceNames?.screens?.[deviceId] || `Screen ${parseInt(deviceId) + 1}`,
-      type: 'screen'
-    })) || [],
-    
-    audio: devices.audio?.map(deviceId => ({
-      id: deviceId,
-      name: devices.deviceNames?.audio?.[deviceId] || `Audio Input ${parseInt(deviceId) + 1}`,
-      type: 'input'
-    })) || []
-  };
-};
+// formatDevices function removed - backend now sends pre-formatted device objects
 
 /**
  * Get error message with suggestions based on error type
