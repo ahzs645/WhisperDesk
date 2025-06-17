@@ -1,4 +1,6 @@
 // src/renderer/whisperdesk-ui/src/utils/AppInitializer.js - COMPLETELY FIXED
+import { rendererScreenRecorder } from './RendererScreenRecorder.js';
+
 class AppInitializer {
   constructor() {
     this.initialized = false;
@@ -268,12 +270,21 @@ class AppInitializer {
     console.log('🔧 Initializing screen recorder and devices...');
     
     try {
-      // Get initial status and devices from backend
+      // STEP 1: Initialize renderer screen recorder to enumerate real audio devices
+      console.log('🎤 Initializing renderer screen recorder for audio device enumeration...');
+      await rendererScreenRecorder.initialize();
+      
+      // STEP 2: Get initial status and devices from backend
       const status = await window.electronAPI.screenRecorder.getStatus();
       console.log('📊 Initial screen recorder status:', status);
       
       // Use devices directly from backend (already formatted)
       const devices = status.availableDevices || { screens: [], audio: [] };
+      
+      // STEP 3: If audio devices are still placeholders, the renderer enumeration worked
+      // and they should now be real devices. If not, we'll still have the placeholders.
+      console.log(`📱 Found ${devices.screens.length} screen devices and ${devices.audio.length} audio devices`);
+      console.log('🎤 Audio devices:', devices.audio.map(d => `${d.name} (${d.id})`).join(', '));
       
       // Set default selections (first available device of each type)
       const defaultScreen = devices.screens[0]?.id || '';
@@ -328,8 +339,15 @@ class AppInitializer {
       console.log('🔄 Refreshing devices...');
       this.notifyStateChange({ loadingDevices: true });
       
+      // Re-enumerate audio devices from renderer
+      console.log('🎤 Re-enumerating audio devices...');
+      await rendererScreenRecorder.enumerateAudioDevices();
+      
       const status = await window.electronAPI.screenRecorder.getStatus();
       const devices = status.availableDevices || { screens: [], audio: [] };
+      
+      console.log(`🔄 Refreshed devices: ${devices.screens.length} screens, ${devices.audio.length} audio inputs`);
+      console.log('🎤 Audio devices after refresh:', devices.audio.map(d => `${d.name} (${d.id})`).join(', '));
       
       // Validate current selections against new device list
       const { selectedScreen, selectedAudioInput } = this.centralState;
