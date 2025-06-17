@@ -288,6 +288,9 @@
       "identity": null,
       "type": "development",
       "notarize": false,
+      "extendInfo": {
+        "NSCameraUseContinuityCameraDeviceType": true
+      },
       "extraFiles": [
         {
           "from": "binaries/whisper-cli",

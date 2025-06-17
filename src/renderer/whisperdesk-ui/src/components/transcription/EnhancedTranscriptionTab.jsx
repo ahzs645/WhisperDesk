@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { toast } from 'sonner'
 import { useAppState } from '@/App'
 import { appInitializer } from '@/utils/AppInitializer'
-import { EnhancedScreenRecorder } from '../EnhancedScreenRecorder'
+import { ScreenRecorder } from '../screen-recorder'
 import { FileUploadSection } from './FileUploadSection'
 import { QuickRecordSection } from './QuickRecordSection'
 import { TranscriptionSettings } from './TranscriptionSettings'
@@ -471,7 +471,7 @@ export function EnhancedTranscriptionTab() {
 
       {/* Enhanced Screen Recorder - FIXED: Scroll position preserved */}
       <div id="enhanced-recorder">
-        <EnhancedScreenRecorder />
+        <ScreenRecorder />
       </div>
     </div>
   )

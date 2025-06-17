@@ -1,18 +1,21 @@
-// src/renderer/whisperdesk-ui/src/components/RecordingControls.jsx
 import React from 'react';
-import { Button } from '@/components/ui/button';
+import { Button } from '../ui/button';
 import { Square, Video, Play, Pause, Clock } from 'lucide-react';
-import { useAppState } from '@/App';
-import { formatDuration } from '../utils/recordingUtils';
+import { useScreenRecorderContext } from './ScreenRecorderProvider';
+import { formatDuration } from '../../utils/recordingUtils';
 
-export const RecordingControls = ({ 
-  apiStatus,
-  loadingDevices,
-  onStartRecording,
-  onStopRecording,
-  onPauseResume
-}) => {
-  const { appState } = useAppState();
+export const ScreenRecorderControls = () => {
+  const {
+    isRecording,
+    isPaused,
+    recordingDuration,
+    recordingValidated,
+    apiStatus,
+    loadingDevices,
+    startRecording,
+    stopRecording,
+    pauseResume
+  } = useScreenRecorderContext();
 
   return (
     <div className="space-y-4">
@@ -22,11 +25,11 @@ export const RecordingControls = ({
       
       <div className="flex items-center space-x-2">
         <Button
-          className={`flex-1 ${appState.isRecording ? 'bg-red-500 hover:bg-red-600' : 'bg-primary hover:bg-primary/90'}`}
-          onClick={appState.isRecording ? onStopRecording : onStartRecording}
+          className={`flex-1 ${isRecording ? 'bg-red-500 hover:bg-red-600' : 'bg-primary hover:bg-primary/90'}`}
+          onClick={isRecording ? stopRecording : startRecording}
           disabled={apiStatus !== 'available' || loadingDevices}
         >
-          {appState.isRecording ? (
+          {isRecording ? (
             <>
               <Square className="w-4 h-4 mr-2" />
               Stop Recording
@@ -39,13 +42,13 @@ export const RecordingControls = ({
           )}
         </Button>
         
-        {appState.isRecording && appState.recordingValidated && (
+        {isRecording && recordingValidated && (
           <Button 
             variant="secondary" 
-            onClick={onPauseResume}
+            onClick={pauseResume}
             disabled={apiStatus !== 'available'}
           >
-            {appState.isPaused ? (
+            {isPaused ? (
               <>
                 <Play className="w-4 h-4 mr-2" />
                 Resume
@@ -61,20 +64,20 @@ export const RecordingControls = ({
       </div>
 
       {/* Timer display */}
-      {appState.isRecording && (
+      {isRecording && (
         <div className="flex items-center justify-center space-x-2 p-4 bg-muted/50 rounded-lg">
           <Clock className="w-5 h-5 text-muted-foreground" />
           <div className="text-center">
             <div className="text-2xl font-mono font-bold">
-              {formatDuration(appState.recordingDuration || 0)}
+              {formatDuration(recordingDuration || 0)}
             </div>
             <div className="text-xs text-muted-foreground">
-              {!appState.recordingValidated ? 'Starting...' : 
-               appState.isPaused ? 'Paused' : 'Recording...'}
+              {!recordingValidated ? 'Starting...' : 
+               isPaused ? 'Paused' : 'Recording...'}
             </div>
           </div>
         </div>
       )}
     </div>
   );
-};
+}; 

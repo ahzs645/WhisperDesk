@@ -1,27 +1,22 @@
-// src/renderer/whisperdesk-ui/src/components/DeviceSelection.jsx
 import React from 'react';
-import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Button } from '../ui/button';
+import { Label } from '../ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Monitor, Mic, RefreshCw } from 'lucide-react';
-import { useAppState } from '@/App';
+import { useScreenRecorderContext } from './ScreenRecorderProvider';
 
-export const DeviceSelection = ({ 
-  deviceManager, 
-  recordingSettings,
-  isRecording = false 
-}) => {
-  const { appState } = useAppState();
-  
+export const ScreenRecorderDevices = () => {
   const {
     availableDevices,
     selectedScreen,
     selectedAudioInput,
     loadingDevices,
-    setSelectedScreen,
-    setSelectedAudioInput,
+    isRecording,
+    recordingSettings,
+    selectScreen,
+    selectAudioInput,
     refreshDevices
-  } = deviceManager;
+  } = useScreenRecorderContext();
 
   return (
     <div className="space-y-4">
@@ -43,7 +38,7 @@ export const DeviceSelection = ({
           <Label htmlFor="screen-select">Screen/Display</Label>
           <Select 
             value={selectedScreen} 
-            onValueChange={setSelectedScreen}
+            onValueChange={selectScreen}
             disabled={isRecording || loadingDevices}
           >
             <SelectTrigger id="screen-select">
@@ -54,7 +49,10 @@ export const DeviceSelection = ({
                 <SelectItem key={screen.id} value={screen.id}>
                   <div className="flex items-center space-x-2">
                     <Monitor className="w-4 h-4" />
-                    <span>{screen.name} (ID: {screen.id})</span>
+                    <span>{screen.name}</span>
+                    {screen.id && (
+                      <span className="text-xs text-muted-foreground">(ID: {screen.id})</span>
+                    )}
                   </div>
                 </SelectItem>
               ))}
@@ -71,8 +69,8 @@ export const DeviceSelection = ({
           <Label htmlFor="audio-select">Audio Input</Label>
           <Select 
             value={selectedAudioInput} 
-            onValueChange={setSelectedAudioInput}
-            disabled={isRecording || loadingDevices || !recordingSettings.recordingSettings.includeMicrophone}
+            onValueChange={selectAudioInput}
+            disabled={isRecording || loadingDevices || !recordingSettings.includeMicrophone}
           >
             <SelectTrigger id="audio-select">
               <SelectValue placeholder="Select audio input" />
@@ -82,7 +80,10 @@ export const DeviceSelection = ({
                 <SelectItem key={device.id} value={device.id}>
                   <div className="flex items-center space-x-2">
                     <Mic className="w-4 h-4" />
-                    <span>{device.name} (ID: {device.id})</span>
+                    <span>{device.name}</span>
+                    {device.id && (
+                      <span className="text-xs text-muted-foreground">(ID: {device.id})</span>
+                    )}
                   </div>
                 </SelectItem>
               ))}
@@ -91,6 +92,11 @@ export const DeviceSelection = ({
           {selectedAudioInput && (
             <div className="text-xs text-muted-foreground">
               Selected device ID: {selectedAudioInput}
+            </div>
+          )}
+          {!recordingSettings.includeMicrophone && (
+            <div className="text-xs text-amber-600">
+              Audio input disabled - enable microphone in settings
             </div>
           )}
         </div>
@@ -118,4 +124,4 @@ export const DeviceSelection = ({
       )}
     </div>
   );
-};
+}; 
