@@ -324,7 +324,7 @@ class ScreenRecorderHandler {
       
       console.log(`📦 Created blob: ${blob.size} bytes, type: ${blob.type}`);
 
-      // Convert blob to buffer - FIXED: Use Uint8Array instead of Buffer
+      // Convert blob to buffer
       const arrayBuffer = await blob.arrayBuffer();
       const uint8Array = new Uint8Array(arrayBuffer);
 
@@ -336,17 +336,29 @@ class ScreenRecorderHandler {
         outputPath = `recording-${timestamp}${extension}`;
       }
 
-      // Save file using Electron's file API
-      if (window.electronAPI?.file?.writeFile) {
+      // FIXED: Use saveRecordingFile instead of writeFile
+      if (window.electronAPI?.file?.saveRecordingFile) {
+        console.log(`💾 Calling saveRecordingFile with path: ${outputPath}, dataLength: ${uint8Array.length}`);
+        const result = await window.electronAPI.file.saveRecordingFile(outputPath, uint8Array);
+        
+        if (result && result.success) {
+          console.log(`✅ Recording saved successfully to: ${result.path}`);
+          return result.actualPath || result.path;
+        } else {
+          throw new Error(`Save failed: ${result?.error || 'Unknown error'}`);
+        }
+      } else if (window.electronAPI?.file?.writeFile) {
+        // Fallback to writeFile if saveRecordingFile is not available
         await window.electronAPI.file.writeFile(outputPath, uint8Array);
         console.log(`✅ Recording saved to: ${outputPath}`);
+        return outputPath;
       } else {
-        // Fallback: trigger download
+        // Last resort: trigger download
         this.downloadBlob(blob, outputPath);
         console.log(`📥 Recording downloaded as: ${outputPath}`);
+        return outputPath;
       }
 
-      return outputPath;
     } catch (error) {
       console.error('Failed to save recording:', error);
       throw error;
