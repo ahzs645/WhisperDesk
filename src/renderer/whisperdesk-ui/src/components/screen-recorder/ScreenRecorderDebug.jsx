@@ -507,6 +507,341 @@ export const ScreenRecorderDebug = () => {
     }
   };
 
+  const testSystemAudioCapture = async () => {
+    console.log('🧪 Testing system audio capture methods...');
+    addToEventLog('🧪 Testing system audio capture methods...');
+    
+    const methods = [
+      {
+        name: 'Method 1: Desktop audio via chromeMediaSource',
+        test: async () => {
+          const constraints = {
+            video: false,
+            audio: {
+              mandatory: {
+                chromeMediaSource: 'desktop',
+                autoGainControl: false,
+                echoCancellation: false,
+                noiseSuppression: false,
+                sampleRate: 48000
+              }
+            }
+          };
+          return await navigator.mediaDevices.getUserMedia(constraints);
+        }
+      },
+      {
+        name: 'Method 2: getDisplayMedia with audio',
+        test: async () => {
+          return await navigator.mediaDevices.getDisplayMedia({
+            video: false,
+            audio: {
+              autoGainControl: false,
+              echoCancellation: false,
+              noiseSuppression: false,
+              sampleRate: 48000
+            }
+          });
+        }
+      },
+      {
+        name: 'Method 3: Combined video+audio getDisplayMedia',
+        test: async () => {
+          return await navigator.mediaDevices.getDisplayMedia({
+            video: true,
+            audio: true
+          });
+        }
+      },
+      {
+        name: 'Method 4: Desktop capture with audio',
+        test: async () => {
+          const constraints = {
+            video: {
+              mandatory: {
+                chromeMediaSource: 'desktop',
+                chromeMediaSourceId: selectedScreen
+              }
+            },
+            audio: {
+              mandatory: {
+                chromeMediaSource: 'desktop',
+                chromeMediaSourceId: selectedScreen
+              }
+            }
+          };
+          return await navigator.mediaDevices.getUserMedia(constraints);
+        }
+      }
+    ];
+
+    let successfulMethods = [];
+
+    for (const method of methods) {
+      try {
+        console.log(`🧪 Testing: ${method.name}`);
+        addToEventLog(`🧪 Testing: ${method.name}`);
+        
+        const stream = await method.test();
+        
+        const result = {
+          audioTracks: stream.getAudioTracks().length,
+          videoTracks: stream.getVideoTracks().length,
+          audioSettings: stream.getAudioTracks()[0]?.getSettings(),
+          audioLabel: stream.getAudioTracks()[0]?.label
+        };
+        
+        console.log(`✅ ${method.name} SUCCESS:`, result);
+        addToEventLog(`✅ ${method.name} SUCCESS: ${result.audioTracks} audio tracks, ${result.videoTracks} video tracks`);
+        
+        if (result.audioTracks > 0) {
+          successfulMethods.push(method.name);
+          addToEventLog(`🎉 ${method.name} can capture system audio! Label: ${result.audioLabel}`);
+          
+          // Test if we can actually record from this stream
+          try {
+            const testRecorder = new MediaRecorder(stream);
+            console.log(`✅ ${method.name} is compatible with MediaRecorder`);
+            addToEventLog(`✅ ${method.name} is compatible with MediaRecorder`);
+          } catch (recorderError) {
+            console.log(`❌ ${method.name} NOT compatible with MediaRecorder:`, recorderError.message);
+            addToEventLog(`❌ ${method.name} NOT compatible with MediaRecorder: ${recorderError.message}`);
+          }
+        } else {
+          addToEventLog(`⚠️ ${method.name} succeeded but captured no audio tracks`);
+        }
+        
+        // Clean up test stream
+        stream.getTracks().forEach(track => track.stop());
+        
+      } catch (error) {
+        console.log(`❌ ${method.name} FAILED:`, error.message);
+        addToEventLog(`❌ ${method.name} FAILED: ${error.message}`);
+        
+        // Provide specific error guidance
+        if (error.name === 'NotAllowedError') {
+          addToEventLog(`💡 ${method.name}: Permission denied - user may need to allow screen sharing with audio`);
+        } else if (error.name === 'NotSupportedError') {
+          addToEventLog(`💡 ${method.name}: Not supported on this platform/browser`);
+        } else if (error.name === 'NotFoundError') {
+          addToEventLog(`💡 ${method.name}: No system audio source found`);
+        }
+      }
+    }
+
+    // Summary
+    if (successfulMethods.length > 0) {
+      console.log('🎉 SYSTEM AUDIO CAPTURE SUMMARY:', successfulMethods);
+      addToEventLog(`🎉 SUMMARY: ${successfulMethods.length} methods can capture system audio:`);
+      successfulMethods.forEach(method => addToEventLog(`  ✅ ${method}`));
+      addToEventLog('💡 Your recordings should now include system audio!');
+    } else {
+      console.log('❌ NO METHODS can capture system audio');
+      addToEventLog('❌ NO METHODS can capture system audio');
+      addToEventLog('💡 System audio may not be available on this platform');
+      addToEventLog('💡 Try: 1) Ensure apps are playing audio 2) Check browser permissions 3) Try different screen sources');
+    }
+
+    // Platform-specific advice
+    const platform = navigator.platform;
+    if (platform.includes('Mac')) {
+      addToEventLog('🍎 macOS: You may need to grant "Screen Recording" permission in System Preferences > Security & Privacy');
+    } else if (platform.includes('Win')) {
+      addToEventLog('🪟 Windows: System audio capture should work with getDisplayMedia');
+    } else if (platform.includes('Linux')) {
+      addToEventLog('🐧 Linux: System audio capture support varies by browser and desktop environment');
+    }
+  };
+
+  const testComprehensiveSystemAudio = async () => {
+    console.log('🧪 COMPREHENSIVE System Audio Testing...');
+    addToEventLog('🧪 Starting comprehensive system audio testing...');
+    
+    // First check basic system info
+    addToEventLog(`🖥️ Platform: ${navigator.platform}`);
+    addToEventLog(`🌐 User Agent: ${navigator.userAgent.substring(0, 100)}...`);
+    
+    const testMethods = [
+      {
+        name: 'getDisplayMedia audio-only',
+        description: 'Standard way to capture system audio',
+        test: async () => {
+          return await navigator.mediaDevices.getDisplayMedia({
+            video: false,
+            audio: true
+          });
+        }
+      },
+      {
+        name: 'getDisplayMedia video+audio',
+        description: 'Capture screen and system audio together',
+        test: async () => {
+          return await navigator.mediaDevices.getDisplayMedia({
+            video: true,
+            audio: true
+          });
+        }
+      },
+      {
+        name: 'getDisplayMedia with detailed audio constraints',
+        description: 'Capture with specific audio settings',
+        test: async () => {
+          return await navigator.mediaDevices.getDisplayMedia({
+            video: false,
+            audio: {
+              autoGainControl: false,
+              echoCancellation: false,
+              noiseSuppression: false,
+              sampleRate: 48000,
+              channelCount: 2
+            }
+          });
+        }
+      },
+      {
+        name: 'getUserMedia desktop audio (risky)',
+        description: 'Direct desktop audio capture (may crash)',
+        test: async () => {
+          return await navigator.mediaDevices.getUserMedia({
+            video: false,
+            audio: {
+              mandatory: {
+                chromeMediaSource: 'desktop',
+                autoGainControl: false,
+                echoCancellation: false,
+                noiseSuppression: false
+              }
+            }
+          });
+        }
+      }
+    ];
+
+    const results = [];
+    let workingMethods = 0;
+    
+    for (const method of testMethods) {
+      addToEventLog(`🧪 Testing: ${method.name}`);
+      console.log(`🧪 Testing: ${method.name} - ${method.description}`);
+      
+      try {
+        const stream = await method.test();
+        
+        const audioTracks = stream.getAudioTracks().length;
+        const videoTracks = stream.getVideoTracks().length;
+        
+        if (audioTracks > 0) {
+          workingMethods++;
+          const audioTrack = stream.getAudioTracks()[0];
+          const settings = audioTrack.getSettings();
+          
+          addToEventLog(`✅ ${method.name} SUCCESS: ${audioTracks} audio, ${videoTracks} video`);
+          addToEventLog(`  📊 Audio: ${settings.sampleRate}Hz, ${settings.channelCount}ch, ${audioTrack.label}`);
+          
+          // Test MediaRecorder compatibility
+          try {
+            const testRecorder = new MediaRecorder(stream);
+            addToEventLog(`  ✅ MediaRecorder compatible`);
+            console.log(`✅ ${method.name} is MediaRecorder compatible`);
+          } catch (recorderError) {
+            addToEventLog(`  ❌ MediaRecorder NOT compatible: ${recorderError.message}`);
+            console.log(`❌ ${method.name} NOT MediaRecorder compatible:`, recorderError.message);
+          }
+          
+          // Test if we can actually record a few seconds
+          try {
+            addToEventLog(`  🎬 Testing actual recording...`);
+            const recorder = new MediaRecorder(stream);
+            const chunks = [];
+            
+            recorder.ondataavailable = (e) => chunks.push(e.data);
+            recorder.onstop = () => {
+              const blob = new Blob(chunks, { type: 'video/webm' });
+              addToEventLog(`  ✅ Recorded ${blob.size} bytes successfully`);
+              console.log(`✅ ${method.name} recorded ${blob.size} bytes`);
+            };
+            
+            recorder.start();
+            setTimeout(() => recorder.stop(), 2000); // Record for 2 seconds
+            
+          } catch (recordError) {
+            addToEventLog(`  ❌ Recording test failed: ${recordError.message}`);
+          }
+          
+        } else {
+          addToEventLog(`⚠️ ${method.name} succeeded but no audio tracks`);
+        }
+        
+        // Clean up
+        stream.getTracks().forEach(track => track.stop());
+        
+        results.push({
+          name: method.name,
+          success: true,
+          audioTracks,
+          videoTracks
+        });
+        
+      } catch (error) {
+        addToEventLog(`❌ ${method.name} FAILED: ${error.message}`);
+        console.log(`❌ ${method.name} FAILED:`, error.message);
+        
+        // Provide specific guidance
+        if (error.name === 'NotSupportedError') {
+          addToEventLog(`💡 Not supported on this platform/browser`);
+        } else if (error.name === 'NotAllowedError') {
+          addToEventLog(`💡 Permission denied - check System Preferences`);
+        } else if (error.name === 'NotFoundError') {
+          addToEventLog(`💡 No audio source found`);
+        } else if (error.message.includes('Not supported')) {
+          addToEventLog(`💡 API not supported in this environment`);
+        }
+        
+        results.push({
+          name: method.name,
+          success: false,
+          error: error.message
+        });
+      }
+    }
+
+    // Summary
+    addToEventLog('');
+    addToEventLog(`🎉 COMPREHENSIVE TEST SUMMARY:`);
+    addToEventLog(`✅ Working methods: ${workingMethods}/${testMethods.length}`);
+    
+    if (workingMethods > 0) {
+      addToEventLog('🎊 System audio capture IS possible on your system!');
+      const working = results.filter(r => r.success && r.audioTracks > 0);
+      working.forEach(result => {
+        addToEventLog(`  ✅ ${result.name} (${result.audioTracks} audio tracks)`);
+      });
+    } else {
+      addToEventLog('❌ No working system audio methods found');
+      addToEventLog('');
+      addToEventLog('🔧 TROUBLESHOOTING STEPS:');
+      addToEventLog('1. 🍎 macOS: System Preferences > Security & Privacy > Screen Recording');
+      addToEventLog('   - Ensure your browser/Electron app has permission');
+      addToEventLog('2. 🔊 Ensure apps are actively playing audio during test');
+      addToEventLog('3. 🌐 Try different browsers (Chrome, Safari, Firefox)');
+      addToEventLog('4. 🎵 Consider audio routing software like BlackHole or SoundFlower');
+      addToEventLog('5. ⚡ Update to latest Electron/Chromium version');
+      addToEventLog('6. 🔄 Restart browser/app after granting permissions');
+    }
+    
+    // Platform-specific advice
+    if (navigator.platform.includes('Mac')) {
+      addToEventLog('');
+      addToEventLog('🍎 macOS SPECIFIC:');
+      addToEventLog('• Screen Recording permission is required for system audio');
+      addToEventLog('• Some apps may need "Accessibility" permission too');
+      addToEventLog('• Try recording from different apps (Music, Safari, etc.)');
+      addToEventLog('• BlackHole audio driver can help route system audio');
+    }
+    
+    console.log('🎉 Comprehensive system audio test completed');
+  };
+
   useEffect(() => {
     refreshDebugInfo();
     const interval = setInterval(refreshDebugInfo, 5000);
@@ -549,6 +884,14 @@ export const ScreenRecorderDebug = () => {
           <Button variant="outline" size="sm" onClick={testAudioRecording}>
             <Play className="w-4 h-4 mr-2" />
             Test Audio Recording
+          </Button>
+          <Button variant="outline" size="sm" onClick={testSystemAudioCapture}>
+            <Play className="w-4 h-4 mr-2" />
+            Test System Audio Capture
+          </Button>
+          <Button variant="outline" size="sm" onClick={testComprehensiveSystemAudio}>
+            <Play className="w-4 h-4 mr-2" />
+            Test System Audio (Comprehensive)
           </Button>
           <Button variant="outline" size="sm" onClick={debugRecordingOptions}>
             <CheckCircle className="w-4 h-4 mr-2" />
