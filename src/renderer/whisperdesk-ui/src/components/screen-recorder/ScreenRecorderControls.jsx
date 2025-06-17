@@ -2,7 +2,31 @@ import React from 'react';
 import { Button } from '../ui/button';
 import { Square, Video, Play, Pause, Clock } from 'lucide-react';
 import { useScreenRecorderContext } from './ScreenRecorderProvider';
-import { formatDuration } from '../../utils/recordingUtils';
+
+// Format duration utility that handles both seconds and milliseconds
+const formatDuration = (duration) => {
+  // If duration is a very small number (0-59), it's likely in seconds
+  // If duration is a larger number (1000+), it's likely in milliseconds
+  let totalSeconds;
+  
+  if (duration < 60) {
+    // Likely in seconds already
+    totalSeconds = Math.floor(duration);
+  } else {
+    // Likely in milliseconds, convert to seconds
+    totalSeconds = Math.floor(duration / 1000);
+  }
+  
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  
+  if (hours > 0) {
+    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+  } else {
+    return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+  }
+};
 
 export const ScreenRecorderControls = () => {
   const {
@@ -16,6 +40,13 @@ export const ScreenRecorderControls = () => {
     stopRecording,
     pauseResume
   } = useScreenRecorderContext();
+
+  // Debug log to see what duration value we're getting
+  React.useEffect(() => {
+    if (isRecording && recordingDuration !== undefined) {
+      console.log('🕐 Duration received:', recordingDuration, 'type:', typeof recordingDuration);
+    }
+  }, [recordingDuration, isRecording]);
 
   return (
     <div className="space-y-4">
@@ -75,9 +106,13 @@ export const ScreenRecorderControls = () => {
               {!recordingValidated ? 'Starting...' : 
                isPaused ? 'Paused' : 'Recording...'}
             </div>
+            {/* Debug info */}
+            <div className="text-xs text-muted-foreground mt-1">
+              Raw: {recordingDuration} {typeof recordingDuration === 'number' && recordingDuration > 60 ? '(ms)' : '(s)'}
+            </div>
           </div>
         </div>
       )}
     </div>
   );
-}; 
+};
