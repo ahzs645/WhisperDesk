@@ -31,12 +31,16 @@
     <key>com.apple.security.files.user-selected.read-write</key>
     <true/>
     
-    <!-- Audio input access for recording features -->
-    <key>com.apple.security.device.audio-input</key>
+    <!-- Required for screen recording -->
+    <key>com.apple.security.device.screen-capture</key>
     <true/>
     
-    <!-- Screen recording access (for screen recording features) -->
-    <key>com.apple.security.device.screen-recording</key>
+    <!-- Required for microphone access -->
+    <key>com.apple.security.device.microphone</key>
+    <true/>
+    
+    <!-- Required for system audio capture with ScreenCaptureKit -->
+    <key>com.apple.security.device.audio-input</key>
     <true/>
     
     <!-- Camera access (if needed for future features) -->

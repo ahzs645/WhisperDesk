@@ -205,6 +205,10 @@ class MacOSScreenCaptureRecorder extends EventEmitter {
    * Build Aperture configuration for ScreenCaptureKit
    * Based on Aperture README: https://github.com/wulkano/aperture-node
    */
+  /**
+   * Build Aperture configuration for ScreenCaptureKit - CORRECTED VERSION
+   * This is the key method that needs to be fixed in your MacOSScreenCaptureRecorder.js
+   */
   async buildApertureConfig(options) {
     const screens = await this.aperture.screens();
     
@@ -217,76 +221,39 @@ class MacOSScreenCaptureRecorder extends EventEmitter {
       }
     }
 
-    // Build Aperture configuration according to the README
+    // Build base Aperture configuration
     const config = {
-      // Screen selection
       screenId: screenId,
-      
-      // Video settings
       fps: this.getFrameRateForQuality(options.videoQuality),
       showCursor: options.showCursor !== false,
       highlightClicks: options.highlightClicks || false,
-      
-      // Video codec
       videoCodec: 'h264' // Start with h264 for compatibility
     };
 
-    // Handle audio configuration
-    let audioConfigured = false;
+    console.log('🔧 Building Aperture config for system audio...');
+    console.log('Options:', {
+      includeSystemAudio: options.includeSystemAudio,
+      includeMicrophone: options.includeMicrophone,
+      audioInputId: options.audioInputId
+    });
 
-    // System audio + microphone: Complex case
-    if (options.includeSystemAudio && options.includeMicrophone) {
-      console.log('🎤🔊 Configuring system audio + microphone');
-      // For system audio + microphone, we need to be careful
-      // ScreenCaptureKit can capture system audio automatically
-      // But adding a microphone device might interfere
-      console.log('   Warning: System audio + microphone may have limitations');
+    // CRITICAL: System audio configuration
+    if (options.includeSystemAudio && !options.includeMicrophone) {
+      // PURE SYSTEM AUDIO - This is the most important case
+      console.log('🔊 Configuring for PURE system audio capture');
+      console.log('   Strategy: NO audioDeviceId (enables ScreenCaptureKit system audio)');
       
-      // Try to find a microphone for the combo
+      // DO NOT SET config.audioDeviceId
+      // When audioDeviceId is undefined, ScreenCaptureKit captures system audio
+      
+    } else if (options.includeMicrophone && !options.includeSystemAudio) {
+      // MICROPHONE ONLY
+      console.log('🎤 Configuring for microphone only');
+      
       try {
         const audioDevices = await this.aperture.audioDevices();
-        let targetAudioId = options.audioInputId;
-        if (targetAudioId === 'default') {
-          const microphones = audioDevices.filter(d => 
-            d.name.toLowerCase().includes('microphone') || 
-            d.name.toLowerCase().includes('built-in')
-          );
-          if (microphones.length > 0) {
-            targetAudioId = microphones[0].id;
-            console.log(`🎤 Adding microphone: ${microphones[0].name}`);
-            config.audioDeviceId = targetAudioId;
-          }
-        }
-      } catch (error) {
-        console.warn('⚠️ Could not add microphone:', error.message);
-      }
-      
-      audioConfigured = true;
-    }
-    // System audio only - THE KEY CHANGE
-    else if (options.includeSystemAudio) {
-      console.log('🔊 Configuring system audio only');
-      
-      // For system audio ONLY, explicitly DO NOT set audioDeviceId
-      // ScreenCaptureKit captures system audio when:
-      // 1. No audioDeviceId is specified, OR
-      // 2. We explicitly enable system audio in ScreenCaptureKit
-      
-      console.log('   Strategy: Let ScreenCaptureKit capture system audio natively');
-      console.log('   No audioDeviceId will be set (this enables system audio)');
-      
-      // DO NOT SET config.audioDeviceId - this is the key!
-      // When audioDeviceId is undefined/not set, ScreenCaptureKit captures system audio
-      
-      audioConfigured = true;
-    }
-    // Microphone only
-    else if (options.includeMicrophone && options.audioInputId) {
-      console.log('🎤 Configuring microphone only');
-      try {
-        const audioDevices = await this.aperture.audioDevices();
+        let targetAudioId = options.audioInputId || 'default';
         
-        let targetAudioId = options.audioInputId;
         if (targetAudioId === 'default') {
           const microphones = audioDevices.filter(d => 
             d.name.toLowerCase().includes('microphone') || 
@@ -302,41 +269,49 @@ class MacOSScreenCaptureRecorder extends EventEmitter {
         if (targetMic) {
           config.audioDeviceId = targetMic.id;
           console.log(`🎤 Selected microphone: ${targetMic.name}`);
-          audioConfigured = true;
-        } else {
-          console.warn(`⚠️ Microphone device not found: ${targetAudioId}`);
         }
       } catch (error) {
         console.warn('⚠️ Could not configure microphone:', error.message);
       }
+      
+    } else if (options.includeSystemAudio && options.includeMicrophone) {
+      // BOTH SYSTEM AUDIO + MICROPHONE - Complex case
+      console.log('🔊🎤 Configuring for system audio + microphone');
+      console.log('   Note: This is challenging - system audio takes priority');
+      
+      // For system audio + microphone, prioritize system audio
+      // The microphone will need to be handled separately or mixed later
+      console.log('   Strategy: Using system audio, microphone may be limited');
+      
+      // DO NOT SET config.audioDeviceId for system audio priority
+      
+    } else {
+      // NO AUDIO
+      console.log('🔇 No audio requested');
     }
 
-    // CRITICAL: For system audio, config.audioDeviceId should be undefined
-    // This tells ScreenCaptureKit to capture system audio instead of input audio
-
-    console.log('🔧 Aperture config:', {
+    // IMPORTANT: Log the final configuration
+    console.log('🔧 Final Aperture config:', {
       screenId: config.screenId,
       fps: config.fps,
       showCursor: config.showCursor,
       audioDeviceId: config.audioDeviceId || 'UNDEFINED (enables system audio)',
-      audioConfigured: audioConfigured,
-      systemAudio: options.includeSystemAudio,
-      microphone: options.includeMicrophone,
       videoCodec: config.videoCodec
     });
 
-    // Add note about system audio capture mechanism
+    // Add explanation
     if (options.includeSystemAudio) {
-      console.log('📝 System Audio Capture Mode:');
+      console.log('📝 System Audio Capture:');
       if (config.audioDeviceId) {
-        console.log('   • Mode: Microphone + System Audio (may have limitations)');
-        console.log(`   • Microphone: ${config.audioDeviceId}`);
+        console.log('   • Mode: Microphone device specified');
+        console.log('   • Result: May capture microphone instead of system audio');
+        console.log('   • Recommendation: Use system audio only for best results');
       } else {
-        console.log('   • Mode: Pure System Audio (audioDeviceId = undefined)');
-        console.log('   • This tells ScreenCaptureKit to capture computer audio output');
+        console.log('   • Mode: ScreenCaptureKit native system audio');
+        console.log('   • audioDeviceId: undefined (this enables system audio)');
+        console.log('   • Requirements: Screen recording permission + proper entitlements');
+        console.log('   • Expected: Computer audio output will be captured');
       }
-      console.log('   • Depends on: Screen recording permission + system audio entitlements');
-      console.log('   • Test: Play music/video during recording');
     }
 
     return config;
