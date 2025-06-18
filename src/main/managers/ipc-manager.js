@@ -57,14 +57,66 @@ class IpcManager {
       if (screenRecorderHandlers) {
         // The handlers are already set up in the ScreenRecorderHandlers class
         // We just need to ensure they're initialized
-        console.log('✅ Screen Recorder IPC handlers registered');
+        console.log('✅ Screen Recorder IPC handlers available');
+        console.log('🔍 Registered handlers count:', screenRecorderHandlers.registeredHandlers?.size || 0);
       } else {
-        console.warn('⚠️ Screen Recorder handlers not available');
+        console.warn('⚠️ Screen Recorder handlers not available - setting up fallback handlers');
+        console.log('🔍 Service manager exists:', !!this.serviceManager);
+        console.log('🔍 Service manager screen recorder system:', !!this.serviceManager.screenRecorderSystem);
+        
+        // Set up emergency fallback handlers to prevent app crashes
+        this.setupFallbackScreenRecorderHandlers();
       }
     } catch (error) {
       console.error('❌ Failed to set up Screen Recorder IPC handlers:', error);
-      throw error;
+      // Set up emergency fallback handlers to prevent app crashes
+      this.setupFallbackScreenRecorderHandlers();
     }
+  }
+
+  setupFallbackScreenRecorderHandlers() {
+    console.log('🚨 Setting up fallback Screen Recorder IPC handlers...');
+    
+    const { ipcMain } = require('electron');
+    
+    // Fallback getStatus handler
+    ipcMain.handle('screenRecorder:getStatus', () => {
+      console.log('📊 Fallback: Getting screen recorder status');
+      return {
+        isRecording: false,
+        isPaused: false,
+        currentRecordingId: null,
+        platform: process.platform,
+        method: 'fallback',
+        capabilities: null,
+        isInitialized: false,
+        error: 'Screen recorder service not properly initialized'
+      };
+    });
+
+    // Fallback for other essential handlers
+    const fallbackHandlers = [
+      'screenRecorder:startRecording',
+      'screenRecorder:stopRecording',
+      'screenRecorder:pauseRecording',
+      'screenRecorder:resumeRecording',
+      'screenRecorder:getAvailableScreens',
+      'screenRecorder:checkPermissions',
+      'screenRecorder:requestPermissions'
+    ];
+
+    fallbackHandlers.forEach(channel => {
+      ipcMain.handle(channel, () => {
+        console.log(`📊 Fallback: ${channel} called`);
+        return {
+          success: false,
+          error: 'Screen recorder service not properly initialized',
+          fallback: true
+        };
+      });
+    });
+
+    console.log('✅ Fallback Screen Recorder IPC handlers registered');
   }
 
   registerHandler(channel, handler) {

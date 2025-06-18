@@ -101,8 +101,12 @@ class ServiceManager extends EventEmitter {
       console.log('🔧 Initializing Platform-Aware Screen Recorder...');
       
       // Use simplified system
+      console.log('🔧 Creating platform-aware screen recorder system...');
       this.screenRecorderSystem = await createPlatformAwareScreenRecorderSystem();
+      console.log('✅ Screen recorder system created successfully');
+      
       this.services.screenRecorder = this.screenRecorderSystem.service;
+      console.log('✅ Screen recorder service assigned');
       
       // Log platform information
       const platformInfo = this.screenRecorderSystem.platformInfo;
@@ -111,6 +115,14 @@ class ServiceManager extends EventEmitter {
         method: platformInfo.selectedMethod,
         features: platformInfo.supportedFeatures
       });
+      
+      // Verify handlers were created
+      if (this.screenRecorderSystem.handlers) {
+        console.log('✅ Screen recorder handlers created');
+        console.log('🔍 Handlers registered count:', this.screenRecorderSystem.handlers.registeredHandlers?.size || 0);
+      } else {
+        console.warn('⚠️ Screen recorder handlers not created');
+      }
       
       // Simplified logging based on platform
       if (platformInfo.platform === 'darwin') {
@@ -126,7 +138,12 @@ class ServiceManager extends EventEmitter {
       console.log('✅ Platform-Aware Screen Recorder initialized');
     } catch (error) {
       console.error('❌ Failed to initialize Platform-Aware Screen Recorder:', error);
-      throw error;
+      console.error('❌ Error details:', error.stack);
+      
+      // Don't throw - let the app continue with fallback handlers
+      console.warn('⚠️ Screen recorder will use fallback mode');
+      this.screenRecorderSystem = null;
+      this.services.screenRecorder = null;
     }
   }
 
@@ -355,6 +372,9 @@ class ServiceManager extends EventEmitter {
   }
 
   getScreenRecorderHandlers() {
+    console.log('🔍 Getting screen recorder handlers...');
+    console.log('🔍 Screen recorder system exists:', !!this.screenRecorderSystem);
+    console.log('🔍 Handlers exist:', !!this.screenRecorderSystem?.handlers);
     return this.screenRecorderSystem?.handlers;
   }
 

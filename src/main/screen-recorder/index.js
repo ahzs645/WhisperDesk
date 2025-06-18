@@ -18,12 +18,22 @@ async function createPlatformAwareScreenRecorderSystem() {
   
   try {
     // Create and initialize the platform-aware service
+    console.log('🔧 Creating PlatformAwareScreenRecorderService...');
     const service = new PlatformAwareScreenRecorderService();
+    console.log('✅ PlatformAwareScreenRecorderService created');
+    
+    console.log('🔧 Initializing service...');
     await service.initialize();
+    console.log('✅ Service initialized');
     
     // Create IPC handlers
+    console.log('🔧 Creating ScreenRecorderHandlers...');
     const handlers = new ScreenRecorderHandlers(service);
+    console.log('✅ ScreenRecorderHandlers created');
+    
+    console.log('🔧 Setting up handlers...');
     handlers.setup();
+    console.log('✅ Handlers set up');
     
     // Log platform information
     const platformInfo = service.getPlatformInfo();
@@ -43,6 +53,7 @@ async function createPlatformAwareScreenRecorderSystem() {
     
   } catch (error) {
     console.error('❌ Failed to create platform-aware screen recorder system:', error);
+    console.error('❌ Error stack:', error.stack);
     throw error;
   }
 }

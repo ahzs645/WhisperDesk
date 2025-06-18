@@ -1,6 +1,6 @@
 // src/main/screen-recorder/core/PlatformRecordingRouter.js
 /**
- * Fixed Platform-aware recording router with improved macOS ScreenCaptureKit handling
+ * Updated Platform-aware recording router with ScreenCaptureKit Node.js support
  */
 
 const { EventEmitter } = require('events');
@@ -58,21 +58,35 @@ class PlatformRecordingRouter extends EventEmitter {
   async getAvailableMethods() {
     const methods = [];
 
-    // macOS: Pure ScreenCaptureKit (highest priority)
+    // macOS: ScreenCaptureKit Node.js (highest priority - optimized for transcription)
     if (this.platform === 'darwin') {
       methods.push({
-        name: 'screencapturekit-native',
+        name: 'screencapturekit-node',
+        platform: 'darwin',
+        systemAudio: 'native',
+        microphone: 'native',
+        merger: 'built-in',
+        dependencies: ['screencapturekit'],
+        priority: 1,
+        transcriptionOptimized: true,
+        test: () => this.testScreenCaptureKitNode(),
+        create: () => this.createScreenCaptureKitNodeRecorder()
+      });
+
+      // Fallback: Pure ScreenCaptureKit with Aperture (if ScreenCaptureKit Node.js fails)
+      methods.push({
+        name: 'screencapturekit-aperture',
         platform: 'darwin',
         systemAudio: 'native',
         microphone: 'native',
         merger: 'none',
         dependencies: ['aperture-v7', 'screencapturekit'],
-        priority: 1,
-        test: () => this.testScreenCaptureKit(),
-        create: () => this.createMacOSRecorder()
+        priority: 2,
+        test: () => this.testScreenCaptureKitAperture(),
+        create: () => this.createMacOSScreenCaptureRecorder()
       });
 
-      // Fallback: Browser-only for macOS (if ScreenCaptureKit fails)
+      // Browser fallback for macOS
       methods.push({
         name: 'browser-macos-fallback',
         platform: 'darwin',
@@ -133,9 +147,67 @@ class PlatformRecordingRouter extends EventEmitter {
   }
 
   /**
-   * Enhanced ScreenCaptureKit testing with better error handling
+   * Test ScreenCaptureKit Node.js (NEW - highest priority for macOS)
    */
-  async testScreenCaptureKit() {
+  async testScreenCaptureKitNode() {
+    if (this.platform !== 'darwin') {
+      throw new Error('ScreenCaptureKit Node.js only available on macOS');
+    }
+    
+    try {
+      console.log('🧪 Testing ScreenCaptureKit Node.js...');
+      
+      // Test dynamic import of screencapturekit
+      const screencapturekit = await import('screencapturekit').catch(error => {
+        if (error.code === 'ERR_MODULE_NOT_FOUND') {
+          throw new Error('ScreenCaptureKit Node.js not installed (npm install screencapturekit)');
+        }
+        throw error;
+      });
+      
+      // Test basic functionality
+      const screens = await screencapturekit.screens();
+      
+      if (!Array.isArray(screens) || screens.length === 0) {
+        throw new Error('No screens available for recording');
+      }
+      
+      console.log(`✅ ScreenCaptureKit Node.js: ${screens.length} screen(s) available`);
+      
+      // Test audio devices (non-critical)
+      try {
+        const audioDevices = await screencapturekit.audioDevices();
+        console.log(`✅ ScreenCaptureKit Node.js: ${audioDevices.length} audio device(s) available`);
+      } catch (audioError) {
+        console.log('⚠️ Audio devices test failed (non-critical):', audioError.message);
+      }
+      
+      // Test microphones (non-critical)
+      try {
+        const microphones = await screencapturekit.microphoneDevices();
+        console.log(`✅ ScreenCaptureKit Node.js: ${microphones.length} microphone(s) available`);
+      } catch (micError) {
+        console.log('⚠️ Microphones test failed (non-critical):', micError.message);
+      }
+      
+      // Log transcription-optimized features
+      console.log('🎵 ScreenCaptureKit Node.js transcription features:');
+      console.log('   • Audio-only recording mode');
+      console.log('   • Automatic MP3 conversion');
+      console.log('   • Multi-source audio merging');
+      console.log('   • Built-in FFmpeg processing');
+      
+      return true;
+      
+    } catch (error) {
+      throw new Error(`ScreenCaptureKit Node.js test failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * Test traditional ScreenCaptureKit with Aperture (fallback)
+   */
+  async testScreenCaptureKitAperture() {
     if (this.platform !== 'darwin') {
       throw new Error('ScreenCaptureKit only available on macOS');
     }
@@ -146,7 +218,7 @@ class PlatformRecordingRouter extends EventEmitter {
     }
     
     try {
-      console.log('🧪 Testing Aperture v7 import...');
+      console.log('🧪 Testing Aperture v7 fallback...');
       
       // Test dynamic import of Aperture v7
       const aperture = await import('aperture');
@@ -155,41 +227,21 @@ class PlatformRecordingRouter extends EventEmitter {
         throw new Error('Aperture screens() function not available');
       }
       
-      console.log('🧪 Testing screen enumeration...');
-      
-      // Test screens enumeration with timeout
-      const screensPromise = aperture.screens();
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Screen enumeration timeout')), 10000)
-      );
-      
-      const screens = await Promise.race([screensPromise, timeoutPromise]);
+      const screens = await aperture.screens();
       
       if (!Array.isArray(screens) || screens.length === 0) {
         throw new Error('No screens available for recording');
       }
       
-      console.log(`✅ ScreenCaptureKit: ${screens.length} screen(s) available`);
-      
-      // Test audio devices (non-critical)
-      try {
-        console.log('🧪 Testing audio device enumeration...');
-        const audioDevices = await aperture.audioDevices();
-        console.log(`✅ ScreenCaptureKit: ${audioDevices.length} audio device(s) available`);
-      } catch (audioError) {
-        console.log('⚠️ Audio devices test failed (non-critical):', audioError.message);
-      }
+      console.log(`✅ Aperture fallback: ${screens.length} screen(s) available`);
       
       return true;
       
     } catch (error) {
       if (error.code === 'ERR_MODULE_NOT_FOUND') {
         throw new Error('Aperture v7 not installed (npm install aperture@7)');
-      } else if (error.message.includes('ESM')) {
-        throw new Error('Aperture v7 ESM import issue - check Node.js version');
-      } else {
-        throw new Error(`ScreenCaptureKit test failed: ${error.message}`);
       }
+      throw new Error(`Aperture fallback test failed: ${error.message}`);
     }
   }
 
@@ -199,11 +251,6 @@ class PlatformRecordingRouter extends EventEmitter {
   async testBrowserCPAL() {
     try {
       console.log('🧪 Testing Browser + CPAL combination...');
-      
-      // Test browser MediaRecorder availability (simulated check)
-      if (typeof global !== 'undefined' && !global.MediaRecorder) {
-        console.log('⚠️ MediaRecorder not available in main process (will be checked in renderer)');
-      }
       
       // Test CPAL
       await this.testCPAL();
@@ -229,7 +276,7 @@ class PlatformRecordingRouter extends EventEmitter {
   }
 
   /**
-   * Enhanced CPAL testing
+   * Test CPAL module
    */
   async testCPAL() {
     try {
@@ -256,7 +303,7 @@ class PlatformRecordingRouter extends EventEmitter {
   }
 
   /**
-   * Enhanced FFmpeg testing
+   * Test FFmpeg availability
    */
   async testFFmpeg() {
     try {
@@ -283,12 +330,21 @@ class PlatformRecordingRouter extends EventEmitter {
   /**
    * Create recorders with enhanced error handling
    */
-  createMacOSRecorder() {
+  createScreenCaptureKitNodeRecorder() {
+    try {
+      const ScreenCaptureKitNodeRecorder = require('../recorders/ScreenCaptureKitNodeRecorder');
+      return new ScreenCaptureKitNodeRecorder();
+    } catch (error) {
+      throw new Error(`Failed to create ScreenCaptureKit Node.js recorder: ${error.message}`);
+    }
+  }
+
+  createMacOSScreenCaptureRecorder() {
     try {
       const MacOSScreenCaptureRecorder = require('../recorders/MacOSScreenCaptureRecorder');
       return new MacOSScreenCaptureRecorder();
     } catch (error) {
-      throw new Error(`Failed to create macOS recorder: ${error.message}`);
+      throw new Error(`Failed to create macOS ScreenCaptureKit recorder: ${error.message}`);
     }
   }
 
@@ -356,11 +412,21 @@ class PlatformRecordingRouter extends EventEmitter {
       dependencies: method.dependencies,
       quality: this.getQualityRating(method),
       performance: this.getPerformanceRating(method),
-      reliability: this.getReliabilityRating(method)
+      reliability: this.getReliabilityRating(method),
+      transcriptionOptimized: method.transcriptionOptimized || false
     };
 
-    // Enhanced capabilities for ScreenCaptureKit
-    if (method.name === 'screencapturekit-native') {
+    // Enhanced capabilities for ScreenCaptureKit Node.js
+    if (method.name === 'screencapturekit-node') {
+      capabilities.audioOnlyMode = true;
+      capabilities.mp3Conversion = true;
+      capabilities.multiSourceAudio = true;
+      capabilities.builtInFFmpeg = true;
+      capabilities.transcriptionReady = true;
+    }
+
+    // Enhanced capabilities for traditional ScreenCaptureKit
+    if (method.name === 'screencapturekit-aperture') {
       capabilities.singleStream = true;
       capabilities.nativeIntegration = true;
       capabilities.hardwareAccelerated = true;
@@ -374,7 +440,8 @@ class PlatformRecordingRouter extends EventEmitter {
    * Get quality rating for method
    */
   getQualityRating(method) {
-    if (method.name === 'screencapturekit-native') return 'excellent';
+    if (method.name === 'screencapturekit-node') return 'excellent';
+    if (method.name === 'screencapturekit-aperture') return 'excellent';
     if (method.systemAudio === 'native') return 'excellent';
     if (method.systemAudio === 'browser' && method.microphone === 'cpal') return 'good';
     if (method.systemAudio === 'browser') return 'fair';
@@ -385,7 +452,9 @@ class PlatformRecordingRouter extends EventEmitter {
    * Get performance rating for method
    */
   getPerformanceRating(method) {
-    if (method.name === 'screencapturekit-native') return 'excellent';
+    if (method.name === 'screencapturekit-node') return 'excellent';
+    if (method.name === 'screencapturekit-aperture') return 'excellent';
+    if (method.merger === 'built-in') return 'excellent';
     if (method.merger === 'none') return 'excellent';
     if (method.merger === 'ffmpeg') return 'good';
     return 'fair';
@@ -395,7 +464,9 @@ class PlatformRecordingRouter extends EventEmitter {
    * Get reliability rating for method
    */
   getReliabilityRating(method) {
-    if (method.name === 'screencapturekit-native') return 'excellent';
+    if (method.name === 'screencapturekit-node') return 'excellent';
+    if (method.name === 'screencapturekit-aperture') return 'excellent';
+    if (method.dependencies.length <= 1) return 'excellent';
     if (method.dependencies.length <= 2) return 'good';
     if (method.dependencies.length <= 3) return 'fair';
     return 'basic';

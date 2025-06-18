@@ -18,20 +18,17 @@
     "dev:start": "concurrently \"npm run dev:renderer\" \"wait-on http://localhost:3000 && npm run dev:main\"",
     "dev:renderer": "cd src/renderer/whisperdesk-ui && pnpm run dev",
     "dev:main": "cross-env NODE_ENV=development nodemon --watch src/main --exec electron .",
-    
     "_comment_build_scripts": "=== BUILD SCRIPTS ===",
     "build": "npm run build:renderer && npm run build:main",
     "build:renderer": "cd src/renderer/whisperdesk-ui && npm run build",
     "build:main": "echo 'Main process ready'",
     "build:whisper": "node tools/setup/build-whisper-official.js",
     "build:all": "npm run build:whisper && npm run build:diarization",
-    
     "_comment_platform_aware_recording": "=== PLATFORM-AWARE RECORDING SETUP ===",
     "setup:recording": "npm run setup:recording:platform && npm run setup:recording:deps",
     "setup:recording:platform": "node scripts/setup-platform-recording.js",
-    "setup:recording:deps": "npm run setup:cpal && npm run setup:ffmpeg && npm run setup:aperture",
+    "setup:recording:deps": "npm run setup:cpal && npm run setup:ffmpeg",
     "setup:recording:complete": "npm run setup:recording && npm run test:recording:platform",
-    
     "_comment_cpal_scripts": "=== CPAL AUDIO LIBRARY SETUP ===",
     "setup:cpal": "npm run setup:cpal:check && npm run setup:cpal:install",
     "setup:cpal:check": "node scripts/check-cpal-requirements.js",
@@ -39,23 +36,14 @@
     "setup:cpal:build": "node scripts/build-cpal-from-source.js",
     "test:cpal": "node scripts/test-cpal-recording.js",
     "test:cpal:devices": "node scripts/test-cpal-devices.js",
-    
-    "_comment_aperture_scripts": "=== APERTURE SETUP (macOS) ===",
-    "setup:aperture": "npm run setup:aperture:check && npm run setup:aperture:install",
-    "setup:aperture:check": "node scripts/check-aperture-requirements.js",
-    "setup:aperture:install": "npm install aperture@latest",
-    "setup:aperture:permissions": "node scripts/setup-aperture-permissions.js",
-    "test:aperture": "node scripts/test-aperture-recording.js",
-    "test:aperture:v7": "node scripts/test-aperture-v7-features.js",
-    
+
     "_comment_ffmpeg_scripts": "=== FFMPEG SETUP & TESTING ===",
     "setup:ffmpeg": "node scripts/setup-ffmpeg.js",
     "setup:ffmpeg:static": "npm install ffmpeg-static@latest",
     "check:ffmpeg": "ffmpeg -version",
     "test:ffmpeg": "node scripts/test-ffmpeg.js",
     "test:ffmpeg:merge": "node scripts/test-ffmpeg-stream-merge.js",
-    "setup:audio": "npm run setup:ffmpeg && npm run setup:aperture && npm run setup:cpal",
-    
+    "setup:audio": "npm run setup:ffmpeg && npm run setup:cpal",
     "_comment_platform_testing": "=== PLATFORM-AWARE TESTING ===",
     "test:recording": "npm run test:recording:detection && npm run test:recording:platform",
     "test:recording:detection": "node scripts/test-platform-detection.js",
@@ -63,12 +51,10 @@
     "test:recording:macos": "node scripts/test-macos-native-recording.js",
     "test:recording:windows": "node scripts/test-windows-hybrid-recording.js",
     "test:recording:linux": "node scripts/test-linux-hybrid-recording.js",
-    "test:recording:all": "npm run test:cpal && npm run test:ffmpeg && npm run test:aperture && npm run test:recording:platform",
-    
+    "test:recording:all": "npm run test:cpal && npm run test:ffmpeg && npm run test:recording:platform",
     "_comment_whisper_platform_scripts": "=== WHISPER PLATFORM-SPECIFIC ===",
     "build:whisper:windows": "powershell -ExecutionPolicy Bypass -File tools/setup/compile-whisper-windows.ps1",
     "build:whisper:unix": "bash tools/setup/build-whisper.sh",
-    
     "_comment_diarization_scripts": "=== DIARIZATION SCRIPTS ===",
     "setup:diarization": "npm run _ensure:submodule && node scripts/setup-diarization.js",
     "setup:diarization:verbose": "npm run _ensure:submodule && node scripts/setup-diarization.js --verbose",
@@ -76,11 +62,9 @@
     "build:diarization": "npm run setup:diarization",
     "clean:diarization": "rm -rf binaries/diarize-cli* binaries/*onnxruntime* models/*.onnx",
     "rebuild:diarization": "npm run clean:diarization && npm run setup:diarization",
-    
     "_comment_helper_scripts": "=== HELPER SCRIPTS ===",
     "_ensure:submodule": "git submodule update --init --recursive || echo 'Submodule update failed or not in git repo'",
     "_install:renderer": "cd src/renderer/whisperdesk-ui && pnpm install && cd ../../..",
-    
     "_comment_electron_build_scripts": "=== ELECTRON BUILD & DISTRIBUTION ===",
     "electron:build": "npm run build && cp -r src/main dist/ && electron-builder && node scripts/rename-portable.js",
     "electron:build:win": "npm run build && electron-builder --win && node scripts/rename-portable.js",
@@ -89,7 +73,6 @@
     "dist:mac": "npm run build && electron-builder --mac && node scripts/rename-portable.js",
     "dist:linux": "npm run build && electron-builder --linux && node scripts/rename-portable.js",
     "dist:all": "npm run build && electron-builder --win --mac --linux && node scripts/rename-portable.js",
-    
     "_comment_setup_scripts": "=== SETUP & INSTALLATION ===",
     "install:all": "npm install && cd src/renderer/whisperdesk-ui && pnpm install && cd ../../.. && npm run build:whisper",
     "postinstall": "npm run _ensure:submodule && npm run _install:renderer && npm run setup:platform",
@@ -98,29 +81,24 @@
     "setup:check": "node tools/setup/setup-check.js",
     "setup:complete": "npm run build:whisper && npm run setup:diarization && npm run download:model:tiny && npm run setup:recording:complete",
     "setup:dev": "npm run setup:complete && npm run dev",
-    "setup:macos": "chmod +x tools/setup/build-whisper.sh && ./tools/setup/build-whisper.sh && npm run download:model:tiny && npm run setup:aperture && npm run setup:cpal",
+    "setup:macos": "chmod +x tools/setup/build-whisper.sh && ./tools/setup/build-whisper.sh && npm run download:model:tiny && npm run setup:cpal",
     "setup:windows": "powershell -ExecutionPolicy Bypass -File tools/setup/compile-whisper-windows.ps1 && npm run setup:cpal",
     "setup:linux": "bash tools/setup/build-whisper.sh && npm run setup:cpal",
-    
     "_comment_model_scripts": "=== MODEL MANAGEMENT ===",
     "download:model:tiny": "mkdir -p models && curl -L -o models/ggml-tiny.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin",
-    
     "_comment_testing_scripts": "=== TESTING & VALIDATION ===",
     "test": "jest",
     "test:transcription": "node test-transcription.js",
-    "test:audio": "npm run test:aperture && npm run test:ffmpeg && npm run test:cpal",
+    "test:audio": "npm run test:ffmpeg && npm run test:cpal",
     "test:binary": "node -e \"const BinaryManager = require('./src/main/services/binary-manager-dll'); (async () => { const bm = new BinaryManager(); await bm.initialize(); const status = await bm.getStatus(); console.log(JSON.stringify(status, null, 2)); })()\"",
-    
     "_comment_dev_server_scripts": "=== DEVELOPMENT SERVERS ===",
     "web": "concurrently \"npm run server\" \"cd src/renderer/whisperdesk-ui && pnpm run dev\"",
-    
     "_comment_utility_scripts": "=== UTILITY SCRIPTS ===",
     "lint": "eslint src/",
     "clean": "rimraf dist build node_modules/.cache temp",
     "clean:all": "npm run clean && rimraf binaries models",
     "clean:binary": "rimraf binaries",
-    "clean:recording": "rimraf temp/whisperdesk-recordings temp/whisperdesk-cpal temp/whisperdesk-aperture-v7",
-    
+    "clean:recording": "rimraf temp/whisperdesk-recordings temp/whisperdesk-cpal",
     "_comment_release_scripts": "=== RELEASE MANAGEMENT ===",
     "release:prepare": "npm run clean && npm run build && npm run dist:all",
     "release:github": "gh release create v$npm_package_version dist/* --generate-notes",
@@ -132,9 +110,13 @@
     "axios": "^1.6.2",
     "electron-store": "^8.1.0",
     "electron-updater": "^6.1.7",
+    "execa": "^8.0.1",
     "ffmpeg-static": "^5.2.0",
     "form-data": "^4.0.0",
+    "macos-version": "^6.0.0",
     "node-cpal": "^0.1.1",
+    "screencapturekit": "^1.0.22",
+    "uuid": "^11.1.0",
     "ws": "^8.14.2"
   },
   "devDependencies": {
@@ -147,7 +129,6 @@
     "wait-on": "^7.2.0"
   },
   "optionalDependencies": {
-    "aperture": "^7.0.0",
     "@whisperdesk/cpal-recorder": "^1.0.0",
     "fluent-ffmpeg": "^2.1.2"
   },
@@ -199,7 +180,7 @@
           "platform": "darwin",
           "minVersion": "13.0.0",
           "components": {
-            "screen": "aperture-v7",
+            "screen": "screencapturekit-node",
             "systemAudio": "screencapturekit",
             "microphone": "cpal",
             "merger": "ffmpeg"
@@ -208,7 +189,7 @@
           "quality": "excellent",
           "performance": "excellent",
           "dependencies": [
-            "aperture",
+            "screencapturekit",
             "node-cpal",
             "ffmpeg-static"
           ]
@@ -356,7 +337,7 @@
     "asarUnpack": [
       "binaries/**/*",
       "models/**/*",
-      "node_modules/aperture/**/*",
+      
       "node_modules/ffmpeg-static/**/*",
       "node_modules/node-cpal/**/*",
       "node_modules/@whisperdesk/cpal-recorder/**/*"
@@ -597,7 +578,7 @@
     "multi-speaker",
     "screen-recording",
     "system-audio",
-    "aperture",
+    
     "screencapturekit",
     "cpal",
     "platform-aware",

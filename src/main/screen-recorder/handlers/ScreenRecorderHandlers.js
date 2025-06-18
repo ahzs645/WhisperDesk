@@ -62,8 +62,10 @@ class ScreenRecorderHandlers {
       ipcMain.removeHandler(channel);
     }
     
+    console.log(`🔧 Registering IPC handler: ${channel}`);
     ipcMain.handle(channel, handler);
     this.registeredHandlers.add(channel);
+    console.log(`✅ IPC handler registered: ${channel}`);
   }
 
   // Core recording handlers
@@ -109,7 +111,10 @@ class ScreenRecorderHandlers {
 
   async handleGetStatus(event) {
     try {
-      return this.service.getStatus();
+      console.log('📊 IPC: Getting screen recorder status...');
+      const status = this.service.getStatus();
+      console.log('📊 IPC: Status retrieved:', status);
+      return status;
     } catch (error) {
       console.error('❌ IPC: Get status failed:', error);
       return {
