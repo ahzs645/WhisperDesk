@@ -58,8 +58,23 @@ class PlatformRecordingRouter extends EventEmitter {
   async getAvailableMethods() {
     const methods = [];
 
-    // macOS: ScreenCaptureKit Node.js (highest priority - optimized for transcription)
+    // macOS: objc2 ScreenCaptureKit (highest priority - direct API access)
     if (this.platform === 'darwin') {
+      methods.push({
+        name: 'objc2-screencapturekit',
+        platform: 'darwin',
+        systemAudio: 'native',
+        microphone: 'native',
+        merger: 'built-in',
+        dependencies: ['rust-native'],
+        priority: 0, // Highest priority
+        transcriptionOptimized: true,
+        directAPI: true,
+        test: () => this.testObjc2ScreenCaptureKit(),
+        create: () => this.createObjc2ScreenCaptureRecorder()
+      });
+
+      // macOS: ScreenCaptureKit Node.js (second priority - optimized for transcription)
       methods.push({
         name: 'screencapturekit-node',
         platform: 'darwin',
@@ -205,6 +220,65 @@ class PlatformRecordingRouter extends EventEmitter {
   }
 
   /**
+   * Test objc2 ScreenCaptureKit (NEW - highest priority for macOS)
+   */
+  async testObjc2ScreenCaptureKit() {
+    if (this.platform !== 'darwin') {
+      throw new Error('objc2 ScreenCaptureKit only available on macOS');
+    }
+    
+    try {
+      console.log('🦀 Testing objc2 ScreenCaptureKit...');
+      
+      // Import the objc2 recorder
+      const Objc2ScreenCaptureRecorder = require('../recorders/Objc2ScreenCaptureRecorder');
+      
+      // Create and test the recorder
+      const recorder = new Objc2ScreenCaptureRecorder();
+      
+      // Test initialization
+      await recorder.initialize();
+      
+      // Test screen enumeration
+      const screensResult = await recorder.getAvailableScreens();
+      if (!screensResult.success || screensResult.screens.length === 0) {
+        throw new Error('No screens available for recording via objc2');
+      }
+      
+      console.log(`✅ objc2 ScreenCaptureKit: ${screensResult.screens.length} screen(s) available`);
+      
+      // Test audio devices (non-critical)
+      try {
+        const audioResult = await recorder.getAvailableAudioDevices();
+        console.log(`✅ objc2 ScreenCaptureKit: ${audioResult.devices.length} audio device(s) available`);
+      } catch (audioError) {
+        console.log('⚠️ objc2 audio devices test failed (non-critical):', audioError.message);
+      }
+      
+      // Test permissions
+      const permissions = await recorder.checkPermissions();
+      console.log('✅ objc2 ScreenCaptureKit permissions:', permissions);
+      
+      // Log objc2 features
+      console.log('🦀 objc2 ScreenCaptureKit features:');
+      console.log('   • Direct ScreenCaptureKit API access');
+      console.log('   • Maximum performance (zero-copy operations)');
+      console.log('   • Type-safe Rust bindings');
+      console.log('   • Memory safety guarantees');
+      console.log('   • Native pixel format support');
+      console.log('   • Advanced audio configuration');
+      
+      // Cleanup
+      recorder.destroy();
+      
+      return true;
+      
+    } catch (error) {
+      throw new Error(`objc2 ScreenCaptureKit test failed: ${error.message}`);
+    }
+  }
+
+  /**
    * Test traditional ScreenCaptureKit with Aperture (fallback)
    */
   async testScreenCaptureKitAperture() {
@@ -330,6 +404,15 @@ class PlatformRecordingRouter extends EventEmitter {
   /**
    * Create recorders with enhanced error handling
    */
+  createObjc2ScreenCaptureRecorder() {
+    try {
+      const Objc2ScreenCaptureRecorder = require('../recorders/Objc2ScreenCaptureRecorder');
+      return new Objc2ScreenCaptureRecorder();
+    } catch (error) {
+      throw new Error(`Failed to create objc2 ScreenCaptureKit recorder: ${error.message}`);
+    }
+  }
+
   createScreenCaptureKitNodeRecorder() {
     try {
       const ScreenCaptureKitNodeRecorder = require('../recorders/ScreenCaptureKitNodeRecorder');

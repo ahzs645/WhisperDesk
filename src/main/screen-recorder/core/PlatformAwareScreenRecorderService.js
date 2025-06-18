@@ -65,7 +65,20 @@ class PlatformAwareScreenRecorderService extends EventEmitter {
    */
   async initializeScreenRecorder() {
     try {
-      // Try ScreenCaptureKit first (macOS only)
+      // Try objc2 ScreenCaptureKit first (macOS only - highest priority)
+      if (process.platform === 'darwin') {
+        console.log('🦀 Trying objc2 ScreenCaptureKit...');
+        const Objc2ScreenCaptureRecorder = require('../recorders/Objc2ScreenCaptureRecorder');
+        const recorder = new Objc2ScreenCaptureRecorder();
+        
+        if (await recorder.initialize()) {
+          this.selectedMethod = 'objc2-screencapturekit';
+          console.log('✅ objc2 ScreenCaptureKit initialized successfully');
+          return recorder;
+        }
+      }
+      
+      // Try ScreenCaptureKit Node.js second (macOS only)
       if (process.platform === 'darwin') {
         console.log('🧪 Trying ScreenCaptureKit Node.js...');
         const ScreenCaptureKitNodeRecorder = require('../recorders/ScreenCaptureKitNodeRecorder');
@@ -103,6 +116,18 @@ class PlatformAwareScreenRecorderService extends EventEmitter {
    */
   getSimplifiedCapabilities() {
     switch (this.selectedMethod) {
+      case 'objc2-screencapturekit':
+        return {
+          platform: 'darwin',
+          systemAudio: true,
+          microphone: true,
+          screenOnly: true,
+          audioOnly: true,
+          transcriptionOptimized: true,
+          directAPI: true,
+          nativePerformance: true,
+          maxQuality: true
+        };
       case 'screencapturekit-node':
         return {
           platform: 'darwin',

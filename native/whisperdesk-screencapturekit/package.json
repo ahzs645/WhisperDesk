@@ -1,0 +1,29 @@
+{
+  "name": "whisperdesk-screencapturekit",
+  "version": "1.0.0",
+  "description": "objc2 ScreenCaptureKit bindings for WhisperDesk",
+  "main": "index.js",
+  "scripts": {
+    "build": "napi build --platform --release",
+    "build:debug": "napi build --platform",
+    "prepublishOnly": "napi prepublish -t npm",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": ["screencapturekit", "objc2", "napi", "rust"],
+  "author": "",
+  "license": "MIT",
+  "type": "commonjs",
+  "devDependencies": {
+    "@napi-rs/cli": "^2.18.4"
+  },
+  "napi": {
+    "name": "whisperdesk-screencapturekit",
+    "triples": {
+      "defaults": true,
+      "additional": [
+        "aarch64-apple-darwin",
+        "x86_64-apple-darwin"
+      ]
+    }
+  }
+}
