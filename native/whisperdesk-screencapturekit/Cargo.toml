@@ -16,6 +16,12 @@ napi-derive = "2.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 
+# Foundation implementation dependencies (simplified)
+tokio = { version = "1.0", features = ["full"] }
+futures = "0.3"
+log = "0.4"
+env_logger = "0.10"
+
 [build-dependencies]
 napi-build = "2.0"
 
