@@ -7,7 +7,7 @@ const EventEmitter = require('events');
 
 /**
  * Aperture v7 screen recorder for macOS using ScreenCaptureKit
- * Updated for the new v7 ESM API structure
+ * Updated for the new v7 ESM API structure with proper file handling
  */
 class ApertureV7Recorder extends EventEmitter {
   constructor() {
@@ -27,6 +27,7 @@ class ApertureV7Recorder extends EventEmitter {
     this.systemAudioPath = null;
     this.microphoneAudioPath = null;
     this.finalOutputPath = null;
+    this.userChosenDirectory = null; // ✅ NEW: Track user's chosen directory
     
     // Recording options
     this.currentOptions = null;
@@ -135,10 +136,15 @@ class ApertureV7Recorder extends EventEmitter {
       this.recordingId = `aperture-v7-${Date.now()}`;
       this.startTime = Date.now();
       
-      // Generate file paths
+      // ✅ NEW: Store user's chosen directory
+      this.userChosenDirectory = options.recordingDirectory;
+      
+      // Generate file paths (still use temp for Aperture, but plan for final location)
       this.generateFilePaths();
 
       console.log('🎬 Starting Aperture v7 recording...');
+      console.log('📁 User chosen directory:', this.userChosenDirectory);
+      console.log('📁 Temp recording path:', this.systemAudioPath);
 
       // Get available screens using v7 API
       const screens = await this.aperture.screens();
@@ -273,13 +279,8 @@ class ApertureV7Recorder extends EventEmitter {
         this.currentRecorder = null;
       }
 
-      // Determine final output path
-      this.finalOutputPath = this.systemAudioPath;
-
-      // Handle microphone audio if needed (separate recording)
-      if (this.currentOptions.includeMicrophone && this.microphoneAudioPath) {
-        await this.mergeAudioStreams();
-      }
+      // ✅ NEW: Handle file moving to user's chosen directory
+      await this.handleFileCompletion();
 
       this.isRecording = false;
       
@@ -306,6 +307,90 @@ class ApertureV7Recorder extends EventEmitter {
       console.error('❌ Failed to stop v7 recording:', error);
       await this.cleanup();
       throw error;
+    }
+  }
+
+  /**
+   * ✅ NEW: Handle file completion - move from temp to user's chosen directory
+   */
+  async handleFileCompletion() {
+    try {
+      console.log('📁 Handling file completion...');
+      
+      // Check if the temp file exists
+      const tempExists = await this.fileExists(this.systemAudioPath);
+      if (!tempExists) {
+        console.warn('⚠️ Temp recording file not found:', this.systemAudioPath);
+        this.finalOutputPath = this.systemAudioPath;
+        return;
+      }
+
+      // If user chose a specific directory, move the file there
+      if (this.userChosenDirectory) {
+        try {
+          // Ensure user's directory exists
+          await fs.mkdir(this.userChosenDirectory, { recursive: true });
+          
+          // Generate final filename
+          const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+          const finalFilename = `aperture-recording-${timestamp}.mp4`;
+          this.finalOutputPath = path.join(this.userChosenDirectory, finalFilename);
+          
+          console.log('📁 Moving file from temp to user directory...');
+          console.log('  From:', this.systemAudioPath);
+          console.log('  To:', this.finalOutputPath);
+          
+          // Copy file to final location
+          await fs.copyFile(this.systemAudioPath, this.finalOutputPath);
+          
+          // Verify the copy worked
+          const finalExists = await this.fileExists(this.finalOutputPath);
+          if (finalExists) {
+            console.log('✅ File successfully moved to user directory');
+            
+            // Clean up temp file
+            try {
+              await fs.unlink(this.systemAudioPath);
+              console.log('🧹 Temp file cleaned up');
+            } catch (cleanupError) {
+              console.warn('⚠️ Failed to clean up temp file:', cleanupError.message);
+            }
+          } else {
+            console.warn('⚠️ File copy verification failed, keeping temp location');
+            this.finalOutputPath = this.systemAudioPath;
+          }
+          
+        } catch (moveError) {
+          console.error('❌ Failed to move file to user directory:', moveError);
+          console.log('📁 Keeping file in temp location');
+          this.finalOutputPath = this.systemAudioPath;
+        }
+      } else {
+        // No user directory specified, keep in temp
+        console.log('📁 No user directory specified, keeping in temp location');
+        this.finalOutputPath = this.systemAudioPath;
+      }
+
+      // Handle microphone audio if needed (separate recording)
+      if (this.currentOptions.includeMicrophone && this.microphoneAudioPath) {
+        await this.mergeAudioStreams();
+      }
+
+    } catch (error) {
+      console.error('❌ File completion handling failed:', error);
+      this.finalOutputPath = this.systemAudioPath; // Fallback to temp location
+    }
+  }
+
+  /**
+   * Check if file exists
+   */
+  async fileExists(filePath) {
+    try {
+      await fs.access(filePath);
+      return true;
+    } catch {
+      return false;
     }
   }
 
@@ -357,21 +442,19 @@ class ApertureV7Recorder extends EventEmitter {
   async mergeAudioStreams() {
     console.log('🔄 Merging audio streams...');
 
-    this.finalOutputPath = path.join(
-      path.dirname(this.systemAudioPath),
-      `merged-${this.recordingId}.mp4`
-    );
+    // Update final output path for merged version
+    const mergedPath = this.finalOutputPath.replace('.mp4', '-merged.mp4');
 
     return new Promise((resolve, reject) => {
       const ffmpegArgs = [
-        '-i', this.systemAudioPath,        // System audio + video from Aperture
+        '-i', this.finalOutputPath,        // System audio + video from Aperture
         '-i', this.microphoneAudioPath,    // Separate microphone audio
         '-filter_complex', 'amix=inputs=2:duration=first:dropout_transition=3',
         '-c:v', 'copy',                    // Copy video without re-encoding
         '-c:a', 'aac',                     // Re-encode audio to AAC
         '-b:a', '128k',                    // Audio bitrate
         '-movflags', '+faststart',         // Optimize for streaming
-        this.finalOutputPath
+        mergedPath
       ];
 
       console.log('🎵 FFmpeg merge command:', 'ffmpeg', ffmpegArgs.join(' '));
@@ -382,6 +465,7 @@ class ApertureV7Recorder extends EventEmitter {
       mergeProcess.on('exit', (code) => {
         if (code === 0) {
           console.log('✅ Audio streams merged successfully');
+          this.finalOutputPath = mergedPath;
           resolve();
         } else {
           reject(new Error(`FFmpeg merge failed with code ${code}`));
@@ -445,6 +529,8 @@ class ApertureV7Recorder extends EventEmitter {
     this.recordingId = null;
     this.currentOptions = null;
     this.startTime = null;
+    this.userChosenDirectory = null;
+    this.finalOutputPath = null;
   }
 }
 

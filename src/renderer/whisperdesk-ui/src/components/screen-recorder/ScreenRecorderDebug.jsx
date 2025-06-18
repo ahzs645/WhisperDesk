@@ -4,7 +4,7 @@ import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { Separator } from '../ui/separator';
 import { ScrollArea } from '../ui/scroll-area';
-import { Bug, RefreshCw, Trash2, Play, CheckCircle, XCircle } from 'lucide-react';
+import { Bug, RefreshCw, Trash2, Play, CheckCircle, XCircle, Apple, Settings } from 'lucide-react';
 import { useScreenRecorderContext } from './ScreenRecorderProvider';
 
 export const ScreenRecorderDebug = () => {
@@ -50,21 +50,328 @@ export const ScreenRecorderDebug = () => {
     }
   };
 
+  // ✅ FIXED: Test Aperture v7 system specifically (renderer-safe)
+  const testApertureSystem = async () => {
+    try {
+      addToEventLog('🍎 Testing Aperture v7 Screen Recording System...');
+      
+      if (service.testApertureSystem) {
+        const results = await service.testApertureSystem();
+        results.forEach(result => addToEventLog(result));
+      } else {
+        // Fallback to manual Aperture tests (renderer-safe version)
+        await manualApertureTestsRendererSafe();
+      }
+    } catch (error) {
+      addToEventLog(`❌ Aperture system test failed: ${error.message}`);
+    }
+  };
+
+  // ✅ FIXED: Renderer-safe version of manual Aperture tests
+  const manualApertureTestsRendererSafe = async () => {
+    try {
+      // Test 1: Check current recording method
+      const status = await service.getStatus();
+      addToEventLog(`🎯 Current method: ${status.recordingMethod || 'unknown'}`);
+      
+      if (status.recordingMethod?.includes('aperture')) {
+        addToEventLog('✅ Aperture v7 system is active!');
+        
+        // Test 2: Check capabilities
+        if (status.capabilities) {
+          addToEventLog(`🔊 System Audio: ${status.capabilities.systemAudio ? '✅ Native ScreenCaptureKit' : '❌'}`);
+          addToEventLog(`🎤 Microphone: ${status.capabilities.microphone ? '✅ CPAL Enhanced' : '❌'}`);
+          addToEventLog(`⚡ Performance: ${status.capabilities.performance || 'unknown'}`);
+          addToEventLog(`⭐ Quality: ${status.capabilities.quality || 'unknown'}`);
+        }
+        
+        // Test 3: Check macOS permissions (via IPC only)
+        try {
+          const permissions = await window.electronAPI.screenRecorder.checkPermissions();
+          addToEventLog(`🔐 Screen Recording Permission: ${permissions.screen}`);
+          addToEventLog(`🎤 Microphone Permission: ${permissions.microphone}`);
+          
+          if (permissions.screen !== 'granted') {
+            addToEventLog('⚠️ IMPORTANT: Grant Screen Recording permission in System Preferences');
+            addToEventLog('   📱 Go to: System Preferences > Security & Privacy > Privacy > Screen Recording');
+          }
+        } catch (permError) {
+          addToEventLog(`❌ Permission check failed: ${permError.message}`);
+        }
+        
+        // Test 4: Check backend components status
+        if (status.components) {
+          addToEventLog('🔧 Backend Components Status:');
+          Object.entries(status.components).forEach(([component, active]) => {
+            const statusText = active ? '✅ Active' : '⏸️ Idle (normal when not recording)';
+            addToEventLog(`   ${component}: ${statusText}`);
+          });
+          
+          // Explain component states
+          if (!status.isRecording) {
+            addToEventLog('💡 Components are idle when not recording - this is normal!');
+          }
+        }
+        
+        // Test 5: Check file paths
+        if (status.outputPaths && Object.keys(status.outputPaths).length > 0) {
+          addToEventLog('📁 Recording Paths:');
+          Object.entries(status.outputPaths).forEach(([type, path]) => {
+            addToEventLog(`   ${type}: ${path}`);
+          });
+        } else {
+          addToEventLog('📁 No active recording paths (normal when not recording)');
+        }
+        
+        if (status.finalOutputPath) {
+          addToEventLog(`🎯 Final Output: ${status.finalOutputPath}`);
+        }
+        
+      } else {
+        addToEventLog('❌ Aperture v7 system not active');
+        addToEventLog(`   Current method: ${status.recordingMethod}`);
+        addToEventLog('💡 This means you\'re using browser-based recording');
+      }
+      
+      addToEventLog('🎉 Aperture v7 system test completed!');
+      
+    } catch (error) {
+      addToEventLog(`❌ Manual Aperture test failed: ${error.message}`);
+    }
+  };
+
+  // ✅ FIXED: Test file saving with current settings (renderer-safe)
+  const testFileSavingFlow = async () => {
+    try {
+      addToEventLog('💾 Testing file saving flow...');
+      
+      // Check recording directory setting
+      const recordingDir = recordingSettings.recordingDirectory;
+      if (recordingDir) {
+        addToEventLog(`📁 Custom directory set: ${recordingDir}`);
+        
+        // Test if directory is accessible (via IPC)
+        try {
+          if (window.electronAPI?.file?.exists) {
+            const dirExists = await window.electronAPI.file.exists(recordingDir);
+            addToEventLog(`📂 Directory exists: ${dirExists ? '✅' : '❌'}`);
+          }
+        } catch (error) {
+          addToEventLog(`❌ Directory check failed: ${error.message}`);
+        }
+      } else {
+        addToEventLog('📁 Using default recording directory');
+        
+        // Try to get default directory (via IPC)
+        try {
+          if (window.electronAPI?.file?.getDefaultRecordingsDirectory) {
+            const defaultDir = await window.electronAPI.file.getDefaultRecordingsDirectory();
+            addToEventLog(`📂 Default directory: ${defaultDir}`);
+          }
+        } catch (error) {
+          addToEventLog(`❌ Default directory check failed: ${error.message}`);
+        }
+      }
+      
+      // Test small file write
+      try {
+        const testData = new TextEncoder().encode('WhisperDesk test file');
+        const testFilename = `test-${Date.now()}.txt`;
+        
+        if (window.electronAPI?.file?.saveRecordingFile) {
+          const result = await window.electronAPI.file.saveRecordingFile(testFilename, testData);
+          if (result.success) {
+            addToEventLog(`✅ Test file saved: ${result.path}`);
+          } else {
+            addToEventLog(`❌ Test file save failed: ${result.error}`);
+          }
+        }
+      } catch (error) {
+        addToEventLog(`❌ File save test failed: ${error.message}`);
+      }
+      
+      addToEventLog('💾 File saving test completed');
+      
+    } catch (error) {
+      addToEventLog(`❌ File saving test failed: ${error.message}`);
+    }
+  };
+
+  // ✅ FIXED: Comprehensive recording readiness check (renderer-safe)
+  const checkRecordingReadiness = async () => {
+    try {
+      addToEventLog('🔍 Checking recording readiness...');
+      
+      let issues = 0;
+      let warnings = 0;
+      
+      // Check 1: API availability
+      if (apiStatus !== 'available') {
+        addToEventLog(`❌ Issue: API Status is ${apiStatus}`);
+        issues++;
+      } else {
+        addToEventLog('✅ API is available');
+      }
+      
+      // Check 2: Device selection
+      if (!selectedScreen) {
+        addToEventLog('❌ Issue: No screen device selected');
+        issues++;
+      } else {
+        addToEventLog(`✅ Screen selected: ${selectedScreen}`);
+      }
+      
+      if (recordingSettings.includeMicrophone && !selectedAudioInput) {
+        addToEventLog('❌ Issue: Microphone enabled but no audio device selected');
+        issues++;
+      } else if (recordingSettings.includeMicrophone) {
+        addToEventLog(`✅ Audio device selected: ${selectedAudioInput}`);
+      }
+      
+      // Check 3: Recording settings
+      if (recordingSettings.includeSystemAudio) {
+        const status = await service.getStatus();
+        if (status.capabilities?.systemAudio) {
+          addToEventLog('✅ System audio supported by current method');
+        } else {
+          addToEventLog('⚠️ Warning: System audio requested but may not be supported');
+          warnings++;
+        }
+      }
+      
+      // Check 4: Permissions (macOS) - via IPC only, no direct process access
+      try {
+        // Get platform info via navigator instead of process
+        const isMacOS = navigator.platform.includes('Mac');
+        if (isMacOS) {
+          try {
+            const permissions = await window.electronAPI.screenRecorder.checkPermissions();
+            if (permissions.screen !== 'granted') {
+              addToEventLog('❌ Issue: Screen recording permission not granted');
+              issues++;
+            }
+            if (recordingSettings.includeMicrophone && permissions.microphone !== 'granted') {
+              addToEventLog('⚠️ Warning: Microphone permission not granted');
+              warnings++;
+            }
+          } catch (error) {
+            addToEventLog('⚠️ Warning: Could not check permissions');
+            warnings++;
+          }
+        } else {
+          addToEventLog('✅ Non-macOS platform - permissions assumed granted');
+        }
+      } catch (error) {
+        addToEventLog(`⚠️ Warning: Platform check failed: ${error.message}`);
+        warnings++;
+      }
+      
+      // Check 5: File system access
+      if (recordingSettings.recordingDirectory) {
+        try {
+          if (window.electronAPI?.file?.exists) {
+            const dirExists = await window.electronAPI.file.exists(recordingSettings.recordingDirectory);
+            if (!dirExists) {
+              addToEventLog('⚠️ Warning: Custom recording directory may not exist');
+              warnings++;
+            } else {
+              addToEventLog('✅ Custom recording directory exists');
+            }
+          }
+        } catch (error) {
+          addToEventLog('⚠️ Warning: Could not verify recording directory');
+          warnings++;
+        }
+      }
+      
+      // Final assessment
+      if (issues === 0 && warnings === 0) {
+        addToEventLog('🎉 Recording readiness: PERFECT! All systems go!');
+      } else if (issues === 0) {
+        addToEventLog(`✅ Recording readiness: GOOD (${warnings} warnings)`);
+      } else {
+        addToEventLog(`❌ Recording readiness: ISSUES FOUND (${issues} issues, ${warnings} warnings)`);
+      }
+      
+      addToEventLog('🔍 Recording readiness check completed');
+      
+    } catch (error) {
+      addToEventLog(`❌ Readiness check failed: ${error.message}`);
+    }
+  };
+
+  // ✅ NEW: Request permissions explicitly
+  const requestPermissions = async () => {
+    try {
+      addToEventLog('🔐 Requesting system permissions...');
+      
+      if (window.electronAPI?.screenRecorder?.requestPermissions) {
+        const result = await window.electronAPI.screenRecorder.requestPermissions();
+        addToEventLog(`📱 Permission request result: ${JSON.stringify(result)}`);
+        
+        if (result.screen === 'granted') {
+          addToEventLog('✅ Screen recording permission granted!');
+        } else {
+          addToEventLog('❌ Screen recording permission denied');
+          addToEventLog('💡 Go to System Preferences > Security & Privacy > Privacy > Screen Recording');
+        }
+        
+        if (result.microphone === 'granted') {
+          addToEventLog('✅ Microphone permission granted!');
+        } else if (recordingSettings.includeMicrophone) {
+          addToEventLog('❌ Microphone permission denied');
+        }
+      } else {
+        addToEventLog('❌ Permission request API not available');
+      }
+    } catch (error) {
+      addToEventLog(`❌ Permission request failed: ${error.message}`);
+    }
+  };
+
+  // ✅ NEW: Test recording flow end-to-end
+  const testRecordingFlow = async () => {
+    try {
+      addToEventLog('🧪 Testing complete recording flow...');
+      
+      // Step 1: Check readiness
+      addToEventLog('1️⃣ Checking readiness...');
+      await checkRecordingReadiness();
+      
+      // Step 2: Test file saving
+      addToEventLog('2️⃣ Testing file system...');
+      await testFileSavingFlow();
+      
+      // Step 3: Test Aperture system
+      addToEventLog('3️⃣ Testing Aperture v7 system...');
+      await testApertureSystem();
+      
+      // Step 4: Summary
+      const status = await service.getStatus();
+      addToEventLog('📊 FLOW TEST SUMMARY:');
+      addToEventLog(`   Method: ${status.recordingMethod || 'unknown'}`);
+      addToEventLog(`   System Audio: ${status.capabilities?.systemAudio ? '✅' : '❌'}`);
+      addToEventLog(`   Microphone: ${status.capabilities?.microphone ? '✅' : '❌'}`);
+      addToEventLog(`   File Saving: ${window.electronAPI?.file?.saveRecordingFile ? '✅' : '❌'}`);
+      addToEventLog('🎉 Complete recording flow test finished!');
+      
+    } catch (error) {
+      addToEventLog(`❌ Recording flow test failed: ${error.message}`);
+    }
+  };
+
   const testRecordingAPI = async () => {
     try {
       addToEventLog('Testing recording API...');
       
-      // Test if the API is available
       if (window.electronAPI?.screenRecorder) {
         addToEventLog('✅ Screen recorder API is available');
         
-        // Test getting status
         const status = await window.electronAPI.screenRecorder.getStatus();
-        addToEventLog(`✅ API test result: ${JSON.stringify(status)}`);
+        addToEventLog(`✅ API test result: Recording method is ${status.method || 'unknown'}`);
         
-        // Test getting screens
         const screens = await window.electronAPI.screenRecorder.getAvailableScreens();
-        addToEventLog(`✅ Available screens: ${screens.length}`);
+        addToEventLog(`✅ Available screens: ${screens.length || (screens.screens?.length || 0)}`);
         
       } else {
         addToEventLog('❌ Screen recorder API is not available');
@@ -80,7 +387,7 @@ export const ScreenRecorderDebug = () => {
       
       if (window.electronAPI?.screenRecorder?.forceCleanup) {
         const result = await window.electronAPI.screenRecorder.forceCleanup();
-        addToEventLog(`✅ Cleanup result: ${JSON.stringify(result)}`);
+        addToEventLog(`✅ Cleanup result: ${result.success ? 'Success' : 'Failed'}`);
       } else {
         addToEventLog('❌ Force cleanup not available');
       }
@@ -89,745 +396,6 @@ export const ScreenRecorderDebug = () => {
     } catch (error) {
       addToEventLog(`❌ Force cleanup failed: ${error.message}`);
     }
-  };
-
-  const analyzeConfiguration = () => {
-    addToEventLog('Analyzing configuration...');
-    
-    let issues = [];
-    
-    // Check API availability
-    if (apiStatus !== 'available') {
-      issues.push(`API Status: ${apiStatus}`);
-    }
-    
-    // Check device selection
-    if (!selectedScreen) {
-      issues.push('No screen device selected');
-    }
-    
-    if (recordingSettings.includeMicrophone && !selectedAudioInput) {
-      issues.push('Microphone enabled but no audio device selected');
-    }
-    
-    // Check device availability
-    if (availableDevices.screens.length === 0) {
-      issues.push('No screen devices available');
-    }
-    
-    if (recordingSettings.includeMicrophone && availableDevices.audio.length === 0) {
-      issues.push('No audio devices available');
-    }
-    
-    // Check file permissions
-    if (recordingSettings.recordingDirectory) {
-      addToEventLog(`Recording directory: ${recordingSettings.recordingDirectory}`);
-    } else {
-      addToEventLog('Using default recording directory');
-    }
-    
-    if (issues.length === 0) {
-      addToEventLog('✅ Configuration looks good');
-    } else {
-      issues.forEach((issue, index) => {
-        addToEventLog(`❌ Issue ${index + 1}: ${issue}`);
-      });
-    }
-  };
-
-  const testFileSystem = async () => {
-    try {
-      addToEventLog('Testing file system access...');
-      
-      if (window.electronAPI?.file) {
-        addToEventLog('✅ File API is available');
-        
-        // Test if we can access file dialog
-        if (window.electronAPI.file.showSaveDialog) {
-          addToEventLog('✅ Save dialog available');
-        }
-        
-        if (window.electronAPI.file.showOpenDialog) {
-          addToEventLog('✅ Open dialog available');
-        }
-      } else {
-        addToEventLog('❌ File API not available');
-      }
-      
-      // Test recording directory
-      if (recordingSettings.recordingDirectory) {
-        addToEventLog(`📁 Custom recording directory: ${recordingSettings.recordingDirectory}`);
-      } else {
-        addToEventLog('📁 Using default recording directory');
-      }
-      
-    } catch (error) {
-      addToEventLog(`❌ File system test failed: ${error.message}`);
-    }
-  };
-
-  const testElectronAPIs = async () => {
-    console.log('🧪 Testing Electron APIs...');
-    addToEventLog('🧪 Starting comprehensive API tests...');
-    
-    // Test 1: Check if APIs exist
-    console.log('1. Checking API availability...');
-    console.log('electronAPI exists:', !!window.electronAPI);
-    console.log('file API exists:', !!window.electronAPI?.file);
-    console.log('screenRecorder API exists:', !!window.electronAPI?.screenRecorder);
-    
-    addToEventLog(`electronAPI exists: ${!!window.electronAPI}`);
-    addToEventLog(`file API exists: ${!!window.electronAPI?.file}`);
-    addToEventLog(`screenRecorder API exists: ${!!window.electronAPI?.screenRecorder}`);
-    
-    if (window.electronAPI?.file) {
-      const fileMethods = Object.keys(window.electronAPI.file);
-      console.log('Available file methods:', fileMethods);
-      addToEventLog(`Available file methods: ${fileMethods.join(', ')}`);
-    }
-    
-    // Test 2: Test screen recorder status
-    if (window.electronAPI?.screenRecorder?.getStatus) {
-      try {
-        const status = await window.electronAPI.screenRecorder.getStatus();
-        console.log('2. Screen recorder status test:', status);
-        addToEventLog(`✅ Screen recorder status: ${JSON.stringify(status)}`);
-      } catch (error) {
-        console.error('2. Screen recorder status test FAILED:', error);
-        addToEventLog(`❌ Screen recorder status test FAILED: ${error.message}`);
-      }
-    }
-    
-    // Test 3: Test file write (with small test data)
-    if (window.electronAPI?.file?.writeFile) {
-      try {
-        const testData = new TextEncoder().encode('test file content');
-        const testPath = 'test-recording.txt';
-        
-        await window.electronAPI.file.writeFile(testPath, testData);
-        console.log('3. File write test: SUCCESS');
-        addToEventLog('✅ File write test: SUCCESS');
-        
-        // Test if file exists
-        if (window.electronAPI.file.exists) {
-          const exists = await window.electronAPI.file.exists(testPath);
-          console.log('3. File exists test:', exists);
-          addToEventLog(`File exists test: ${exists}`);
-        }
-      } catch (error) {
-        console.error('3. File write test FAILED:', error);
-        addToEventLog(`❌ File write test FAILED: ${error.message}`);
-      }
-    }
-    
-    // Test 4: Test save dialog availability
-    if (window.electronAPI?.file?.showSaveDialog) {
-      console.log('4. Save dialog API: Available');
-      addToEventLog('✅ Save dialog API: Available');
-    } else {
-      console.log('4. Save dialog API: NOT Available');
-      addToEventLog('❌ Save dialog API: NOT Available');
-    }
-    
-    console.log('🧪 API tests completed');
-    addToEventLog('🧪 API tests completed');
-  };
-
-  const testSaveRecordingAPI = async () => {
-    console.log('🧪 Testing saveRecordingFile API specifically...');
-    addToEventLog('🧪 Testing saveRecordingFile API specifically...');
-    
-    try {
-      // Create a small test video blob
-      const canvas = document.createElement('canvas');
-      canvas.width = 100;
-      canvas.height = 100;
-      const ctx = canvas.getContext('2d');
-      ctx.fillStyle = 'red';
-      ctx.fillRect(0, 0, 100, 100);
-      
-      // Create a small test recording
-      const stream = canvas.captureStream();
-      const recorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
-      const chunks = [];
-      
-      recorder.ondataavailable = (e) => chunks.push(e.data);
-      
-      console.log('📹 Started test recording...');
-      addToEventLog('📹 Started test recording...');
-      recorder.start();
-      
-      // Record for 1 second
-      setTimeout(async () => {
-        recorder.stop();
-        
-        recorder.onstop = async () => {
-          try {
-            const blob = new Blob(chunks, { type: 'video/webm' });
-            const arrayBuffer = await blob.arrayBuffer();
-            const uint8Array = new Uint8Array(arrayBuffer);
-            
-            console.log(`📦 Created test blob: ${blob.size} bytes`);
-            addToEventLog(`📦 Created test blob: ${blob.size} bytes`);
-            
-            // Test saveRecordingFile with correct parameters
-            if (window.electronAPI?.file?.saveRecordingFile) {
-              const testPath = `test-recording-${Date.now()}.webm`;
-              
-              console.log('📋 Calling saveRecordingFile with path:', testPath, ', dataLength:', uint8Array.length);
-              addToEventLog(`📋 Calling saveRecordingFile with path: ${testPath}, dataLength: ${uint8Array.length}`);
-              
-              // Call with correct parameter order: filePath, data
-              const result = await window.electronAPI.file.saveRecordingFile(testPath, uint8Array);
-              console.log('✅ saveRecordingFile test result:', JSON.stringify(result));
-              addToEventLog(`✅ saveRecordingFile test result: ${JSON.stringify(result)}`);
-              
-              if (result && result.success) {
-                console.log('🎉 File save test PASSED! File saved to:', result.path);
-                addToEventLog(`🎉 File save test PASSED! File saved to: ${result.path}`);
-                
-                // Only test file existence if the exists API is available and doesn't cause errors
-                try {
-                  if (window.electronAPI.file.exists) {
-                    const exists = await window.electronAPI.file.exists(result.path);
-                    console.log('✅ File exists verification:', exists);
-                    addToEventLog(`✅ File exists verification: ${exists}`);
-                  }
-                } catch (existsError) {
-                  console.warn('⚠️ File existence check failed (but save was successful):', existsError.message);
-                  addToEventLog(`⚠️ File existence check failed (but save was successful): ${existsError.message}`);
-                }
-              } else {
-                console.error('❌ File save test FAILED:', result?.error);
-                addToEventLog(`❌ File save test FAILED: ${result?.error}`);
-              }
-            } else {
-              console.log('❌ saveRecordingFile not available');
-              addToEventLog('❌ saveRecordingFile not available');
-            }
-            
-            // Test default directory
-            try {
-              if (window.electronAPI?.file?.getDefaultRecordingsDirectory) {
-                const defaultDir = await window.electronAPI.file.getDefaultRecordingsDirectory();
-                console.log('📁 Default recordings directory:', defaultDir);
-                addToEventLog(`📁 Default recordings directory: ${defaultDir}`);
-              }
-            } catch (dirError) {
-              console.warn('⚠️ Could not get default directory:', dirError.message);
-              addToEventLog(`⚠️ Could not get default directory: ${dirError.message}`);
-            }
-            
-          } catch (error) {
-            console.error('❌ saveRecordingFile test failed:', error.message);
-            addToEventLog(`❌ saveRecordingFile test failed: ${error.message}`);
-          }
-        };
-      }, 1000);
-      
-    } catch (error) {
-      console.error('❌ Test setup failed:', error);
-      addToEventLog(`❌ Test setup failed: ${error.message}`);
-    }
-  };
-
-  const testAudioRecording = async () => {
-    console.log('🧪 Testing audio recording specifically...');
-    addToEventLog('🧪 Testing audio recording specifically...');
-    
-    try {
-      // Test microphone access
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        audio: {
-          deviceId: selectedAudioInput === 'default' ? undefined : { exact: selectedAudioInput },
-          autoGainControl: true,
-          echoCancellation: true,
-          noiseSuppression: true
-        }, 
-        video: false 
-      });
-      
-      console.log('✅ Audio stream obtained:', stream.getAudioTracks());
-      addToEventLog(`✅ Audio stream obtained with ${stream.getAudioTracks().length} audio tracks`);
-      
-      // Test that we can record from it
-      const recorder = new MediaRecorder(stream);
-      const chunks = [];
-      
-      recorder.ondataavailable = (e) => chunks.push(e.data);
-      recorder.onstop = () => {
-        const audioBlob = new Blob(chunks, { type: 'audio/webm' });
-        console.log('✅ Audio recording test successful:', audioBlob.size, 'bytes');
-        addToEventLog(`✅ Audio recording test successful: ${audioBlob.size} bytes`);
-        
-        // Create a URL to test playback
-        const audioUrl = URL.createObjectURL(audioBlob);
-        const audio = new Audio(audioUrl);
-        
-        addToEventLog('🔊 Test audio created - check browser console for playback URL');
-        console.log('🔊 Test audio playback URL:', audioUrl);
-        
-        // Cleanup
-        stream.getTracks().forEach(track => track.stop());
-      };
-      
-      // Record for 2 seconds
-      recorder.start();
-      setTimeout(() => recorder.stop(), 2000);
-      
-      addToEventLog('🎤 Recording 2 seconds of audio for test...');
-      
-    } catch (error) {
-      console.error('❌ Audio test failed:', error);
-      addToEventLog(`❌ Audio test failed: ${error.message}`);
-      
-      if (error.name === 'NotAllowedError') {
-        addToEventLog('❌ Microphone permission denied - check browser permissions');
-      } else if (error.name === 'NotFoundError') {
-        addToEventLog('❌ Audio device not found - check device selection');
-      }
-    }
-  };
-
-  const debugRecordingOptions = async () => {
-    console.log('🔍 Debugging recording options flow...');
-    addToEventLog('🔍 Debugging recording options flow...');
-    
-    try {
-      // 1. Check the current state
-      console.log('📋 Current state:', {
-        selectedScreen,
-        selectedAudioInput,
-        recordingSettings,
-        availableDevices
-      });
-      
-      addToEventLog(`📋 Selected screen: ${selectedScreen}`);
-      addToEventLog(`📋 Selected audio: ${selectedAudioInput}`);
-      addToEventLog(`📋 Include microphone: ${recordingSettings.includeMicrophone}`);
-      addToEventLog(`📋 Include system audio: ${recordingSettings.includeSystemAudio}`);
-      
-      // 2. Build the options object exactly like startRecording does
-      const recordingOptions = {
-        screenId: selectedScreen,
-        audioInputId: selectedAudioInput,
-        ...recordingSettings
-      };
-      
-      console.log('🎯 Recording options that would be sent:', recordingOptions);
-      addToEventLog(`🎯 Recording options: ${JSON.stringify(recordingOptions, null, 2)}`);
-      
-      // 3. Check if the audio device exists
-      const audioDevice = availableDevices.audio.find(device => device.id === selectedAudioInput);
-      if (audioDevice) {
-        console.log('✅ Audio device found:', audioDevice);
-        addToEventLog(`✅ Audio device found: ${audioDevice.name}`);
-      } else {
-        console.log('❌ Audio device NOT found');
-        addToEventLog(`❌ Audio device NOT found for ID: ${selectedAudioInput}`);
-      }
-      
-      // 4. Test what the service's cleanOptionsForIPC would do
-      const allowedKeys = [
-        'screenId',
-        'audioInputId', 
-        'includeMicrophone',
-        'includeSystemAudio',
-        'videoQuality',
-        'audioQuality',
-        'recordingDirectory',
-        'filename'
-      ];
-      
-      const cleanOptions = {};
-      allowedKeys.forEach(key => {
-        if (recordingOptions[key] !== undefined && recordingOptions[key] !== null) {
-          try {
-            JSON.stringify(recordingOptions[key]);
-            cleanOptions[key] = recordingOptions[key];
-          } catch (error) {
-            console.warn(`Skipping non-serializable option ${key}:`, error);
-          }
-        }
-      });
-      
-      console.log('🧹 Clean options for IPC:', cleanOptions);
-      addToEventLog(`🧹 Clean options: ${JSON.stringify(cleanOptions, null, 2)}`);
-      
-      // 5. Check validation
-      if (!cleanOptions.screenId) {
-        addToEventLog('❌ ISSUE: No screenId in clean options');
-      }
-      
-      if (cleanOptions.includeMicrophone && !cleanOptions.audioInputId) {
-        addToEventLog('❌ ISSUE: Microphone enabled but no audioInputId');
-      }
-      
-      if (!cleanOptions.includeMicrophone) {
-        addToEventLog('⚠️ NOTE: Microphone is disabled in settings');
-      }
-      
-      // 6. Test the actual getUserMedia call that would be made
-      if (cleanOptions.includeMicrophone && cleanOptions.audioInputId) {
-        try {
-          console.log('🧪 Testing getUserMedia with exact options...');
-          const audioConstraints = {
-            deviceId: cleanOptions.audioInputId === 'default' ? undefined : { exact: cleanOptions.audioInputId },
-            autoGainControl: true,
-            echoCancellation: true,
-            noiseSuppression: true,
-            sampleRate: 44100,
-            sampleSize: 16,
-            channelCount: 2
-          };
-          
-          console.log('🎤 Audio constraints:', audioConstraints);
-          addToEventLog(`🎤 Audio constraints: ${JSON.stringify(audioConstraints)}`);
-          
-          const testStream = await navigator.mediaDevices.getUserMedia({
-            video: false,
-            audio: audioConstraints
-          });
-          
-          console.log('✅ getUserMedia test successful:', testStream.getAudioTracks());
-          addToEventLog(`✅ getUserMedia test successful: ${testStream.getAudioTracks().length} tracks`);
-          
-          // Cleanup
-          testStream.getTracks().forEach(track => track.stop());
-          
-        } catch (error) {
-          console.error('❌ getUserMedia test failed:', error);
-          addToEventLog(`❌ getUserMedia test failed: ${error.message}`);
-        }
-      }
-      
-    } catch (error) {
-      console.error('❌ Debug failed:', error);
-      addToEventLog(`❌ Debug failed: ${error.message}`);
-    }
-  };
-
-  const testSystemAudioCapture = async () => {
-    console.log('🧪 Testing system audio capture methods...');
-    addToEventLog('🧪 Testing system audio capture methods...');
-    
-    const methods = [
-      {
-        name: 'Method 1: Desktop audio via chromeMediaSource',
-        test: async () => {
-          const constraints = {
-            video: false,
-            audio: {
-              mandatory: {
-                chromeMediaSource: 'desktop',
-                autoGainControl: false,
-                echoCancellation: false,
-                noiseSuppression: false,
-                sampleRate: 48000
-              }
-            }
-          };
-          return await navigator.mediaDevices.getUserMedia(constraints);
-        }
-      },
-      {
-        name: 'Method 2: getDisplayMedia with audio',
-        test: async () => {
-          return await navigator.mediaDevices.getDisplayMedia({
-            video: false,
-            audio: {
-              autoGainControl: false,
-              echoCancellation: false,
-              noiseSuppression: false,
-              sampleRate: 48000
-            }
-          });
-        }
-      },
-      {
-        name: 'Method 3: Combined video+audio getDisplayMedia',
-        test: async () => {
-          return await navigator.mediaDevices.getDisplayMedia({
-            video: true,
-            audio: true
-          });
-        }
-      },
-      {
-        name: 'Method 4: Desktop capture with audio',
-        test: async () => {
-          const constraints = {
-            video: {
-              mandatory: {
-                chromeMediaSource: 'desktop',
-                chromeMediaSourceId: selectedScreen
-              }
-            },
-            audio: {
-              mandatory: {
-                chromeMediaSource: 'desktop',
-                chromeMediaSourceId: selectedScreen
-              }
-            }
-          };
-          return await navigator.mediaDevices.getUserMedia(constraints);
-        }
-      }
-    ];
-
-    let successfulMethods = [];
-
-    for (const method of methods) {
-      try {
-        console.log(`🧪 Testing: ${method.name}`);
-        addToEventLog(`🧪 Testing: ${method.name}`);
-        
-        const stream = await method.test();
-        
-        const result = {
-          audioTracks: stream.getAudioTracks().length,
-          videoTracks: stream.getVideoTracks().length,
-          audioSettings: stream.getAudioTracks()[0]?.getSettings(),
-          audioLabel: stream.getAudioTracks()[0]?.label
-        };
-        
-        console.log(`✅ ${method.name} SUCCESS:`, result);
-        addToEventLog(`✅ ${method.name} SUCCESS: ${result.audioTracks} audio tracks, ${result.videoTracks} video tracks`);
-        
-        if (result.audioTracks > 0) {
-          successfulMethods.push(method.name);
-          addToEventLog(`🎉 ${method.name} can capture system audio! Label: ${result.audioLabel}`);
-          
-          // Test if we can actually record from this stream
-          try {
-            const testRecorder = new MediaRecorder(stream);
-            console.log(`✅ ${method.name} is compatible with MediaRecorder`);
-            addToEventLog(`✅ ${method.name} is compatible with MediaRecorder`);
-          } catch (recorderError) {
-            console.log(`❌ ${method.name} NOT compatible with MediaRecorder:`, recorderError.message);
-            addToEventLog(`❌ ${method.name} NOT compatible with MediaRecorder: ${recorderError.message}`);
-          }
-        } else {
-          addToEventLog(`⚠️ ${method.name} succeeded but captured no audio tracks`);
-        }
-        
-        // Clean up test stream
-        stream.getTracks().forEach(track => track.stop());
-        
-      } catch (error) {
-        console.log(`❌ ${method.name} FAILED:`, error.message);
-        addToEventLog(`❌ ${method.name} FAILED: ${error.message}`);
-        
-        // Provide specific error guidance
-        if (error.name === 'NotAllowedError') {
-          addToEventLog(`💡 ${method.name}: Permission denied - user may need to allow screen sharing with audio`);
-        } else if (error.name === 'NotSupportedError') {
-          addToEventLog(`💡 ${method.name}: Not supported on this platform/browser`);
-        } else if (error.name === 'NotFoundError') {
-          addToEventLog(`💡 ${method.name}: No system audio source found`);
-        }
-      }
-    }
-
-    // Summary
-    if (successfulMethods.length > 0) {
-      console.log('🎉 SYSTEM AUDIO CAPTURE SUMMARY:', successfulMethods);
-      addToEventLog(`🎉 SUMMARY: ${successfulMethods.length} methods can capture system audio:`);
-      successfulMethods.forEach(method => addToEventLog(`  ✅ ${method}`));
-      addToEventLog('💡 Your recordings should now include system audio!');
-    } else {
-      console.log('❌ NO METHODS can capture system audio');
-      addToEventLog('❌ NO METHODS can capture system audio');
-      addToEventLog('💡 System audio may not be available on this platform');
-      addToEventLog('💡 Try: 1) Ensure apps are playing audio 2) Check browser permissions 3) Try different screen sources');
-    }
-
-    // Platform-specific advice
-    const platform = navigator.platform;
-    if (platform.includes('Mac')) {
-      addToEventLog('🍎 macOS: You may need to grant "Screen Recording" permission in System Preferences > Security & Privacy');
-    } else if (platform.includes('Win')) {
-      addToEventLog('🪟 Windows: System audio capture should work with getDisplayMedia');
-    } else if (platform.includes('Linux')) {
-      addToEventLog('🐧 Linux: System audio capture support varies by browser and desktop environment');
-    }
-  };
-
-  const testSafeSystemAudio = async () => {
-    console.log('🛡️ Testing SAFE system audio methods only...');
-    addToEventLog('🛡️ Starting SAFE system audio test (no crashes)...');
-    
-    // Platform info
-    addToEventLog(`🖥️ Platform: ${navigator.platform}`);
-    addToEventLog(`🌐 Browser: ${navigator.userAgent.includes('Chrome') ? 'Chrome' : 'Other'}`);
-    addToEventLog(`⚡ Electron: ${navigator.userAgent.includes('Electron') ? 'Yes' : 'No'}`);
-    
-    // Only test methods that are guaranteed safe
-    const safeMethods = [
-      {
-        name: 'getDisplayMedia with video+audio (SAFE)',
-        description: 'Standard safe method for system audio',
-        test: async () => {
-          return await navigator.mediaDevices.getDisplayMedia({
-            video: true,
-            audio: true
-          });
-        }
-      },
-      {
-        name: 'getDisplayMedia with detailed audio settings (SAFE)',
-        description: 'Safe method with specific audio constraints',
-        test: async () => {
-          return await navigator.mediaDevices.getDisplayMedia({
-            video: { cursor: 'always' },
-            audio: {
-              autoGainControl: false,
-              echoCancellation: false,
-              noiseSuppression: false,
-              sampleRate: 48000,
-              channelCount: 2
-            }
-          });
-        }
-      }
-    ];
-
-    let workingMethods = 0;
-    const results = [];
-    
-    for (const method of safeMethods) {
-      addToEventLog(`🧪 Testing: ${method.name}`);
-      console.log(`🧪 Testing: ${method.name} - ${method.description}`);
-      
-      try {
-        const stream = await method.test();
-        
-        const audioTracks = stream.getAudioTracks().length;
-        const videoTracks = stream.getVideoTracks().length;
-        
-        if (audioTracks > 0) {
-          workingMethods++;
-          const audioTrack = stream.getAudioTracks()[0];
-          const settings = audioTrack.getSettings();
-          
-          addToEventLog(`✅ ${method.name} SUCCESS!`);
-          addToEventLog(`  📊 Audio: ${audioTracks} tracks, Video: ${videoTracks} tracks`);
-          addToEventLog(`  🎵 Settings: ${settings.sampleRate || 'Unknown'}Hz, ${settings.channelCount || 'Unknown'}ch`);
-          addToEventLog(`  🏷️ Label: ${audioTrack.label || 'No label'}`);
-          
-          // Test MediaRecorder compatibility
-          try {
-            const testRecorder = new MediaRecorder(stream);
-            addToEventLog(`  ✅ MediaRecorder compatible`);
-            console.log(`✅ ${method.name} is MediaRecorder compatible`);
-            
-            // Test actual recording for 2 seconds
-            addToEventLog(`  🎬 Testing 2-second recording...`);
-            const chunks = [];
-            
-            testRecorder.ondataavailable = (e) => {
-              if (e.data.size > 0) chunks.push(e.data);
-            };
-            
-            testRecorder.onstop = () => {
-              const blob = new Blob(chunks, { type: 'video/webm' });
-              addToEventLog(`  ✅ Test recording: ${blob.size} bytes`);
-              console.log(`✅ ${method.name} test recording: ${blob.size} bytes`);
-            };
-            
-            testRecorder.start();
-            setTimeout(() => {
-              if (testRecorder.state === 'recording') {
-                testRecorder.stop();
-              }
-            }, 2000);
-            
-          } catch (recorderError) {
-            addToEventLog(`  ❌ MediaRecorder NOT compatible: ${recorderError.message}`);
-            console.log(`❌ ${method.name} NOT compatible:`, recorderError.message);
-          }
-          
-        } else {
-          addToEventLog(`⚠️ ${method.name} succeeded but no audio tracks`);
-          addToEventLog(`  📊 Video: ${videoTracks} tracks, Audio: ${audioTracks} tracks`);
-        }
-        
-        // Clean up test stream
-        stream.getTracks().forEach(track => track.stop());
-        
-        results.push({
-          name: method.name,
-          success: true,
-          audioTracks,
-          videoTracks
-        });
-        
-      } catch (error) {
-        addToEventLog(`❌ ${method.name} FAILED: ${error.message}`);
-        console.log(`❌ ${method.name} FAILED:`, error.message);
-        
-        // Provide specific guidance
-        if (error.name === 'NotAllowedError') {
-          addToEventLog(`💡 Permission denied - user cancelled or needs system permission`);
-        } else if (error.name === 'NotSupportedError' || error.message.includes('Not supported')) {
-          addToEventLog(`💡 System audio not supported in this environment`);
-        } else if (error.message.includes('video must be requested')) {
-          addToEventLog(`💡 Audio-only capture not allowed, need video+audio`);
-        } else {
-          addToEventLog(`💡 Unexpected error - check browser/system compatibility`);
-        }
-        
-        results.push({
-          name: method.name,
-          success: false,
-          error: error.message
-        });
-      }
-    }
-
-    // Test summary
-    addToEventLog('');
-    addToEventLog(`🎉 SAFE TEST SUMMARY:`);
-    addToEventLog(`✅ Working methods: ${workingMethods}/${safeMethods.length}`);
-    
-    if (workingMethods > 0) {
-      addToEventLog('🎊 System audio capture IS possible on your system!');
-      addToEventLog('💡 Your recordings should include system audio');
-      
-      const working = results.filter(r => r.success && r.audioTracks > 0);
-      working.forEach(result => {
-        addToEventLog(`  ✅ ${result.name} (${result.audioTracks} audio)`);
-      });
-    } else {
-      addToEventLog('❌ System audio capture is not available');
-      addToEventLog('');
-      addToEventLog('🔧 TROUBLESHOOTING:');
-      addToEventLog('1. 🍎 macOS: System Preferences > Security & Privacy > Screen Recording');
-      addToEventLog('   - Add your browser/app and enable it');
-      addToEventLog('   - Restart the app after granting permission');
-      addToEventLog('2. 🔊 Test with audio actively playing');
-      addToEventLog('   - Play music/video in another app during test');
-      addToEventLog('3. 🌐 Try different browsers');
-      addToEventLog('   - Chrome usually has the best support');
-      addToEventLog('4. 🎵 Consider audio routing software');
-      addToEventLog('   - BlackHole (free): brew install blackhole-2ch');
-      addToEventLog('   - SoundFlower (alternative)');
-      addToEventLog('5. 📱 Check Electron version');
-      addToEventLog('   - Newer versions have better audio support');
-    }
-    
-    // macOS-specific advice
-    if (navigator.platform.includes('Mac')) {
-      addToEventLog('');
-      addToEventLog('🍎 macOS SPECIFIC TIPS:');
-      addToEventLog('• System audio needs "Screen Recording" permission');
-      addToEventLog('• Some apps may need "Accessibility" permission too');
-      addToEventLog('• BlackHole is the most reliable solution for system audio');
-      addToEventLog('• Try recording from different apps (Music, Safari, etc.)');
-    }
-    
-    console.log('🛡️ Safe system audio test completed - no crashes!');
-    addToEventLog('🛡️ Safe test completed successfully (no crashes)');
   };
 
   useEffect(() => {
@@ -851,52 +419,51 @@ export const ScreenRecorderDebug = () => {
 
       <CardContent className="space-y-4">
         
-        {/* Debug Actions */}
+        {/* Enhanced Debug Actions */}
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" size="sm" onClick={refreshDebugInfo}>
             <RefreshCw className="w-4 h-4 mr-2" />
             Refresh
           </Button>
+          
+          {/* ✅ Main tests */}
+          <Button variant="outline" size="sm" onClick={testApertureSystem}>
+            <Apple className="w-4 h-4 mr-2" />
+            Test Aperture v7
+          </Button>
+          
+          <Button variant="outline" size="sm" onClick={checkRecordingReadiness}>
+            <CheckCircle className="w-4 h-4 mr-2" />
+            Check Readiness
+          </Button>
+          
+          <Button variant="outline" size="sm" onClick={testRecordingFlow}>
+            <Play className="w-4 h-4 mr-2" />
+            Test Full Flow
+          </Button>
+          
+          {/* ✅ Secondary tests */}
+          <Button variant="outline" size="sm" onClick={testFileSavingFlow}>
+            <Play className="w-4 h-4 mr-2" />
+            Test File Saving
+          </Button>
+          
           <Button variant="outline" size="sm" onClick={testRecordingAPI}>
             <Play className="w-4 h-4 mr-2" />
             Test API
           </Button>
-          <Button variant="outline" size="sm" onClick={testElectronAPIs}>
-            <Play className="w-4 h-4 mr-2" />
-            Test APIs
+          
+          {/* ✅ System actions */}
+          <Button variant="outline" size="sm" onClick={requestPermissions}>
+            <Settings className="w-4 h-4 mr-2" />
+            Request Permissions
           </Button>
-          <Button variant="outline" size="sm" onClick={testSaveRecordingAPI}>
-            <Play className="w-4 h-4 mr-2" />
-            Test Save Recording API
-          </Button>
-          <Button variant="outline" size="sm" onClick={testAudioRecording}>
-            <Play className="w-4 h-4 mr-2" />
-            Test Audio Recording
-          </Button>
-          <Button variant="outline" size="sm" onClick={testSystemAudioCapture}>
-            <Play className="w-4 h-4 mr-2" />
-            Test System Audio Capture
-          </Button>
-          <Button variant="outline" size="sm" onClick={testSafeSystemAudio}>
-            <Play className="w-4 h-4 mr-2" />
-            Test System Audio (SAFE)
-          </Button>
-          <Button variant="outline" size="sm" onClick={debugRecordingOptions}>
-            <CheckCircle className="w-4 h-4 mr-2" />
-            Debug Recording Options
-          </Button>
-          <Button variant="outline" size="sm" onClick={analyzeConfiguration}>
-            <CheckCircle className="w-4 h-4 mr-2" />
-            Analyze Config
-          </Button>
-          <Button variant="outline" size="sm" onClick={testFileSystem}>
-            <CheckCircle className="w-4 h-4 mr-2" />
-            Test File System
-          </Button>
+          
           <Button variant="outline" size="sm" onClick={forceCleanup} disabled={isRecording}>
             <XCircle className="w-4 h-4 mr-2" />
             Force Cleanup
           </Button>
+          
           <Button variant="outline" size="sm" onClick={clearEventLog}>
             <Trash2 className="w-4 h-4 mr-2" />
             Clear Log
@@ -935,7 +502,7 @@ export const ScreenRecorderDebug = () => {
 
         <Separator />
 
-        {/* Configuration Details */}
+        {/* Enhanced Configuration Details */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
           <div>
             <div className="font-medium mb-2">Current Settings</div>
@@ -953,6 +520,8 @@ export const ScreenRecorderDebug = () => {
               <div>Screen ID: {selectedScreen || 'None'}</div>
               <div>Audio ID: {selectedAudioInput || 'None'}</div>
               <div className="truncate">Recording Dir: {recordingSettings.recordingDirectory || 'Default'}</div>
+              <div>Method: {debugInfo.backendStatus?.recordingMethod || 'Unknown'}</div>
+              <div>Platform: {navigator.platform}</div>
             </div>
           </div>
         </div>
@@ -983,7 +552,7 @@ export const ScreenRecorderDebug = () => {
           </ScrollArea>
         </div>
 
-        {/* Debug Info */}
+        {/* Enhanced Debug Info */}
         {debugInfo.backendStatus && (
           <div>
             <h4 className="font-medium mb-2">Backend Status</h4>
