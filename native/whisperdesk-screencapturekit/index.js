@@ -310,9 +310,10 @@ if (!nativeBinding) {
   throw new Error(`Failed to load native binding`)
 }
 
-const { ScreenCaptureKitRecorder, initScreencapturekit, getVersion, checkMacosVersion } = nativeBinding
+const { ScreenCaptureKitRecorder, initScreencapturekit, getVersion, checkMacosVersion, testPhase2Implementation } = nativeBinding
 
 module.exports.ScreenCaptureKitRecorder = ScreenCaptureKitRecorder
 module.exports.initScreencapturekit = initScreencapturekit
 module.exports.getVersion = getVersion
 module.exports.checkMacosVersion = checkMacosVersion
+module.exports.testPhase2Implementation = testPhase2Implementation

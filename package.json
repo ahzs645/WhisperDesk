@@ -36,7 +36,6 @@
     "setup:cpal:build": "node scripts/build-cpal-from-source.js",
     "test:cpal": "node scripts/test-cpal-recording.js",
     "test:cpal:devices": "node scripts/test-cpal-devices.js",
-
     "_comment_ffmpeg_scripts": "=== FFMPEG SETUP & TESTING ===",
     "setup:ffmpeg": "node scripts/setup-ffmpeg.js",
     "setup:ffmpeg:static": "npm install ffmpeg-static@latest",
@@ -136,6 +135,7 @@
   },
   "optionalDependencies": {
     "@whisperdesk/cpal-recorder": "^1.0.0",
+    "aperture": "^7.0.0",
     "fluent-ffmpeg": "^2.1.2"
   },
   "whisperdesk": {
@@ -343,7 +343,6 @@
     "asarUnpack": [
       "binaries/**/*",
       "models/**/*",
-      
       "node_modules/ffmpeg-static/**/*",
       "node_modules/node-cpal/**/*",
       "node_modules/@whisperdesk/cpal-recorder/**/*"
@@ -584,7 +583,6 @@
     "multi-speaker",
     "screen-recording",
     "system-audio",
-    
     "screencapturekit",
     "cpal",
     "platform-aware",

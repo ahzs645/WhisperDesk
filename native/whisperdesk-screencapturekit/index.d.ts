@@ -29,6 +29,7 @@ export interface RecordingConfiguration {
 export declare function initScreencapturekit(): void
 export declare function getVersion(): string
 export declare function checkMacosVersion(): string
+export declare function testPhase2Implementation(): string
 export declare class ScreenCaptureKitRecorder {
   constructor()
   getAvailableScreens(): Array<ScreenSource>
