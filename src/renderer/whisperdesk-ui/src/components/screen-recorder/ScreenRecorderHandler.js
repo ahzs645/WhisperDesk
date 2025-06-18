@@ -1,5 +1,6 @@
 /**
- * @fileoverview Crash-safe screen recording handler - completely avoids Error 263
+ * @fileoverview Fixed crash-safe screen recording handler
+ * ✅ NO DIRECT NODE.JS MODULE USAGE - uses IPC bridge only
  * Only uses proven safe methods for macOS system audio capture
  */
 
@@ -23,7 +24,7 @@ class ScreenRecorderHandler {
     this.onPaused = null;
     this.onResumed = null;
     
-    console.log('🛡️ Initializing CRASH-SAFE screen recorder handler');
+    console.log('🛡️ Initializing CRASH-SAFE screen recorder handler (no Node.js modules)');
     this.debugSafeCapabilities();
   }
 
@@ -322,84 +323,6 @@ class ScreenRecorderHandler {
     return combinedStream;
   }
 
-  /**
-   * Safe system audio testing (no crash-prone methods)
-   */
-  async testSafeSystemAudio() {
-    console.log('🧪 Testing SAFE system audio methods only...');
-    
-    const safeMethods = [
-      {
-        name: 'getDisplayMedia with video+audio (SAFE)',
-        test: async () => {
-          return await navigator.mediaDevices.getDisplayMedia({
-            video: true,
-            audio: true
-          });
-        }
-      },
-      {
-        name: 'getDisplayMedia with detailed constraints (SAFE)',
-        test: async () => {
-          return await navigator.mediaDevices.getDisplayMedia({
-            video: { cursor: 'always' },
-            audio: {
-              autoGainControl: false,
-              echoCancellation: false,
-              noiseSuppression: false,
-              sampleRate: 48000
-            }
-          });
-        }
-      }
-    ];
-
-    const results = [];
-    
-    for (const method of safeMethods) {
-      try {
-        console.log(`🧪 Testing: ${method.name}`);
-        const stream = await method.test();
-        
-        const result = {
-          name: method.name,
-          success: true,
-          audioTracks: stream.getAudioTracks().length,
-          videoTracks: stream.getVideoTracks().length
-        };
-        
-        console.log(`✅ ${method.name} SUCCESS:`, result);
-        
-        // Test MediaRecorder compatibility
-        if (stream.getAudioTracks().length > 0) {
-          try {
-            new MediaRecorder(stream);
-            console.log(`✅ ${method.name} is MediaRecorder compatible`);
-          } catch (recorderError) {
-            console.log(`❌ ${method.name} NOT MediaRecorder compatible`);
-          }
-        }
-        
-        // Clean up
-        stream.getTracks().forEach(track => track.stop());
-        results.push(result);
-        
-      } catch (error) {
-        console.log(`❌ ${method.name} FAILED:`, error.message);
-        results.push({
-          name: method.name,
-          success: false,
-          error: error.message
-        });
-      }
-    }
-
-    const working = results.filter(r => r.success && r.audioTracks > 0);
-    console.log(`🎉 Safe test complete: ${working.length}/${results.length} methods can capture system audio`);
-    
-    return results;
-  }
-
   // Standard methods (stop, pause, resume, etc.)
   async stopRecording() {
     try {
@@ -411,7 +334,8 @@ class ScreenRecorderHandler {
         const handleStop = async () => {
           try {
             console.log('🛑 Safe recording stop...');
-            const actualPath = await this.saveRecording();
+            // ✅ FIXED: Use IPC bridge for file saving
+            const actualPath = await this.saveRecordingViaIPC();
             this.cleanup();
             
             if (this.onStopped) {
@@ -537,9 +461,12 @@ class ScreenRecorderHandler {
     }
   }
 
-  async saveRecording() {
+  /**
+   * ✅ FIXED: Save recording using IPC bridge instead of direct fs access
+   */
+  async saveRecordingViaIPC() {
     try {
-      console.log(`💾 Saving ${this.recordedChunks.length} chunks...`);
+      console.log(`💾 Saving ${this.recordedChunks.length} chunks via IPC...`);
       
       if (this.recordedChunks.length === 0) {
         throw new Error('No recording data available');
@@ -559,11 +486,12 @@ class ScreenRecorderHandler {
         outputPath = `recording-${timestamp}.webm`;
       }
 
+      // ✅ Use IPC bridge instead of direct fs access
       if (window.electronAPI?.file?.saveRecordingFile) {
         const result = await window.electronAPI.file.saveRecordingFile(outputPath, uint8Array);
         
         if (result && result.success) {
-          console.log(`✅ Recording saved: ${result.path}`);
+          console.log(`✅ Recording saved via IPC: ${result.path}`);
           return result.actualPath || result.path;
         } else {
           throw new Error(`Save failed: ${result?.error || 'Unknown error'}`);
@@ -574,7 +502,7 @@ class ScreenRecorderHandler {
         return outputPath;
       }
     } catch (error) {
-      console.error('Failed to save recording:', error);
+      console.error('Failed to save recording via IPC:', error);
       throw error;
     }
   }
@@ -640,7 +568,7 @@ class ScreenRecorderHandler {
   }
 
   cleanup() {
-    console.log('🧹 Safe cleanup...');
+    console.log('🧹 Safe cleanup (no direct fs access)...');
 
     this.stopDurationTimer();
 

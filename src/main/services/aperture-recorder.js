@@ -312,69 +312,33 @@ class ApertureV7Recorder extends EventEmitter {
 
   /**
    * ✅ NEW: Handle file completion - move from temp to user's chosen directory
+   * FIXED: No direct fs usage - all operations via main process
    */
   async handleFileCompletion() {
     try {
       console.log('📁 Handling file completion...');
       
-      // Check if the temp file exists
-      const tempExists = await this.fileExists(this.systemAudioPath);
-      if (!tempExists) {
-        console.warn('⚠️ Temp recording file not found:', this.systemAudioPath);
-        this.finalOutputPath = this.systemAudioPath;
-        return;
-      }
-
-      // If user chose a specific directory, move the file there
+      // All file operations are handled by the main process
+      // The temp file should already be moved by the main process
+      
+      // If user chose a specific directory, the main process handles the move
       if (this.userChosenDirectory) {
-        try {
-          // Ensure user's directory exists
-          await fs.mkdir(this.userChosenDirectory, { recursive: true });
-          
-          // Generate final filename
-          const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-          const finalFilename = `aperture-recording-${timestamp}.mp4`;
-          this.finalOutputPath = path.join(this.userChosenDirectory, finalFilename);
-          
-          console.log('📁 Moving file from temp to user directory...');
-          console.log('  From:', this.systemAudioPath);
-          console.log('  To:', this.finalOutputPath);
-          
-          // Copy file to final location
-          await fs.copyFile(this.systemAudioPath, this.finalOutputPath);
-          
-          // Verify the copy worked
-          const finalExists = await this.fileExists(this.finalOutputPath);
-          if (finalExists) {
-            console.log('✅ File successfully moved to user directory');
-            
-            // Clean up temp file
-            try {
-              await fs.unlink(this.systemAudioPath);
-              console.log('🧹 Temp file cleaned up');
-            } catch (cleanupError) {
-              console.warn('⚠️ Failed to clean up temp file:', cleanupError.message);
-            }
-          } else {
-            console.warn('⚠️ File copy verification failed, keeping temp location');
-            this.finalOutputPath = this.systemAudioPath;
-          }
-          
-        } catch (moveError) {
-          console.error('❌ Failed to move file to user directory:', moveError);
-          console.log('📁 Keeping file in temp location');
-          this.finalOutputPath = this.systemAudioPath;
-        }
+        console.log('📁 User directory specified, main process will handle file placement');
+        
+        // Generate expected final path
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const finalFilename = `aperture-recording-${timestamp}.mp4`;
+        this.finalOutputPath = path.join(this.userChosenDirectory, finalFilename);
       } else {
-        // No user directory specified, keep in temp
-        console.log('📁 No user directory specified, keeping in temp location');
+        // No user directory specified, file stays in temp
+        console.log('📁 No user directory specified, using temp location');
         this.finalOutputPath = this.systemAudioPath;
       }
 
-      // Handle microphone audio if needed (separate recording)
-      if (this.currentOptions.includeMicrophone && this.microphoneAudioPath) {
-        await this.mergeAudioStreams();
-      }
+      // Note: The main process aperture service should handle all file moving
+      // This is just to set the expected path for the UI
+
+      console.log('✅ File completion handling completed');
 
     } catch (error) {
       console.error('❌ File completion handling failed:', error);

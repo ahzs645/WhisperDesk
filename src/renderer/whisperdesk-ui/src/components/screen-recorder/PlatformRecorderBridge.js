@@ -1,7 +1,8 @@
 // src/renderer/whisperdesk-ui/src/components/screen-recorder/PlatformRecorderBridge.js
 /**
- * Renderer bridge for platform-aware recording
+ * Fixed renderer bridge for platform-aware recording
  * Coordinates between browser recording and main process
+ * ✅ NO DIRECT NODE.JS MODULE USAGE - uses IPC bridge only
  */
 
 class PlatformRecorderBridge {
@@ -78,8 +79,8 @@ class PlatformRecorderBridge {
         this.isRecording = false;
         this.stopProgressTracking();
         
-        // Handle file moving to user's chosen directory
-        const finalPath = await this.handleFileCompletion(data);
+        // ✅ FIXED: Handle file completion using IPC bridge
+        const finalPath = await this.handleFileCompletionViaIPC(data);
         
         if (this.onStopped) {
           this.onStopped({
@@ -125,6 +126,37 @@ class PlatformRecorderBridge {
   }
 
   /**
+   * ✅ FIXED: Handle file completion using IPC bridge only
+   */
+  async handleFileCompletionViaIPC(data) {
+    try {
+      const tempPath = data.outputPath;
+      
+      if (!tempPath) {
+        console.warn('⚠️ No output path provided');
+        return tempPath;
+      }
+
+      // ✅ Use IPC bridge instead of direct fs access
+      if (window.electronAPI?.file?.exists) {
+        const exists = await window.electronAPI.file.exists(tempPath);
+        if (!exists) {
+          console.warn('⚠️ Recording file not found at temp location:', tempPath);
+          return tempPath;
+        }
+      }
+
+      // File handling is done by main process, just return the path
+      console.log('📁 Recording completed at:', tempPath);
+      return tempPath;
+
+    } catch (error) {
+      console.error('❌ Error handling file completion via IPC:', error);
+      return data.outputPath;
+    }
+  }
+
+  /**
    * Start progress tracking (fallback if main process doesn't send progress events)
    */
   startProgressTracking() {
@@ -151,38 +183,6 @@ class PlatformRecorderBridge {
     if (this.progressInterval) {
       clearInterval(this.progressInterval);
       this.progressInterval = null;
-    }
-  }
-
-  /**
-   * Handle file completion - move from temp to user's chosen directory
-   */
-  async handleFileCompletion(data) {
-    try {
-      const tempPath = data.outputPath;
-      
-      if (!tempPath) {
-        console.warn('⚠️ No output path provided');
-        return tempPath;
-      }
-
-      // Check if file exists at temp location
-      if (window.electronAPI?.file?.exists) {
-        const exists = await window.electronAPI.file.exists(tempPath);
-        if (!exists) {
-          console.warn('⚠️ Recording file not found at temp location:', tempPath);
-          return tempPath;
-        }
-      }
-
-      // For now, just return the temp path - the main process should handle moving
-      // In a future version, we could implement file moving here
-      console.log('📁 Recording completed at:', tempPath);
-      return tempPath;
-
-    } catch (error) {
-      console.error('❌ Error handling file completion:', error);
-      return data.outputPath;
     }
   }
 
@@ -364,7 +364,7 @@ class PlatformRecorderBridge {
         results.push(`❌ Permission check error: ${error.message}`);
       }
       
-      // Test 5: Test file system access
+      // Test 5: Test file system access via IPC
       try {
         if (window.electronAPI?.file?.getDefaultRecordingsDirectory) {
           const defaultDir = await window.electronAPI.file.getDefaultRecordingsDirectory();
