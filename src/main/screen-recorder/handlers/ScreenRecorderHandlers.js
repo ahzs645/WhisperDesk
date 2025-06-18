@@ -112,7 +112,7 @@ class ScreenRecorderHandlers {
   async handleGetStatus(event) {
     try {
       console.log('📊 IPC: Getting screen recorder status...');
-      const status = this.service.getStatus();
+      const status = await this.service.getStatus();
       console.log('📊 IPC: Status retrieved:', status);
       return status;
     } catch (error) {
@@ -121,7 +121,8 @@ class ScreenRecorderHandlers {
         isRecording: false,
         isPaused: false,
         currentRecordingId: null,
-        error: error.message
+        error: error.message,
+        availableDevices: { screens: [], audio: [] }
       };
     }
   }

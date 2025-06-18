@@ -47,6 +47,10 @@
     <key>com.apple.security.device.camera</key>
     <false/>
     
+    <!-- Use Continuity Camera device type to avoid deprecated warnings -->
+    <key>NSCameraUseContinuityCameraDeviceType</key>
+    <true/>
+    
     <!-- Location access (typically not needed for transcription) -->
     <key>com.apple.security.personal-information.location</key>
     <false/>

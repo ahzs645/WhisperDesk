@@ -214,12 +214,47 @@ class PlatformAwareScreenRecorderService extends EventEmitter {
   /**
    * Get current status with platform info
    */
-  getStatus() {
+  async getStatus() {
     const baseStatus = this.recorder ? this.recorder.getStatus() : {
       isRecording: false,
       isPaused: false,
       duration: 0
     };
+
+    // Get available devices for the status
+    let availableDevices = { screens: [], audio: [] };
+    
+    try {
+      // Get screens from recorder
+      const screenResult = await this.getAvailableScreens();
+      if (screenResult.success && screenResult.screens) {
+        availableDevices.screens = screenResult.screens;
+      }
+      
+      // Get audio devices from recorder
+      if (this.recorder && typeof this.recorder.getAvailableAudioDevices === 'function') {
+        const audioDevices = await this.recorder.getAvailableAudioDevices();
+        availableDevices.audio = audioDevices || [];
+      }
+      
+      // Get microphones and add them to audio devices
+      if (this.recorder && typeof this.recorder.getAvailableMicrophones === 'function') {
+        const microphones = await this.recorder.getAvailableMicrophones();
+        if (microphones && microphones.length > 0) {
+          availableDevices.audio = [...availableDevices.audio, ...microphones];
+        }
+      }
+      
+      // Add default options if no devices found
+      if (availableDevices.audio.length === 0) {
+        availableDevices.audio = [
+          { id: 'default', name: 'Default Microphone', type: 'audioinput' }
+        ];
+      }
+      
+    } catch (error) {
+      console.warn('⚠️ Failed to get devices for status:', error.message);
+    }
 
     return {
       ...baseStatus,
@@ -227,7 +262,8 @@ class PlatformAwareScreenRecorderService extends EventEmitter {
       method: this.selectedMethod?.name || 'none',
       capabilities: this.capabilities,
       currentRecordingId: this.currentRecordingId,
-      isInitialized: this.isInitialized
+      isInitialized: this.isInitialized,
+      availableDevices: availableDevices
     };
   }
 

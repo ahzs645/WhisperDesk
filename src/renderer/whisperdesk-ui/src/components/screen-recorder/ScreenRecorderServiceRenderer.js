@@ -87,15 +87,8 @@ class ScreenRecorderServiceRenderer {
     // ✅ FIXED: Only update duration when recording is active
     this.platformBridge.onProgress = (data) => {
       if (this.updateStateCallback && data.isRecording) {
-        // Ensure we have a consistent duration in seconds
-        let durationSeconds;
-        if (data.duration > 59000) {
-          // Likely milliseconds
-          durationSeconds = Math.floor(data.duration / 1000);
-        } else {
-          // Likely seconds already
-          durationSeconds = Math.floor(data.duration);
-        }
+        // Main process sends duration in milliseconds, convert to seconds
+        const durationSeconds = Math.floor((data.duration || 0) / 1000);
         
         this.updateStateCallback({
           recordingDuration: durationSeconds,

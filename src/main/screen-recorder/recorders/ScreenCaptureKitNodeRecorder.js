@@ -192,6 +192,9 @@ class ScreenCaptureKitNodeRecorder extends EventEmitter {
     const includeSystemAudio = options.includeSystemAudio || options.includeAudio;
     const includeMicrophone = options.includeMicrophone;
 
+    // Initialize useNativeSystemAudio variable at method scope
+    let useNativeSystemAudio = true;
+
     // Get available screens (required even for audio-only)
     const screens = await this.screencapturekit.screens();
     if (!screens || screens.length === 0) {
@@ -215,12 +218,13 @@ class ScreenCaptureKitNodeRecorder extends EventEmitter {
       console.log('🔍 Available screens:', screens.map(s => ({ id: s.id, width: s.width, height: s.height })));
       console.log('🎯 Looking for screen ID:', targetScreenId, '(parsed from:', options.screenId, ')');
       
+      // Find screen by the raw ID (since ScreenCaptureKit uses numeric IDs internally)
       const targetScreen = screens.find(s => s.id === targetScreenId);
       if (targetScreen) {
         screenId = targetScreen.id;
         console.log('✅ Found target screen:', screenId);
       } else {
-        console.warn(`Screen ${options.screenId} not found, using screen ${screenId}`);
+        console.warn(`Screen ${options.screenId} not found, using default screen ${screenId}`);
       }
     }
 
@@ -243,7 +247,6 @@ class ScreenCaptureKitNodeRecorder extends EventEmitter {
 
     // System audio setup - prefer native over virtual drivers
     if (includeSystemAudio) {
-      let useNativeSystemAudio = true;
       
       if (options.audioInputId && options.audioInputId !== 'default') {
         config.audioDeviceId = options.audioInputId;
@@ -343,14 +346,33 @@ class ScreenCaptureKitNodeRecorder extends EventEmitter {
       if (options.microphoneDeviceId && options.microphoneDeviceId !== 'default') {
         config.microphoneDeviceId = options.microphoneDeviceId;
       } else {
-        // Get default microphone
+        // Get default microphone - prefer built-in over external devices
         try {
           const microphones = await this.screencapturekit.microphoneDevices();
           if (microphones && microphones.length > 0) {
-            config.microphoneDeviceId = microphones[0].id;
+            // Prefer built-in microphone for reliability
+            const builtInMic = microphones.find(mic => 
+              mic.id === 'BuiltInMicrophoneDevice' || 
+              mic.name.toLowerCase().includes('macbook') ||
+              mic.name.toLowerCase().includes('built')
+            );
+            
+            if (builtInMic) {
+              config.microphoneDeviceId = builtInMic.id;
+              console.log('🎤 Selected built-in microphone:', builtInMic.name);
+            } else {
+              // Fall back to first available microphone
+              config.microphoneDeviceId = microphones[0].id;
+              console.log('🎤 Selected first available microphone:', microphones[0].name);
+            }
           }
         } catch (error) {
           console.warn('⚠️ Could not get microphones:', error.message);
+          // Try to extract microphone info from error message if available
+          if (error.message && error.message.includes('BuiltInMicrophoneDevice')) {
+            config.microphoneDeviceId = 'BuiltInMicrophoneDevice';
+            console.log('🎤 Using built-in microphone from error context');
+          }
         }
       }
       console.log('🎤 Microphone capture enabled:', config.microphoneDeviceId);
@@ -410,43 +432,55 @@ class ScreenCaptureKitNodeRecorder extends EventEmitter {
       console.log('🛑 Stopping ScreenCaptureKit Node.js recording...');
 
       if (this.recorder) {
-        // Stop recording - this automatically handles audio processing and MP3 conversion
-        let tempOutputPath = await this.recorder.stopRecording();
-        console.log('📁 Recording saved to temp location:', tempOutputPath);
+        // Check if the recorder is still active before stopping
+        try {
+          // Stop recording - this automatically handles audio processing and MP3 conversion
+          let tempOutputPath = await this.recorder.stopRecording();
+          console.log('📁 Recording saved to temp location:', tempOutputPath);
 
-        // Handle custom recording directory if specified
-        if (this.customRecordingDirectory && tempOutputPath) {
-          try {
-            const path = require('path');
-            const fs = require('fs').promises;
-            
-            // Generate final filename
-            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-            const extension = path.extname(tempOutputPath);
-            const finalFilename = `recording-${timestamp}${extension}`;
-            const finalPath = path.join(this.customRecordingDirectory, finalFilename);
-            
-            // Ensure directory exists
-            await fs.mkdir(this.customRecordingDirectory, { recursive: true });
-            
-            // Move file from temp to final location
-            await fs.copyFile(tempOutputPath, finalPath);
-            
-            // Clean up temp file
+          // Handle custom recording directory if specified
+          if (this.customRecordingDirectory && tempOutputPath) {
             try {
-              await fs.unlink(tempOutputPath);
-            } catch (cleanupError) {
-              console.warn('⚠️ Could not clean up temp file:', cleanupError.message);
+              const path = require('path');
+              const fs = require('fs').promises;
+              
+              // Generate final filename
+              const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+              const extension = path.extname(tempOutputPath);
+              const finalFilename = `recording-${timestamp}${extension}`;
+              const finalPath = path.join(this.customRecordingDirectory, finalFilename);
+              
+              // Ensure directory exists
+              await fs.mkdir(this.customRecordingDirectory, { recursive: true });
+              
+              // Move file from temp to final location
+              await fs.copyFile(tempOutputPath, finalPath);
+              
+              // Clean up temp file
+              try {
+                await fs.unlink(tempOutputPath);
+              } catch (cleanupError) {
+                console.warn('⚠️ Could not clean up temp file:', cleanupError.message);
+              }
+              
+              this.finalOutputPath = finalPath;
+              console.log('📁 Recording moved to final location:', finalPath);
+            } catch (moveError) {
+              console.warn('⚠️ Could not move recording to custom directory:', moveError.message);
+              this.finalOutputPath = tempOutputPath;
             }
-            
-            this.finalOutputPath = finalPath;
-            console.log('📁 Recording moved to final location:', finalPath);
-          } catch (moveError) {
-            console.warn('⚠️ Could not move recording to custom directory:', moveError.message);
+          } else {
             this.finalOutputPath = tempOutputPath;
           }
-        } else {
-          this.finalOutputPath = tempOutputPath;
+        } catch (stopError) {
+          console.error('❌ Error stopping recorder:', stopError);
+          // Check if this is the -3808 error (stream already stopped)
+          if (stopError.message && stopError.message.includes('-3808')) {
+            console.log('⚠️ Stream was already stopped (Code -3808), continuing with cleanup...');
+            this.finalOutputPath = null;
+          } else {
+            throw stopError; // Re-throw other errors
+          }
         }
       }
 
@@ -477,6 +511,20 @@ class ScreenCaptureKitNodeRecorder extends EventEmitter {
 
       console.log('✅ ScreenCaptureKit Node.js recording completed');
       
+      // Verify file integrity if possible
+      if (this.finalOutputPath) {
+        try {
+          const stats = await fs.stat(this.finalOutputPath);
+          console.log(`📊 Recording file size: ${(stats.size / 1024 / 1024).toFixed(2)} MB`);
+          
+          if (stats.size < 1024) {
+            console.warn('⚠️ Warning: Recording file is very small, may be corrupted');
+          }
+        } catch (statError) {
+          console.warn('⚠️ Could not verify recording file:', statError.message);
+        }
+      }
+      
       return {
         success: true,
         outputPath: this.finalOutputPath,
@@ -497,21 +545,26 @@ class ScreenCaptureKitNodeRecorder extends EventEmitter {
    */
   async getAvailableScreens() {
     if (!this.screencapturekit) {
-      return [];
+      return { success: false, error: 'ScreenCaptureKit not initialized', screens: [] };
     }
 
     try {
       const screens = await this.screencapturekit.screens();
-      return screens.map(screen => ({
-        id: screen.id,
-        name: `Display ${screen.id}`,
+      const screenList = screens.map((screen, index) => ({
+        id: `screen:${screen.id}:0`, // Format as expected by the application
+        name: `Display ${index + 1}`,
         type: 'screen',
         width: screen.width,
-        height: screen.height
+        height: screen.height,
+        rawId: screen.id // Keep the original ID for internal use
       }));
+      
+      console.log(`✅ Found ${screenList.length} screens:`, screenList.map(s => `${s.name} (${s.id})`).join(', '));
+      
+      return { success: true, screens: screenList };
     } catch (error) {
       console.error('❌ Failed to get screens:', error);
-      return [];
+      return { success: false, error: error.message, screens: [] };
     }
   }
 
@@ -525,14 +578,36 @@ class ScreenCaptureKitNodeRecorder extends EventEmitter {
 
     try {
       const devices = await this.screencapturekit.audioDevices();
-      return devices.map(device => ({
+      const mappedDevices = devices.map(device => ({
         id: device.id,
         name: device.name,
         type: 'audiooutput',
-        manufacturer: device.manufacturer
+        manufacturer: device.manufacturer || 'Unknown'
       }));
+      console.log(`✅ Retrieved ${mappedDevices.length} audio devices successfully`);
+      return mappedDevices;
     } catch (error) {
       console.warn('⚠️ Failed to get audio devices:', error.message);
+      // Check if the error contains device information that we can parse
+      if (error.message && error.message.includes('[{')) {
+        try {
+          // Try to extract device info from error message
+          const deviceMatch = error.message.match(/\[({.*})\]/);
+          if (deviceMatch) {
+            const devicesStr = '[' + deviceMatch[1] + ']';
+            const parsedDevices = JSON.parse(devicesStr);
+            console.log('📱 Extracted audio devices from error message:', parsedDevices.length);
+            return parsedDevices.map(device => ({
+              id: device.id,
+              name: device.name,
+              type: 'audiooutput',
+              manufacturer: device.manufacturer || 'Unknown'
+            }));
+          }
+        } catch (parseError) {
+          console.warn('⚠️ Could not parse devices from error message:', parseError.message);
+        }
+      }
       return [];
     }
   }
@@ -547,14 +622,36 @@ class ScreenCaptureKitNodeRecorder extends EventEmitter {
 
     try {
       const microphones = await this.screencapturekit.microphoneDevices();
-      return microphones.map(mic => ({
+      const mappedMicrophones = microphones.map(mic => ({
         id: mic.id,
         name: mic.name,
         type: 'audioinput',
-        manufacturer: mic.manufacturer
+        manufacturer: mic.manufacturer || 'Unknown'
       }));
+      console.log(`✅ Retrieved ${mappedMicrophones.length} microphones successfully`);
+      return mappedMicrophones;
     } catch (error) {
       console.warn('⚠️ Failed to get microphones:', error.message);
+      // Check if the error contains device information that we can parse
+      if (error.message && error.message.includes('[{')) {
+        try {
+          // Try to extract device info from error message
+          const deviceMatch = error.message.match(/\[({.*})\]/);
+          if (deviceMatch) {
+            const devicesStr = '[' + deviceMatch[1] + ']';
+            const parsedDevices = JSON.parse(devicesStr);
+            console.log('📱 Extracted microphones from error message:', parsedDevices.length);
+            return parsedDevices.map(device => ({
+              id: device.id,
+              name: device.name,
+              type: 'audioinput',
+              manufacturer: device.manufacturer || 'Unknown'
+            }));
+          }
+        } catch (parseError) {
+          console.warn('⚠️ Could not parse microphones from error message:', parseError.message);
+        }
+      }
       return [];
     }
   }
@@ -610,15 +707,21 @@ class ScreenCaptureKitNodeRecorder extends EventEmitter {
   async cleanup() {
     console.log('🧹 Cleaning up ScreenCaptureKit Node.js recorder...');
 
+    const wasRecording = this.isRecording;
     this.isRecording = false;
 
     if (this.recorder) {
       try {
-        if (this.isRecording) {
+        if (wasRecording) {
+          console.log('🛑 Attempting to stop recording during cleanup...');
           await this.recorder.stopRecording();
         }
       } catch (error) {
         console.warn('⚠️ Failed to stop recorder during cleanup:', error.message);
+        // Don't throw error during cleanup - log and continue
+        if (error.message && error.message.includes('-3808')) {
+          console.log('ℹ️ Stream was already stopped during cleanup (expected)');
+        }
       }
       this.recorder = null;
     }

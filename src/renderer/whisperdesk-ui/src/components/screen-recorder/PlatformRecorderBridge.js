@@ -152,10 +152,9 @@ class PlatformRecorderBridge {
     if (window.electronAPI.screenRecorder.onRecordingProgress) {
       const cleanup4 = window.electronAPI.screenRecorder.onRecordingProgress((data) => {
         if (this.onProgress) {
-          // Convert to seconds consistently
-          const durationSeconds = Math.floor(data.duration / 1000);
+          // Pass duration directly as received from main process (should be in seconds)
           this.onProgress({
-            duration: durationSeconds * 1000, // Send as milliseconds to match other systems
+            duration: data.duration,
             isRecording: this.isRecording,
             isPaused: data.isPaused || false
           });
@@ -220,13 +219,12 @@ class PlatformRecorderBridge {
     this.progressInterval = setInterval(() => {
       if (this.isRecording && this.startTime && this.onProgress) {
         const duration = Date.now() - this.startTime; // Milliseconds
-        const seconds = Math.floor(duration / 1000);
         
         // Only emit if we haven't received a main process progress event recently
         const timeSinceLastProgress = Date.now() - lastProgressTime;
         if (timeSinceLastProgress > 2000) {
           this.onProgress({
-            duration,
+            duration, // Keep in milliseconds to match main process format
             isRecording: this.isRecording,
             isPaused: false
           });
