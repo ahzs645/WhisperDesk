@@ -29,7 +29,7 @@ class PlatformAwareScreenRecorderService extends EventEmitter {
   }
 
   /**
-   * Initialize the platform-aware service
+   * Initialize the platform-aware service (Fix 3: Simplified Recording Method Selection)
    */
   async initialize() {
     if (this.isInitialized) {
@@ -40,13 +40,9 @@ class PlatformAwareScreenRecorderService extends EventEmitter {
     try {
       console.log(`🚀 Initializing Platform-Aware Screen Recorder (${this.platform})...`);
       
-      // Select the best recording method for this platform
-      this.selectedMethod = await this.router.selectRecordingMethod();
-      this.capabilities = this.router.getPlatformCapabilities();
-      
-      // Create the appropriate recorder
-      this.recorder = await this.selectedMethod.create();
-      await this.recorder.initialize();
+      // Use simplified initialization with priority fallback
+      this.recorder = await this.initializeScreenRecorder();
+      this.capabilities = this.getSimplifiedCapabilities();
       
       // Set up event forwarding
       this.setupEventForwarding();
@@ -54,13 +50,86 @@ class PlatformAwareScreenRecorderService extends EventEmitter {
       this.isInitialized = true;
       
       console.log('✅ Platform-Aware Screen Recorder initialized');
-      console.log('🎯 Selected method:', this.selectedMethod.name);
+      console.log('🎯 Selected method:', this.selectedMethod);
       console.log('🔧 Capabilities:', this.capabilities);
       
       return true;
     } catch (error) {
       console.error('❌ Failed to initialize Platform-Aware Screen Recorder:', error);
       throw error;
+    }
+  }
+
+  /**
+   * Simplified screen recorder initialization with priority fallback
+   */
+  async initializeScreenRecorder() {
+    try {
+      // Try ScreenCaptureKit first (macOS only)
+      if (process.platform === 'darwin') {
+        console.log('🧪 Trying ScreenCaptureKit Node.js...');
+        const ScreenCaptureKitNodeRecorder = require('../recorders/ScreenCaptureKitNodeRecorder');
+        const recorder = new ScreenCaptureKitNodeRecorder();
+        
+        if (await recorder.initialize()) {
+          this.selectedMethod = 'screencapturekit-node';
+          console.log('✅ ScreenCaptureKit Node.js initialized successfully');
+          return recorder;
+        }
+      }
+      
+      // Fallback to browser recording for all platforms
+      console.log('🧪 Falling back to browser recording...');
+      const BrowserFallbackRecorder = require('../recorders/BrowserFallbackRecorder');
+      const recorder = new BrowserFallbackRecorder();
+      
+      await recorder.initialize();
+      this.selectedMethod = 'browser-fallback';
+      console.log('✅ Browser fallback recorder initialized');
+      return recorder;
+      
+    } catch (error) {
+      console.warn('Native recording failed, using browser fallback');
+      const BrowserFallbackRecorder = require('../recorders/BrowserFallbackRecorder');
+      const recorder = new BrowserFallbackRecorder();
+      await recorder.initialize();
+      this.selectedMethod = 'browser-fallback';
+      return recorder;
+    }
+  }
+
+  /**
+   * Get simplified capabilities based on selected method
+   */
+  getSimplifiedCapabilities() {
+    switch (this.selectedMethod) {
+      case 'screencapturekit-node':
+        return {
+          platform: 'darwin',
+          systemAudio: true,
+          microphone: true,
+          screenOnly: true,
+          audioOnly: true,
+          transcriptionOptimized: true
+        };
+      case 'browser-fallback':
+        return {
+          platform: 'cross-platform',
+          systemAudio: false,
+          microphone: true,
+          screenOnly: true,
+          audioOnly: false,
+          transcriptionOptimized: false
+        };
+      default:
+        return {
+          platform: this.platform,
+          systemAudio: false,
+          microphone: false,
+          screenOnly: false,
+          audioOnly: false,
+          transcriptionOptimized: false
+        };
     }
   }
 
@@ -75,7 +144,7 @@ class PlatformAwareScreenRecorderService extends EventEmitter {
       this.recorder.on(eventName, (data) => {
         this.emit(eventName, {
           ...data,
-          method: this.selectedMethod.name,
+          method: this.selectedMethod,
           platform: this.platform,
           capabilities: this.capabilities
         });
@@ -96,7 +165,7 @@ class PlatformAwareScreenRecorderService extends EventEmitter {
     }
 
     try {
-      console.log(`🎬 Starting ${this.selectedMethod.name} recording...`);
+      console.log(`🎬 Starting ${this.selectedMethod} recording...`);
       
       // Add platform-specific enhancements to options
       const enhancedOptions = this.enhanceOptionsForPlatform(options);
@@ -106,23 +175,23 @@ class PlatformAwareScreenRecorderService extends EventEmitter {
       
       if (result.success) {
         this.currentRecordingId = result.recordingId;
-        console.log(`✅ ${this.selectedMethod.name} recording started`);
+        console.log(`✅ ${this.selectedMethod} recording started`);
       }
 
       return {
         ...result,
-        method: this.selectedMethod.name,
+        method: this.selectedMethod,
         platform: this.platform,
         capabilities: this.capabilities
       };
 
     } catch (error) {
-      console.error(`❌ Failed to start ${this.selectedMethod.name} recording:`, error);
+      console.error(`❌ Failed to start ${this.selectedMethod} recording:`, error);
       return {
         success: false,
         error: error.message,
         type: ERROR_TYPES.START_ERROR,
-        method: this.selectedMethod.name
+        method: this.selectedMethod
       };
     }
   }
@@ -140,28 +209,28 @@ class PlatformAwareScreenRecorderService extends EventEmitter {
     }
 
     try {
-      console.log(`🛑 Stopping ${this.selectedMethod.name} recording...`);
+      console.log(`🛑 Stopping ${this.selectedMethod} recording...`);
       
       const result = await this.recorder.stopRecording();
       
       if (result.success) {
-        console.log(`✅ ${this.selectedMethod.name} recording stopped`);
+        console.log(`✅ ${this.selectedMethod} recording stopped`);
         this.currentRecordingId = null;
       }
 
       return {
         ...result,
-        method: this.selectedMethod.name,
+        method: this.selectedMethod,
         platform: this.platform
       };
 
     } catch (error) {
-      console.error(`❌ Failed to stop ${this.selectedMethod.name} recording:`, error);
+      console.error(`❌ Failed to stop ${this.selectedMethod} recording:`, error);
       return {
         success: false,
         error: error.message,
         type: ERROR_TYPES.STOP_ERROR,
-        method: this.selectedMethod.name
+        method: this.selectedMethod
       };
     }
   }
