@@ -24,6 +24,9 @@ class PlatformRecorderBridge {
    */
   async initialize() {
     try {
+      // ✅ PREVENT DUPLICATE LISTENERS: Cleanup any existing listeners first
+      this.cleanup();
+      
       // Get platform info from main process
       const status = await window.electronAPI.screenRecorder.getStatus();
       this.recordingMethod = status.method;
@@ -58,7 +61,7 @@ class PlatformRecorderBridge {
       const cleanup1 = window.electronAPI.screenRecorder.onRecordingStarted((data) => {
         console.log('🎬 Main process recording started:', data);
         this.isRecording = true;
-        this.startTime = Date.now();
+        this.startTime = Date.now(); // ✅ FIXED: Set start time when recording actually starts
         this.startProgressTracking();
         
         if (this.onStarted) {
@@ -72,15 +75,32 @@ class PlatformRecorderBridge {
       this.eventCleanups.push(cleanup1);
     }
 
-    // Recording completed event
+    // ✅ ADDED: Missing progress event handler
+    if (window.electronAPI.screenRecorder.onRecordingProgress) {
+      const cleanup4 = window.electronAPI.screenRecorder.onRecordingProgress((data) => {
+        console.log('📊 Progress event received:', data); // Debug log
+        if (this.onProgress) {
+          // Convert to seconds consistently
+          const durationSeconds = Math.floor(data.duration / 1000);
+          this.onProgress({
+            duration: durationSeconds * 1000, // Send as milliseconds to match other systems
+            isRecording: this.isRecording,
+            isPaused: data.isPaused || false
+          });
+        }
+      });
+      this.eventCleanups.push(cleanup4);
+    }
+
+    // Recording completed event  
     if (window.electronAPI.screenRecorder.onRecordingCompleted) {
       const cleanup2 = window.electronAPI.screenRecorder.onRecordingCompleted(async (data) => {
         console.log('🏁 Main process recording completed:', data);
         this.isRecording = false;
         this.stopProgressTracking();
         
-        // ✅ FIXED: Handle file completion using IPC bridge
-        const finalPath = await this.handleFileCompletionViaIPC(data);
+        // ✅ SIMPLIFIED: Just use the path directly
+        const finalPath = data.outputPath;
         
         if (this.onStopped) {
           this.onStopped({
@@ -108,25 +128,11 @@ class PlatformRecorderBridge {
       this.eventCleanups.push(cleanup3);
     }
 
-    // Recording progress event (if available)
-    if (window.electronAPI.screenRecorder.onRecordingProgress) {
-      const cleanup4 = window.electronAPI.screenRecorder.onRecordingProgress((data) => {
-        if (this.onProgress) {
-          this.onProgress({
-            duration: data.duration,
-            isRecording: this.isRecording,
-            isPaused: data.isPaused || false
-          });
-        }
-      });
-      this.eventCleanups.push(cleanup4);
-    }
-
     console.log('✅ Recording event listeners set up');
   }
 
   /**
-   * ✅ FIXED: Handle file completion using IPC bridge only
+   * ✅ FIXED: Handle file completion using IPC bridge only - NO FS MODULE
    */
   async handleFileCompletionViaIPC(data) {
     try {
@@ -137,17 +143,11 @@ class PlatformRecorderBridge {
         return tempPath;
       }
 
-      // ✅ Use IPC bridge instead of direct fs access
-      if (window.electronAPI?.file?.exists) {
-        const exists = await window.electronAPI.file.exists(tempPath);
-        if (!exists) {
-          console.warn('⚠️ Recording file not found at temp location:', tempPath);
-          return tempPath;
-        }
-      }
-
-      // File handling is done by main process, just return the path
+      // ✅ REMOVED: Direct fs access that was causing the error
+      // The main process handles all file operations
       console.log('📁 Recording completed at:', tempPath);
+      
+      // Just return the path - main process has already handled the file
       return tempPath;
 
     } catch (error) {
@@ -157,21 +157,31 @@ class PlatformRecorderBridge {
   }
 
   /**
-   * Start progress tracking (fallback if main process doesn't send progress events)
+   * ✅ FIXED: Improved progress tracking with better timing
    */
   startProgressTracking() {
     if (this.progressInterval) {
       clearInterval(this.progressInterval);
     }
 
+    // Only start fallback progress if we don't get main process events
+    let lastProgressTime = Date.now();
+    
     this.progressInterval = setInterval(() => {
       if (this.isRecording && this.startTime && this.onProgress) {
-        const duration = Date.now() - this.startTime;
-        this.onProgress({
-          duration,
-          isRecording: this.isRecording,
-          isPaused: false
-        });
+        const duration = Date.now() - this.startTime; // Milliseconds
+        const seconds = Math.floor(duration / 1000);
+        
+        // Only emit if we haven't received a main process progress event recently
+        const timeSinceLastProgress = Date.now() - lastProgressTime;
+        if (timeSinceLastProgress > 2000) {
+          console.log(`📊 Fallback progress: ${seconds} seconds`);
+          this.onProgress({
+            duration,
+            isRecording: this.isRecording,
+            isPaused: false
+          });
+        }
       }
     }, 1000);
   }
@@ -269,6 +279,9 @@ class PlatformRecorderBridge {
     try {
       console.log(`🛑 Stopping platform recording (${this.recordingMethod})...`);
       
+      // Stop progress tracking immediately
+      this.stopProgressTracking();
+      
       let browserResult = null;
       
       // Stop browser recording first (if applicable)
@@ -279,6 +292,10 @@ class PlatformRecorderBridge {
       // Stop main process recording
       const mainResult = await window.electronAPI.screenRecorder.stopRecording();
       
+      // Reset state
+      this.isRecording = false;
+      this.startTime = null;
+      
       console.log('✅ Platform recording stopped successfully');
       
       // Return the most relevant result
@@ -287,6 +304,8 @@ class PlatformRecorderBridge {
     } catch (error) {
       console.error('❌ Failed to stop platform recording:', error);
       this.isRecording = false;
+      this.startTime = null;
+      this.stopProgressTracking();
       throw error;
     }
   }

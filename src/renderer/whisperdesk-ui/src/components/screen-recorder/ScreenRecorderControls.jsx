@@ -1,21 +1,12 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Button } from '../ui/button';
 import { Square, Video, Play, Pause, Clock } from 'lucide-react';
 import { useScreenRecorderContext } from './ScreenRecorderProvider';
 
-// Format duration utility that handles both seconds and milliseconds
+// ✅ SIMPLIFIED: Just treat duration as seconds consistently
 const formatDuration = (duration) => {
-  // If duration is a very small number (0-59), it's likely in seconds
-  // If duration is a larger number (1000+), it's likely in milliseconds
-  let totalSeconds;
-  
-  if (duration < 60) {
-    // Likely in seconds already
-    totalSeconds = Math.floor(duration);
-  } else {
-    // Likely in milliseconds, convert to seconds
-    totalSeconds = Math.floor(duration / 1000);
-  }
+  // Always treat as seconds now that we've fixed the source
+  const totalSeconds = Math.floor(duration || 0);
   
   const hours = Math.floor(totalSeconds / 3600);
   const minutes = Math.floor((totalSeconds % 3600) / 60);
@@ -41,10 +32,10 @@ export const ScreenRecorderControls = () => {
     pauseResume
   } = useScreenRecorderContext();
 
-  // Debug log to see what duration value we're getting
-  React.useEffect(() => {
-    if (isRecording && recordingDuration !== undefined) {
-      console.log('🕐 Duration received:', recordingDuration, 'type:', typeof recordingDuration);
+  // ✅ DEBUG: Monitor progress events
+  useEffect(() => {
+    if (isRecording) {
+      console.log(`🕐 Timer update: ${recordingDuration} seconds, isRecording: ${isRecording}`);
     }
   }, [recordingDuration, isRecording]);
 
@@ -100,15 +91,11 @@ export const ScreenRecorderControls = () => {
           <Clock className="w-5 h-5 text-muted-foreground" />
           <div className="text-center">
             <div className="text-2xl font-mono font-bold">
-              {formatDuration(recordingDuration || 0)}
+              {formatDuration(recordingDuration)}
             </div>
             <div className="text-xs text-muted-foreground">
               {!recordingValidated ? 'Starting...' : 
                isPaused ? 'Paused' : 'Recording...'}
-            </div>
-            {/* Debug info */}
-            <div className="text-xs text-muted-foreground mt-1">
-              Raw: {recordingDuration} {typeof recordingDuration === 'number' && recordingDuration > 60 ? '(ms)' : '(s)'}
             </div>
           </div>
         </div>

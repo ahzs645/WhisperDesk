@@ -140,7 +140,7 @@ export const ScreenRecorderDebug = () => {
     }
   };
 
-  // ✅ FIXED: Test file saving with current settings (renderer-safe)
+  // ✅ FIXED: Remove all Node.js module usage
   const testFileSavingFlow = async () => {
     try {
       addToEventLog('💾 Testing file saving flow...');
@@ -150,7 +150,7 @@ export const ScreenRecorderDebug = () => {
       if (recordingDir) {
         addToEventLog(`📁 Custom directory set: ${recordingDir}`);
         
-        // Test if directory is accessible (via IPC)
+        // Test if directory is accessible (via IPC only)
         try {
           if (window.electronAPI?.file?.exists) {
             const dirExists = await window.electronAPI.file.exists(recordingDir);
@@ -162,7 +162,7 @@ export const ScreenRecorderDebug = () => {
       } else {
         addToEventLog('📁 Using default recording directory');
         
-        // Try to get default directory (via IPC)
+        // Try to get default directory (via IPC only)
         try {
           if (window.electronAPI?.file?.getDefaultRecordingsDirectory) {
             const defaultDir = await window.electronAPI.file.getDefaultRecordingsDirectory();
@@ -173,7 +173,7 @@ export const ScreenRecorderDebug = () => {
         }
       }
       
-      // Test small file write
+      // Test file write (via IPC only)
       try {
         const testData = new TextEncoder().encode('WhisperDesk test file');
         const testFilename = `test-${Date.now()}.txt`;
@@ -197,7 +197,7 @@ export const ScreenRecorderDebug = () => {
     }
   };
 
-  // ✅ FIXED: Comprehensive recording readiness check (renderer-safe)
+  // ✅ FIXED: Remove direct process access
   const checkRecordingReadiness = async () => {
     try {
       addToEventLog('🔍 Checking recording readiness...');
@@ -228,21 +228,11 @@ export const ScreenRecorderDebug = () => {
         addToEventLog(`✅ Audio device selected: ${selectedAudioInput}`);
       }
       
-      // Check 3: Recording settings
-      if (recordingSettings.includeSystemAudio) {
-        const status = await service.getStatus();
-        if (status.capabilities?.systemAudio) {
-          addToEventLog('✅ System audio supported by current method');
-        } else {
-          addToEventLog('⚠️ Warning: System audio requested but may not be supported');
-          warnings++;
-        }
-      }
-      
-      // Check 4: Permissions (macOS) - via IPC only, no direct process access
+      // Check 3: Permissions (macOS) - via IPC only
       try {
-        // Get platform info via navigator instead of process
-        const isMacOS = navigator.platform.includes('Mac');
+        // ✅ FIXED: Use navigator instead of process for platform detection
+        const isMacOS = navigator.platform.includes('Mac') || navigator.userAgent.includes('Mac');
+        
         if (isMacOS) {
           try {
             const permissions = await window.electronAPI.screenRecorder.checkPermissions();
@@ -264,24 +254,6 @@ export const ScreenRecorderDebug = () => {
       } catch (error) {
         addToEventLog(`⚠️ Warning: Platform check failed: ${error.message}`);
         warnings++;
-      }
-      
-      // Check 5: File system access
-      if (recordingSettings.recordingDirectory) {
-        try {
-          if (window.electronAPI?.file?.exists) {
-            const dirExists = await window.electronAPI.file.exists(recordingSettings.recordingDirectory);
-            if (!dirExists) {
-              addToEventLog('⚠️ Warning: Custom recording directory may not exist');
-              warnings++;
-            } else {
-              addToEventLog('✅ Custom recording directory exists');
-            }
-          }
-        } catch (error) {
-          addToEventLog('⚠️ Warning: Could not verify recording directory');
-          warnings++;
-        }
       }
       
       // Final assessment

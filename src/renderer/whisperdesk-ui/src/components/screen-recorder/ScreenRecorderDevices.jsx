@@ -45,8 +45,8 @@ export const ScreenRecorderDevices = () => {
               <SelectValue placeholder="Select screen" />
             </SelectTrigger>
             <SelectContent>
-              {availableDevices.screens.map((screen) => (
-                <SelectItem key={screen.id} value={screen.id}>
+              {availableDevices.screens.map((screen, index) => (
+                <SelectItem key={`screen-${screen.id}-${index}`} value={screen.id}>
                   <div className="flex items-center space-x-2">
                     <Monitor className="w-4 h-4" />
                     <span>{screen.name}</span>
@@ -76,8 +76,8 @@ export const ScreenRecorderDevices = () => {
               <SelectValue placeholder="Select audio input" />
             </SelectTrigger>
             <SelectContent>
-              {availableDevices.audio.map((device) => (
-                <SelectItem key={device.id} value={device.id}>
+              {availableDevices.audio.map((device, index) => (
+                <SelectItem key={`audio-${device.id}-${index}`} value={device.id}>
                   <div className="flex items-center space-x-2">
                     <Mic className="w-4 h-4" />
                     <span>{device.name}</span>

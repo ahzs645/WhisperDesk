@@ -311,30 +311,48 @@ class DeviceManager extends EventEmitter {
   }
 
   /**
-   * Request system permissions
+   * Request system permissions with proper implementation
    * @returns {Promise<import('../types').PermissionStatus>}
    */
   async requestPermissions() {
+    const results = {
+      screen: 'unknown',
+      microphone: 'unknown'
+    };
+
     if (process.platform === 'darwin') {
       try {
-        const screenPermission = await systemPreferences.askForMediaAccess('screen');
-        const micPermission = await systemPreferences.askForMediaAccess('microphone');
+        console.log('🔐 Requesting macOS permissions...');
         
-        console.log('📱 Permission results - Screen:', screenPermission, 'Microphone:', micPermission);
+        // Request screen recording permission
+        try {
+          const screenResult = await systemPreferences.askForMediaAccess('screen');
+          results.screen = screenResult ? 'granted' : 'denied';
+          console.log(`📺 Screen permission result: ${results.screen}`);
+        } catch (error) {
+          console.error('❌ Screen permission request failed:', error);
+          results.screen = 'denied';
+        }
         
-        return {
-          screen: screenPermission ? 'granted' : 'denied',
-          microphone: micPermission ? 'granted' : 'denied'
-        };
+        // Request microphone permission
+        try {
+          const micResult = await systemPreferences.askForMediaAccess('microphone');
+          results.microphone = micResult ? 'granted' : 'denied';
+          console.log(`🎤 Microphone permission result: ${results.microphone}`);
+        } catch (error) {
+          console.error('❌ Microphone permission request failed:', error);
+          results.microphone = 'denied';
+        }
+        
+        return results;
+        
       } catch (error) {
         console.error('❌ Failed to request permissions:', error);
-        return {
-          screen: 'unknown',
-          microphone: 'unknown'
-        };
+        return results;
       }
     }
     
+    // Non-macOS platforms
     return {
       screen: 'granted',
       microphone: 'granted'

@@ -161,10 +161,28 @@ class ScreenRecorderHandlers {
 
   async handleRequestPermissions(event) {
     try {
-      return await this.service.requestPermissions();
+      console.log('🔐 IPC: Requesting permissions');
+      
+      if (this.service?.deviceManager?.requestPermissions) {
+        const result = await this.service.deviceManager.requestPermissions();
+        console.log('✅ Permission request result:', result);
+        return result;
+      } else {
+        return { 
+          success: false, 
+          error: 'Permission request not available',
+          screen: 'unknown',
+          microphone: 'unknown'
+        };
+      }
     } catch (error) {
-      console.error('❌ IPC: Request permissions failed:', error);
-      return { success: false, error: error.message };
+      console.error('❌ IPC: Permission request failed:', error);
+      return { 
+        success: false, 
+        error: error.message,
+        screen: 'unknown',
+        microphone: 'unknown'
+      };
     }
   }
 

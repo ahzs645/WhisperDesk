@@ -140,7 +140,7 @@ class CPALMicrophone extends EventEmitter {
   }
 
   /**
-   * Start recording with CPAL
+   * Start recording with CPAL - with better device handling
    */
   async startRecording(options = {}) {
     if (!this.isInitialized) {
@@ -152,23 +152,54 @@ class CPALMicrophone extends EventEmitter {
     }
 
     try {
+      // ✅ FIXED: Better device ID handling
+      let deviceId = options.deviceId;
+      
+      // Handle different device ID formats
+      if (deviceId === 'default' || !deviceId) {
+        // Try to get the actual default device
+        const defaultDevice = this.getDefaultInputDevice();
+        if (defaultDevice) {
+          deviceId = defaultDevice.deviceId;
+          console.log(`🎤 Using default device: ${defaultDevice.name} (${deviceId})`);
+        } else {
+          // Try the first available input device
+          const inputDevices = this.availableDevices.filter(device => 
+            device.supportedInputConfigs && device.supportedInputConfigs.length > 0
+          );
+          
+          if (inputDevices.length > 0) {
+            deviceId = inputDevices[0].deviceId;
+            console.log(`🎤 Using first available device: ${inputDevices[0].name} (${deviceId})`);
+          } else {
+            throw new Error('No audio input devices available');
+          }
+        }
+      }
+      
+      // Verify the device exists
+      const device = this.availableDevices.find(d => d.deviceId === deviceId);
+      if (!device) {
+        // List available devices for debugging
+        console.log('🎤 Available devices:');
+        this.availableDevices.forEach((dev, index) => {
+          console.log(`  ${index + 1}. ${dev.name} (${dev.deviceId})`);
+        });
+        
+        throw new Error(`Audio device not found: ${deviceId}. Available devices: ${this.availableDevices.length}`);
+      }
+
+      // Continue with recording setup...
+      this.deviceId = deviceId;
+      this.outputPath = options.outputPath || this.generateOutputPath();
+      
       // Set recording parameters
-      this.deviceId = options.deviceId || this.selectedDevice?.deviceId;
       this.sampleRate = options.sampleRate || 44100;
       this.channels = options.channels || 2;
       this.sampleFormat = options.sampleFormat || 'f32';
       
-      // Generate output path
-      this.outputPath = options.outputPath || this.generateOutputPath();
-      
       // Ensure output directory exists
       await fs.mkdir(path.dirname(this.outputPath), { recursive: true });
-      
-      // Get device and configure stream
-      const device = this.availableDevices.find(d => d.deviceId === this.deviceId);
-      if (!device) {
-        throw new Error(`Audio device not found: ${this.deviceId}`);
-      }
 
       // Get optimal stream configuration
       this.streamConfig = this.getOptimalStreamConfig(device);

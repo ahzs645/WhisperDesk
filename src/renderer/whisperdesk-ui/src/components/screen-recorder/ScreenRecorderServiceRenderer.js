@@ -7,6 +7,7 @@ class ScreenRecorderServiceRenderer {
     this.statusPollingInterval = null;
     this.platformBridge = new PlatformRecorderBridge();
     this.isInitialized = false;
+    this.isRecording = false; // Track recording state locally
   }
 
   async initialize(updateStateCallback, addToEventLogCallback) {
@@ -42,12 +43,14 @@ class ScreenRecorderServiceRenderer {
     // Set up started event
     this.platformBridge.onStarted = (data) => {
       this.addToEventLog(`Platform recording started: ${data.method || 'unknown'}`);
+      this.isRecording = true; // Update local state
       if (this.updateStateCallback) {
         this.updateStateCallback({
           isRecording: true,
           recordingValidated: true,
           isPaused: false,
-          localError: null
+          localError: null,
+          recordingDuration: 0 // Reset duration on start
         });
       }
     };
@@ -55,12 +58,13 @@ class ScreenRecorderServiceRenderer {
     // Set up stopped event
     this.platformBridge.onStopped = (data) => {
       this.addToEventLog(`Platform recording stopped: ${data.outputPath}`);
+      this.isRecording = false; // Update local state
       if (this.updateStateCallback) {
         this.updateStateCallback({
           isRecording: false,
           recordingValidated: false,
           isPaused: false,
-          recordingDuration: 0
+          recordingDuration: 0 // Reset duration on stop
         });
       }
     };
@@ -68,21 +72,31 @@ class ScreenRecorderServiceRenderer {
     // Set up error event
     this.platformBridge.onError = (error) => {
       this.addToEventLog(`Platform recording error: ${error.message}`);
+      this.isRecording = false; // Update local state
       if (this.updateStateCallback) {
         this.updateStateCallback({
           isRecording: false,
           recordingValidated: false,
           isPaused: false,
+          recordingDuration: 0, // Reset duration on error
           localError: error.message
         });
       }
     };
 
-    // ✅ Set up progress event - this was missing!
+    // ✅ FIXED: Only update duration when recording is active
     this.platformBridge.onProgress = (data) => {
-      if (this.updateStateCallback) {
-        // Convert milliseconds to seconds for display
-        const durationSeconds = Math.floor(data.duration / 1000);
+      if (this.updateStateCallback && data.isRecording) {
+        // Ensure we have a consistent duration in seconds
+        let durationSeconds;
+        if (data.duration > 59000) {
+          // Likely milliseconds
+          durationSeconds = Math.floor(data.duration / 1000);
+        } else {
+          // Likely seconds already
+          durationSeconds = Math.floor(data.duration);
+        }
+        
         this.updateStateCallback({
           recordingDuration: durationSeconds,
           isRecording: data.isRecording,
@@ -200,34 +214,43 @@ class ScreenRecorderServiceRenderer {
         console.warn('Failed to get screens from main process:', error);
       }
 
-      // Try to get audio devices from renderer
+      // ✅ FIXED: Better audio device enumeration
       try {
         if (navigator.mediaDevices?.enumerateDevices) {
           const devices = await navigator.mediaDevices.enumerateDevices();
           audio = devices
             .filter(device => device.kind === 'audioinput')
             .map(device => ({
-              id: device.deviceId,
-              name: device.label || `Audio Input ${device.deviceId.slice(-4)}`,
-              type: 'audioinput'
+              id: device.deviceId || `input-${Math.random().toString(36).substr(2, 9)}`,
+              name: device.label || `Audio Input ${device.deviceId?.slice(-4) || 'Unknown'}`,
+              type: 'audioinput',
+              deviceId: device.deviceId
             }));
+          
+          // ✅ Add a proper default option
+          if (audio.length > 0) {
+            audio.unshift({
+              id: audio[0].id, // Use the first real device as default
+              name: 'Default Audio Input',
+              type: 'audioinput',
+              deviceId: audio[0].deviceId,
+              isDefault: true
+            });
+          }
         }
       } catch (error) {
         console.warn('Failed to enumerate audio devices:', error);
       }
 
       // Fallback devices if none found
-      if (screens.length === 0) {
-        screens = [
-          { id: '1', name: 'Display 1', type: 'screen' },
-          { id: '2', name: 'Display 2', type: 'screen' }
-        ];
-      }
-
       if (audio.length === 0) {
         audio = [
-          { id: 'default', name: 'Default Audio Input', type: 'audioinput' },
-          { id: 'system', name: 'System Audio', type: 'audiooutput' }
+          { 
+            id: 'built-in-mic', 
+            name: 'Built-in Microphone', 
+            type: 'audioinput',
+            deviceId: 'built-in-mic'
+          }
         ];
       }
 
@@ -254,15 +277,20 @@ class ScreenRecorderServiceRenderer {
       const status = await this.getStatus();
       
       if (this.updateStateCallback && status) {
-        // Convert duration from milliseconds to seconds
-        const durationSeconds = status.duration ? Math.floor(status.duration / 1000) : 0;
-        
-        this.updateStateCallback({
+        // ✅ FIXED: Only update duration if not currently recording
+        const updates = {
           isRecording: status.isRecording || false,
           isPaused: status.isPaused || false,
-          recordingDuration: durationSeconds,
           recordingValidated: status.recordingValidated || false
-        });
+        };
+        
+        // Only update duration from status if we're not actively recording
+        if (!status.isRecording) {
+          const durationSeconds = status.duration ? Math.floor(status.duration / 1000) : 0;
+          updates.recordingDuration = durationSeconds;
+        }
+        
+        this.updateStateCallback(updates);
       }
 
       return status;
@@ -272,13 +300,16 @@ class ScreenRecorderServiceRenderer {
     }
   }
 
+  // ✅ FIXED: Disable status polling during recording
   startStatusPolling() {
-    // Poll status every 2 seconds
     this.statusPollingInterval = setInterval(() => {
-      this.refreshStatus().catch(error => {
-        console.warn('Status polling error:', error);
-      });
-    }, 2000);
+      // Only poll status when NOT recording to avoid overriding live progress
+      if (!this.isRecording) {
+        this.refreshStatus().catch(error => {
+          console.warn('Status polling error:', error);
+        });
+      }
+    }, 5000); // Reduced frequency
   }
 
   stopStatusPolling() {

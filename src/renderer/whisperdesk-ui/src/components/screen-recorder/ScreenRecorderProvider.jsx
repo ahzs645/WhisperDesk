@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import { toast } from 'sonner';
 import ScreenRecorderServiceRenderer from './ScreenRecorderServiceRenderer'; // ✅ Use renderer service
 
@@ -48,9 +48,28 @@ export const ScreenRecorderProvider = ({ children }) => {
 
   const [service] = useState(() => new ScreenRecorderServiceRenderer()); // ✅ Use renderer service
 
-  // Update state helper
+  // ✅ ADDED: Track recording state to prevent conflicts
+  const isRecordingRef = useRef(false);
+
+  // Update state helper with recording state tracking
   const updateState = useCallback((updates) => {
-    setState(prev => ({ ...prev, ...updates }));
+    setState(prev => {
+      const newState = { ...prev, ...updates };
+      
+      // Track recording state changes
+      if ('isRecording' in updates) {
+        isRecordingRef.current = updates.isRecording;
+        
+        // Reset duration when starting/stopping recording
+        if (updates.isRecording && !prev.isRecording) {
+          newState.recordingDuration = 0;
+        } else if (!updates.isRecording && prev.isRecording) {
+          newState.recordingDuration = 0;
+        }
+      }
+      
+      return newState;
+    });
   }, []);
 
   // Add to event log helper
@@ -61,6 +80,13 @@ export const ScreenRecorderProvider = ({ children }) => {
       eventLog: [...prev.eventLog.slice(-99), { timestamp, event }]
     }));
   }, []);
+
+  // Pass recording state to service
+  useEffect(() => {
+    if (service) {
+      service.isRecording = isRecordingRef.current;
+    }
+  }, [service, state.isRecording]);
 
   // Initialize service
   useEffect(() => {

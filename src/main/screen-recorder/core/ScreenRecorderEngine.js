@@ -389,19 +389,20 @@ class ScreenRecorderEngine extends EventEmitter {
       if (this.isRecording && !this.isPaused && this.startTime) {
         this.duration = Date.now() - this.startTime;
         
-        // Emit progress event (throttled to every 1000ms)
-        const now = Date.now();
-        if (now - this.lastProgressEmit >= 1000) {
-          this.emit(RECORDING_EVENTS.PROGRESS, {
-            duration: this.duration,
-            isRecording: this.isRecording,
-            isPaused: this.isPaused,
-            timestamp: new Date().toISOString()
-          });
-          this.lastProgressEmit = now;
+        // ✅ ENSURE: Progress events are being emitted
+        this.emit(RECORDING_EVENTS.PROGRESS, {
+          duration: this.duration,
+          isRecording: this.isRecording,
+          isPaused: this.isPaused,
+          timestamp: new Date().toISOString()
+        });
+        
+        // ✅ DEBUG: Log progress emissions
+        if (this.duration % 5000 < 100) { // Log every 5 seconds
+          console.log(`📊 [ENGINE] Progress emitted: ${Math.floor(this.duration / 1000)}s`);
         }
       }
-    }, 100);
+    }, 1000); // Emit every second
   }
 
   /**
