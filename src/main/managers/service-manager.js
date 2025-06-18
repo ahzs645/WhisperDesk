@@ -20,7 +20,7 @@ class ServiceManager extends EventEmitter {
       await this.initializeSettingsService();
       await this.initializeExportService();
       await this.initializeEnhancedDeviceManager();
-      await this.initializeScreenRecorder();
+      await this.initializeEnhancedScreenRecorder(); // Updated for v7
       
       console.log('✅ Services initialization completed');
       return true;
@@ -96,19 +96,26 @@ class ServiceManager extends EventEmitter {
     }
   }
 
-  async initializeScreenRecorder() {
+  async initializeEnhancedScreenRecorder() {
     try {
-      console.log('🔧 Initializing Screen Recorder System...');
+      console.log('🔧 Initializing Enhanced Screen Recorder System with Aperture v7...');
       
-      // Create the complete screen recorder system
+      // Create the complete enhanced screen recorder system
       this.screenRecorderSystem = await createScreenRecorderSystem();
       
       // Add the service to your services object
       this.services.screenRecorder = this.screenRecorderSystem.service;
       
-      console.log('✅ Screen Recorder System initialized');
+      // Log the recording method for debugging
+      const methodInfo = this.services.screenRecorder.engine?.getMethodInfo?.();
+      if (methodInfo) {
+        console.log('🎯 Recording method selected:', methodInfo.name);
+        console.log('📊 Capabilities:', methodInfo.features.join(', '));
+      }
+      
+      console.log('✅ Enhanced Screen Recorder System initialized');
     } catch (error) {
-      console.error('❌ Failed to initialize Screen Recorder System:', error);
+      console.error('❌ Failed to initialize Enhanced Screen Recorder System:', error);
       console.warn('⚠️ Screen recorder will use fallback mode');
     }
   }
@@ -125,7 +132,7 @@ class ServiceManager extends EventEmitter {
     }
     
     if (this.services.screenRecorder) {
-      this.setupScreenRecorderEvents();
+      this.setupEnhancedScreenRecorderEvents(); // Updated for v7
     }
   }
 
@@ -187,7 +194,7 @@ class ServiceManager extends EventEmitter {
     }
   }
 
-  setupScreenRecorderEvents() {
+  setupEnhancedScreenRecorderEvents() {
     if (!this.services.screenRecorder || !this.mainWindow) return;
     
     try {
@@ -197,7 +204,8 @@ class ServiceManager extends EventEmitter {
         'error': 'screenRecorder:error',
         'paused': 'screenRecorder:paused',
         'resumed': 'screenRecorder:resumed',
-        'progress': 'screenRecorder:progress'
+        'progress': 'screenRecorder:progress',
+        'validated': 'screenRecorder:validated'
       };
 
       Object.entries(screenRecorderEvents).forEach(([eventName, channelName]) => {
@@ -209,29 +217,40 @@ class ServiceManager extends EventEmitter {
             const enhancedError = {
               ...data,
               timestamp: new Date().toISOString(),
-              platform: process.platform
+              platform: process.platform,
+              method: data.method || 'unknown',
+              apiVersion: data.apiVersion || 'unknown'
             };
             
             if (data.error?.includes('Selected framerate') || data.error?.includes('Input/output error')) {
               enhancedError.suggestion = 'Try refreshing devices or check screen recording permissions';
             } else if (data.error?.includes('permission')) {
               enhancedError.suggestion = 'Please grant screen recording and microphone permissions';
+            } else if (data.error?.includes('ESM') || data.error?.includes('import')) {
+              enhancedError.suggestion = 'Aperture v7 compatibility issue - using browser fallback';
             }
             
             this.mainWindow?.webContents.send(channelName, enhancedError);
           } else {
-            this.mainWindow?.webContents.send(channelName, data);
+            // Add method info to success events
+            const enhancedData = {
+              ...data,
+              method: data.method || 'unknown',
+              apiVersion: data.apiVersion || 'unknown'
+            };
+            
+            this.mainWindow?.webContents.send(channelName, enhancedData);
           }
         });
       });
       
-      console.log('✅ Screen recorder events set up');
+      console.log('✅ Enhanced screen recorder events set up');
     } catch (error) {
-      console.error('❌ Failed to set up screen recorder events:', error);
+      console.error('❌ Failed to set up enhanced screen recorder events:', error);
     }
   }
 
-  // Fallback service creators
+  // Fallback service creators (unchanged)
   createFallbackModelManager() {
     return {
       getAvailableModels: () => Promise.resolve([]),
@@ -305,13 +324,13 @@ class ServiceManager extends EventEmitter {
   async cleanup() {
     console.log('🔧 Cleaning up services...');
     
-    // Cleanup screen recorder system first
+    // Cleanup enhanced screen recorder system first
     if (this.screenRecorderSystem?.handlers) {
       try {
         this.screenRecorderSystem.handlers.cleanup();
-        console.log('✅ Screen recorder system cleaned up');
+        console.log('✅ Enhanced screen recorder system cleaned up');
       } catch (error) {
-        console.error('❌ Failed to cleanup screen recorder system:', error);
+        console.error('❌ Failed to cleanup enhanced screen recorder system:', error);
       }
       this.screenRecorderSystem = null;
     }

@@ -18,18 +18,25 @@
     "dev:start": "concurrently \"npm run dev:renderer\" \"wait-on http://localhost:3000 && npm run dev:main\"",
     "dev:renderer": "cd src/renderer/whisperdesk-ui && pnpm run dev",
     "dev:main": "cross-env NODE_ENV=development nodemon --watch src/main --exec electron .",
-    
     "_comment_build_scripts": "=== BUILD SCRIPTS ===",
     "build": "npm run build:renderer && npm run build:main",
     "build:renderer": "cd src/renderer/whisperdesk-ui && npm run build",
     "build:main": "echo 'Main process ready'",
     "build:whisper": "node tools/setup/build-whisper-official.js",
     "build:all": "npm run build:whisper && npm run build:diarization",
-    
+    "_comment_aperture_scripts": "=== APERTURE SETUP (macOS) ===",
+    "setup:aperture": "npm run setup:aperture:check && npm run setup:aperture:install",
+    "setup:aperture:check": "node scripts/check-aperture-requirements.js",
+    "setup:aperture:install": "npm install aperture@latest",
+    "setup:aperture:permissions": "node scripts/setup-aperture-permissions.js",
+    "test:aperture": "node scripts/test-aperture-recording.js",
+    "_comment_audio_tools_scripts": "=== AUDIO PROCESSING TOOLS ===",
+    "setup:ffmpeg": "node scripts/setup-ffmpeg.js",
+    "check:ffmpeg": "ffmpeg -version",
+    "setup:audio": "npm run setup:ffmpeg && npm run setup:aperture",
     "_comment_whisper_platform_scripts": "=== WHISPER PLATFORM-SPECIFIC ===",
     "build:whisper:windows": "powershell -ExecutionPolicy Bypass -File tools/setup/compile-whisper-windows.ps1",
     "build:whisper:unix": "bash tools/setup/build-whisper.sh",
-    
     "_comment_diarization_scripts": "=== DIARIZATION SCRIPTS ===",
     "setup:diarization": "npm run _ensure:submodule && node scripts/setup-diarization.js",
     "setup:diarization:verbose": "npm run _ensure:submodule && node scripts/setup-diarization.js --verbose",
@@ -37,11 +44,9 @@
     "build:diarization": "npm run setup:diarization",
     "clean:diarization": "rm -rf binaries/diarize-cli* binaries/*onnxruntime* models/*.onnx",
     "rebuild:diarization": "npm run clean:diarization && npm run setup:diarization",
-    
     "_comment_helper_scripts": "=== HELPER SCRIPTS ===",
     "_ensure:submodule": "git submodule update --init --recursive || echo 'Submodule update failed or not in git repo'",
     "_install:renderer": "cd src/renderer/whisperdesk-ui && pnpm install && cd ../../..",
-    
     "_comment_electron_build_scripts": "=== ELECTRON BUILD & DISTRIBUTION ===",
     "electron:build": "npm run build && cp -r src/main dist/ && electron-builder && node scripts/rename-portable.js",
     "electron:build:win": "npm run build && electron-builder --win && node scripts/rename-portable.js",
@@ -50,34 +55,32 @@
     "dist:mac": "npm run build && electron-builder --mac && node scripts/rename-portable.js",
     "dist:linux": "npm run build && electron-builder --linux && node scripts/rename-portable.js",
     "dist:all": "npm run build && electron-builder --win --mac --linux && node scripts/rename-portable.js",
-    
     "_comment_setup_scripts": "=== SETUP & INSTALLATION ===",
     "install:all": "npm install && cd src/renderer/whisperdesk-ui && pnpm install && cd ../../.. && npm run build:whisper",
-    "postinstall": "npm run _ensure:submodule && npm run _install:renderer",
+    "postinstall": "npm run _ensure:submodule && npm run _install:renderer && npm run setup:platform",
     "setup": "./setup.sh",
+    "setup:platform": "node scripts/setup-platform-specific.js",
     "setup:check": "node tools/setup/setup-check.js",
-    "setup:complete": "npm run build:whisper && npm run setup:diarization && npm run download:model:tiny",
+    "setup:complete": "npm run build:whisper && npm run setup:diarization && npm run download:model:tiny && npm run setup:audio",
     "setup:dev": "npm run setup:complete && npm run dev",
-    "setup:macos": "chmod +x tools/setup/build-whisper.sh && ./tools/setup/build-whisper.sh && npm run download:model:tiny",
+    "setup:macos": "chmod +x tools/setup/build-whisper.sh && ./tools/setup/build-whisper.sh && npm run download:model:tiny && npm run setup:aperture",
     "setup:windows": "powershell -ExecutionPolicy Bypass -File tools/setup/compile-whisper-windows.ps1",
-    
     "_comment_model_scripts": "=== MODEL MANAGEMENT ===",
     "download:model:tiny": "mkdir -p models && curl -L -o models/ggml-tiny.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin",
-    
     "_comment_testing_scripts": "=== TESTING & VALIDATION ===",
     "test": "jest",
     "test:transcription": "node test-transcription.js",
+    "test:recording": "node test-recording.js",
+    "test:audio": "npm run test:aperture && npm run test:ffmpeg",
+    "test:ffmpeg": "node scripts/test-ffmpeg.js",
     "test:binary": "node -e \"const BinaryManager = require('./src/main/services/binary-manager-dll'); (async () => { const bm = new BinaryManager(); await bm.initialize(); const status = await bm.getStatus(); console.log(JSON.stringify(status, null, 2)); })()\"",
-    
     "_comment_dev_server_scripts": "=== DEVELOPMENT SERVERS ===",
     "web": "concurrently \"npm run server\" \"cd src/renderer/whisperdesk-ui && pnpm run dev\"",
-    
     "_comment_utility_scripts": "=== UTILITY SCRIPTS ===",
     "lint": "eslint src/",
     "clean": "rimraf dist build node_modules/.cache temp",
     "clean:all": "npm run clean && rimraf binaries models",
     "clean:binary": "rimraf binaries",
-    
     "_comment_release_scripts": "=== RELEASE MANAGEMENT ===",
     "release:prepare": "npm run clean && npm run build && npm run dist:all",
     "release:github": "gh release create v$npm_package_version dist/* --generate-notes",
@@ -102,6 +105,9 @@
     "rimraf": "^5.0.5",
     "wait-on": "^7.2.0"
   },
+  "optionalDependencies": {
+    "aperture": "^7.0.0"
+  },
   "whisperdesk": {
     "binaryManagement": {
       "autoFix": true,
@@ -119,7 +125,8 @@
             "arm64"
           ],
           "dependencyCheck": "otool",
-          "executable": "whisper-cli"
+          "executable": "whisper-cli",
+          "preferredRecordingMethod": "aperture"
         },
         "win32": {
           "staticLinking": false,
@@ -128,7 +135,8 @@
           ],
           "bundleRuntime": true,
           "executable": "whisper-cli.exe",
-          "buildMethod": "official-dll"
+          "buildMethod": "official-dll",
+          "preferredRecordingMethod": "browser"
         },
         "linux": {
           "staticLinking": true,
@@ -136,7 +144,43 @@
             "x64"
           ],
           "dependencyCheck": "ldd",
-          "executable": "whisper-cli"
+          "executable": "whisper-cli",
+          "preferredRecordingMethod": "browser"
+        }
+      }
+    },
+    "recording": {
+      "methods": {
+        "aperture": {
+          "platform": "darwin",
+          "minVersion": "13.0.0",
+          "systemAudio": true,
+          "quality": "excellent",
+          "dependencies": [
+            "aperture",
+            "ffmpeg"
+          ]
+        },
+        "browser": {
+          "platform": "all",
+          "systemAudio": "limited",
+          "quality": "good",
+          "dependencies": []
+        }
+      },
+      "audioProcessing": {
+        "merger": "ffmpeg",
+        "codecs": {
+          "video": [
+            "h264",
+            "vp9",
+            "vp8"
+          ],
+          "audio": [
+            "aac",
+            "opus",
+            "mp3"
+          ]
         }
       }
     },
@@ -179,7 +223,9 @@
     "asar": true,
     "asarUnpack": [
       "binaries/**/*",
-      "models/**/*"
+      "models/**/*",
+      "node_modules/aperture/**/*",
+      "node_modules/ffmpeg-static/**/*"
     ],
     "files": [
       "dist/main/**/*",
@@ -196,12 +242,23 @@
       {
         "from": "binaries/",
         "to": "binaries/",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
       },
       {
         "from": "models/",
         "to": "models/",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "node_modules/ffmpeg-static/",
+        "to": "audio-tools/",
+        "filter": [
+          "**/*"
+        ]
       }
     ],
     "win": {
@@ -209,11 +266,15 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         },
         {
           "target": "zip",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "publisherName": "WhisperDesk",
@@ -221,7 +282,9 @@
       "requestedExecutionLevel": "asInvoker",
       "certificateFile": null,
       "certificatePassword": null,
-      "signingHashAlgorithms": ["sha256"],
+      "signingHashAlgorithms": [
+        "sha256"
+      ],
       "signAndEditExecutable": true,
       "signDlls": false,
       "extraFiles": [
@@ -277,7 +340,10 @@
       "target": [
         {
           "target": "zip",
-          "arch": ["x64", "arm64"]
+          "arch": [
+            "x64",
+            "arm64"
+          ]
         }
       ],
       "category": "public.app-category.productivity",
@@ -289,7 +355,10 @@
       "type": "development",
       "notarize": false,
       "extendInfo": {
-        "NSCameraUseContinuityCameraDeviceType": true
+        "NSCameraUseContinuityCameraDeviceType": true,
+        "NSScreenCaptureRequiresUserApproval": true,
+        "NSMicrophoneUsageDescription": "WhisperDesk needs microphone access to record audio for transcription.",
+        "NSScreenCaptureUsageDescription": "WhisperDesk needs screen recording access to capture screen content and system audio."
       },
       "extraFiles": [
         {
@@ -315,19 +384,27 @@
       "target": [
         {
           "target": "AppImage",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         },
         {
           "target": "deb",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         },
         {
           "target": "rpm",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         },
         {
           "target": "tar.gz",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "category": "AudioVideo",
@@ -359,7 +436,11 @@
     "native",
     "real-time",
     "diarization",
-    "multi-speaker"
+    "multi-speaker",
+    "screen-recording",
+    "system-audio",
+    "aperture",
+    "screencapturekit"
   ],
   "repository": {
     "type": "git",
