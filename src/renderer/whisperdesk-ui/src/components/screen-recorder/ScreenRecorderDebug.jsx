@@ -4,7 +4,7 @@ import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { Separator } from '../ui/separator';
 import { ScrollArea } from '../ui/scroll-area';
-import { Bug, RefreshCw, Trash2, Play, CheckCircle, XCircle, Apple, Settings } from 'lucide-react';
+import { Bug, RefreshCw, Trash2, Play, CheckCircle, XCircle, Apple, Settings, Monitor } from 'lucide-react';
 import { useScreenRecorderContext } from './ScreenRecorderProvider';
 
 export const ScreenRecorderDebug = () => {
@@ -40,7 +40,8 @@ export const ScreenRecorderDebug = () => {
         selections: {
           screen: selectedScreen,
           audio: selectedAudioInput
-        }
+        },
+        architecture: status.architecture || {}
       });
       
       setLastSync(new Date().toLocaleTimeString());
@@ -50,100 +51,157 @@ export const ScreenRecorderDebug = () => {
     }
   };
 
-  // ✅ FIXED: Test Aperture v7 system specifically (renderer-safe)
-  const testApertureSystem = async () => {
+  // ✅ UPDATED: Test the new architecture system
+  const testArchitectureSystem = async () => {
     try {
-      addToEventLog('🍎 Testing Aperture v7 Screen Recording System...');
+      addToEventLog('🧪 Testing New Screen Recording Architecture...');
       
       if (service.testApertureSystem) {
         const results = await service.testApertureSystem();
         results.forEach(result => addToEventLog(result));
       } else {
-        // Fallback to manual Aperture tests (renderer-safe version)
-        await manualApertureTestsRendererSafe();
+        // Fallback to manual architecture tests
+        await manualArchitectureTests();
       }
     } catch (error) {
-      addToEventLog(`❌ Aperture system test failed: ${error.message}`);
+      addToEventLog(`❌ Architecture system test failed: ${error.message}`);
     }
   };
 
-  // ✅ FIXED: Renderer-safe version of manual Aperture tests
-  const manualApertureTestsRendererSafe = async () => {
+  // ✅ UPDATED: Manual architecture tests for the new system
+  const manualArchitectureTests = async () => {
     try {
-      // Test 1: Check current recording method
+      // Test 1: Get current architecture info
       const status = await service.getStatus();
-      addToEventLog(`🎯 Current method: ${status.recordingMethod || 'unknown'}`);
+      const arch = status.architecture || {};
       
-      if (status.recordingMethod?.includes('aperture')) {
-        addToEventLog('✅ Aperture v7 system is active!');
+      addToEventLog(`🎯 Current method: ${status.recordingMethod || 'unknown'}`);
+      addToEventLog(`📋 Architecture type: ${arch.type || 'unknown'}`);
+      addToEventLog(`📝 Description: ${arch.description || 'No description'}`);
+      
+      if (arch.components && arch.components.length > 0) {
+        addToEventLog(`🔧 Components: ${arch.components.join(', ')}`);
+      }
+      
+      addToEventLog(`🔄 Stream merging: ${arch.merging ? 'Yes' : 'No'}`);
+      addToEventLog(`⭐ Quality level: ${arch.quality || 'unknown'}`);
+      
+      // Test 2: Architecture-specific checks
+      if (arch.type === 'native') {
+        addToEventLog('🍎 Native Architecture Tests:');
+        addToEventLog('  ✅ Pure ScreenCaptureKit recording');
+        addToEventLog('  ✅ Single stream output (screen + system audio + microphone)');
+        addToEventLog('  🚫 No browser coordination needed');
+        addToEventLog('  🚫 No CPAL dependency');
+        addToEventLog('  🚫 No FFmpeg merging');
+        addToEventLog('  ⚡ Highest performance and quality');
         
-        // Test 2: Check capabilities
-        if (status.capabilities) {
-          addToEventLog(`🔊 System Audio: ${status.capabilities.systemAudio ? '✅ Native ScreenCaptureKit' : '❌'}`);
-          addToEventLog(`🎤 Microphone: ${status.capabilities.microphone ? '✅ CPAL Enhanced' : '❌'}`);
-          addToEventLog(`⚡ Performance: ${status.capabilities.performance || 'unknown'}`);
-          addToEventLog(`⭐ Quality: ${status.capabilities.quality || 'unknown'}`);
-        }
-        
-        // Test 3: Check macOS permissions (via IPC only)
+        // Check macOS permissions
         try {
           const permissions = await window.electronAPI.screenRecorder.checkPermissions();
-          addToEventLog(`🔐 Screen Recording Permission: ${permissions.screen}`);
-          addToEventLog(`🎤 Microphone Permission: ${permissions.microphone}`);
+          addToEventLog(`  🔐 Screen Recording Permission: ${permissions.screen}`);
+          addToEventLog(`  🎤 Microphone Permission: ${permissions.microphone}`);
           
           if (permissions.screen !== 'granted') {
-            addToEventLog('⚠️ IMPORTANT: Grant Screen Recording permission in System Preferences');
-            addToEventLog('   📱 Go to: System Preferences > Security & Privacy > Privacy > Screen Recording');
+            addToEventLog('  ⚠️ IMPORTANT: Grant Screen Recording permission!');
+            addToEventLog('  💡 System Preferences > Security & Privacy > Privacy > Screen Recording');
           }
         } catch (permError) {
-          addToEventLog(`❌ Permission check failed: ${permError.message}`);
+          addToEventLog(`  ❌ Permission check failed: ${permError.message}`);
         }
         
-        // Test 4: Check backend components status
-        if (status.components) {
-          addToEventLog('🔧 Backend Components Status:');
-          Object.entries(status.components).forEach(([component, active]) => {
-            const statusText = active ? '✅ Active' : '⏸️ Idle (normal when not recording)';
-            addToEventLog(`   ${component}: ${statusText}`);
-          });
-          
-          // Explain component states
-          if (!status.isRecording) {
-            addToEventLog('💡 Components are idle when not recording - this is normal!');
-          }
-        }
+      } else if (arch.type === 'hybrid') {
+        addToEventLog('🔄 Hybrid Architecture Tests:');
+        addToEventLog('  🌐 Browser MediaRecorder for screen + system audio');
+        addToEventLog('  🎤 CPAL for high-quality microphone recording');
+        addToEventLog('  🔄 FFmpeg for stream merging');
+        addToEventLog('  ✅ Dual-stream recording with high quality');
+        addToEventLog('  ⚡ Good performance with enhanced audio');
         
-        // Test 5: Check file paths
-        if (status.outputPaths && Object.keys(status.outputPaths).length > 0) {
-          addToEventLog('📁 Recording Paths:');
-          Object.entries(status.outputPaths).forEach(([type, path]) => {
-            addToEventLog(`   ${type}: ${path}`);
-          });
+        // Test browser capabilities
+        if (navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia) {
+          addToEventLog('  ✅ Browser screen capture supported');
         } else {
-          addToEventLog('📁 No active recording paths (normal when not recording)');
+          addToEventLog('  ❌ Browser screen capture not available');
         }
         
-        if (status.finalOutputPath) {
-          addToEventLog(`🎯 Final Output: ${status.finalOutputPath}`);
-        }
+      } else if (arch.type === 'fallback') {
+        addToEventLog('🌐 Fallback Architecture Tests:');
+        addToEventLog('  🌐 Pure browser recording');
+        addToEventLog('  ⚠️ Limited system audio capabilities');
+        addToEventLog('  ✅ Cross-platform compatibility');
+        addToEventLog('  📱 Works on all platforms as last resort');
         
       } else {
-        addToEventLog('❌ Aperture v7 system not active');
-        addToEventLog(`   Current method: ${status.recordingMethod}`);
-        addToEventLog('💡 This means you\'re using browser-based recording');
+        addToEventLog('❓ Unknown architecture type detected');
+        addToEventLog('  This might indicate a configuration issue');
       }
       
-      addToEventLog('🎉 Aperture v7 system test completed!');
+      // Test 3: Check backend capabilities
+      if (status.capabilities) {
+        addToEventLog('🔧 Backend Capabilities:');
+        addToEventLog(`  🔊 System Audio: ${status.capabilities.systemAudio ? '✅' : '❌'} (${status.capabilities.systemAudioMethod || 'unknown'})`);
+        addToEventLog(`  🎤 Microphone: ${status.capabilities.microphone ? '✅' : '❌'} (${status.capabilities.microphoneMethod || 'unknown'})`);
+        addToEventLog(`  🔄 Merger: ${status.capabilities.merger || 'none'}`);
+        addToEventLog(`  ⭐ Quality: ${status.capabilities.quality || 'unknown'}`);
+        addToEventLog(`  ⚡ Performance: ${status.capabilities.performance || 'unknown'}`);
+      }
+      
+      // Test 4: Check component status
+      if (status.components) {
+        addToEventLog('📦 Component Status:');
+        Object.entries(status.components).forEach(([component, active]) => {
+          const statusText = active ? '✅ Active' : '⏸️ Idle';
+          addToEventLog(`  ${component}: ${statusText}`);
+        });
+        
+        if (!status.isRecording) {
+          addToEventLog('  💡 Components idle when not recording - this is normal!');
+        }
+      }
+      
+      // Test 5: Platform-specific info
+      const platform = navigator.platform.toLowerCase();
+      if (platform.includes('mac')) {
+        addToEventLog('🍎 macOS Platform Info:');
+        addToEventLog(`  Expected: Native ScreenCaptureKit (${arch.type === 'native' ? '✅' : '❌'})`);
+        if (arch.type !== 'native') {
+          addToEventLog('  ⚠️ Not using optimal macOS recording method');
+          addToEventLog('  💡 Check ScreenCaptureKit availability');
+        }
+      } else if (platform.includes('win')) {
+        addToEventLog('🪟 Windows Platform Info:');
+        addToEventLog(`  Expected: Hybrid Browser+CPAL (${arch.type === 'hybrid' ? '✅' : '❌'})`);
+        if (arch.type !== 'hybrid') {
+          addToEventLog('  ⚠️ Not using optimal Windows recording method');
+          addToEventLog('  💡 Check CPAL and FFmpeg availability');
+        }
+      } else {
+        addToEventLog('🐧 Linux Platform Info:');
+        addToEventLog(`  Expected: Hybrid Browser+CPAL (${arch.type === 'hybrid' ? '✅' : '❌'})`);
+        if (arch.type !== 'hybrid') {
+          addToEventLog('  ⚠️ Not using optimal Linux recording method');
+          addToEventLog('  💡 Check CPAL and FFmpeg availability');
+        }
+      }
+      
+      addToEventLog('🎉 Architecture system test completed!');
       
     } catch (error) {
-      addToEventLog(`❌ Manual Aperture test failed: ${error.message}`);
+      addToEventLog(`❌ Manual architecture test failed: ${error.message}`);
     }
   };
 
-  // ✅ FIXED: Remove all Node.js module usage
+  // ✅ UPDATED: Test file saving flow with architecture awareness
   const testFileSavingFlow = async () => {
     try {
       addToEventLog('💾 Testing file saving flow...');
+      
+      // Get architecture info
+      const status = await service.getStatus();
+      const arch = status.architecture || {};
+      
+      addToEventLog(`📋 Architecture: ${arch.type} (${arch.merging ? 'with merging' : 'direct output'})`);
       
       // Check recording directory setting
       const recordingDir = recordingSettings.recordingDirectory;
@@ -171,6 +229,22 @@ export const ScreenRecorderDebug = () => {
         } catch (error) {
           addToEventLog(`❌ Default directory check failed: ${error.message}`);
         }
+      }
+      
+      // Architecture-specific file info
+      if (arch.type === 'native') {
+        addToEventLog('🍎 Native recording: Single output file expected');
+        addToEventLog('  📄 Format: MP4 with embedded audio streams');
+        addToEventLog('  🚫 No temporary files or merging needed');
+      } else if (arch.type === 'hybrid') {
+        addToEventLog('🔄 Hybrid recording: Multiple files with merging');
+        addToEventLog('  📄 Browser file: Screen + system audio');
+        addToEventLog('  🎤 CPAL file: High-quality microphone');
+        addToEventLog('  🔄 FFmpeg merge: Final combined output');
+      } else if (arch.type === 'fallback') {
+        addToEventLog('🌐 Fallback recording: Browser output only');
+        addToEventLog('  📄 Format: WebM or MP4 (browser dependent)');
+        addToEventLog('  ⚠️ Limited audio quality');
       }
       
       // Test file write (via IPC only)
@@ -316,7 +390,7 @@ export const ScreenRecorderDebug = () => {
       
       // Step 3: Test Aperture system
       addToEventLog('3️⃣ Testing Aperture v7 system...');
-      await testApertureSystem();
+      await testArchitectureSystem();
       
       // Step 4: Summary
       const status = await service.getStatus();
@@ -370,171 +444,311 @@ export const ScreenRecorderDebug = () => {
     }
   };
 
+  // ✅ Enhanced device enumeration test
+  const testDeviceEnumeration = async () => {
+    try {
+      addToEventLog('🔍 Testing device enumeration...');
+      
+      // Test 1: Main process screen enumeration
+      addToEventLog('📱 Testing main process screen enumeration...');
+      try {
+        const screenResult = await window.electronAPI.screenRecorder.getAvailableScreens(true);
+        addToEventLog(`📊 Main process result: ${JSON.stringify(screenResult)}`);
+        
+        if (screenResult.success && screenResult.screens) {
+          addToEventLog(`✅ Main process found ${screenResult.screens.length} screens`);
+          screenResult.screens.forEach((screen, index) => {
+            addToEventLog(`  ${index + 1}. ${screen.name} (${screen.id})`);
+          });
+        } else {
+          addToEventLog('❌ Main process returned no screens or failed');
+        }
+      } catch (error) {
+        addToEventLog(`❌ Main process screen enumeration failed: ${error.message}`);
+      }
+      
+      // Test 2: Renderer fallback using desktopCapturer
+      addToEventLog('🔄 Testing renderer fallback (desktopCapturer)...');
+      try {
+        if (window.electronAPI?.desktopCapturer?.getSources) {
+          const sources = await window.electronAPI.desktopCapturer.getSources({
+            types: ['screen'],
+            thumbnailSize: { width: 0, height: 0 }
+          });
+          addToEventLog(`✅ Renderer fallback found ${sources.length} sources`);
+          sources.forEach((source, index) => {
+            addToEventLog(`  ${index + 1}. ${source.name} (${source.id})`);
+          });
+        } else {
+          addToEventLog('❌ desktopCapturer API not available in renderer');
+        }
+      } catch (error) {
+        addToEventLog(`❌ Renderer fallback failed: ${error.message}`);
+      }
+      
+      // Test 3: Audio device enumeration
+      addToEventLog('🎤 Testing audio device enumeration...');
+      try {
+        if (navigator.mediaDevices?.enumerateDevices) {
+          const devices = await navigator.mediaDevices.enumerateDevices();
+          const audioInputs = devices.filter(device => device.kind === 'audioinput');
+          addToEventLog(`✅ Found ${audioInputs.length} audio input devices`);
+          audioInputs.forEach((device, index) => {
+            addToEventLog(`  ${index + 1}. ${device.label || 'Unknown'} (${device.deviceId})`);
+          });
+        } else {
+          addToEventLog('❌ MediaDevices API not available');
+        }
+      } catch (error) {
+        addToEventLog(`❌ Audio enumeration failed: ${error.message}`);
+      }
+      
+      // Test 4: Backend service status
+      addToEventLog('🔧 Testing backend service status...');
+      try {
+        const status = await window.electronAPI.screenRecorder.getStatus();
+        addToEventLog(`📊 Backend status: ${JSON.stringify(status, null, 2)}`);
+        
+        if (status.availableDevices) {
+          addToEventLog(`📱 Backend devices: ${status.availableDevices.screens?.length || 0} screens, ${status.availableDevices.audio?.length || 0} audio`);
+        }
+      } catch (error) {
+        addToEventLog(`❌ Backend status failed: ${error.message}`);
+      }
+      
+      addToEventLog('🎉 Device enumeration test completed!');
+      
+    } catch (error) {
+      addToEventLog(`❌ Device enumeration test failed: ${error.message}`);
+    }
+  };
+
   useEffect(() => {
     refreshDebugInfo();
     const interval = setInterval(refreshDebugInfo, 5000);
     return () => clearInterval(interval);
   }, []);
 
+  const getArchitectureBadge = () => {
+    const arch = debugInfo.architecture || {};
+    const type = arch.type || 'unknown';
+    
+    const badgeProps = {
+      native: { variant: 'default', className: 'bg-green-100 text-green-800' },
+      hybrid: { variant: 'secondary', className: 'bg-blue-100 text-blue-800' },
+      fallback: { variant: 'outline', className: 'bg-yellow-100 text-yellow-800' },
+      unknown: { variant: 'destructive' }
+    };
+    
+    return (
+      <Badge {...(badgeProps[type] || badgeProps.unknown)}>
+        {type.toUpperCase()}
+      </Badge>
+    );
+  };
+
+  const getArchitectureIcon = () => {
+    const arch = debugInfo.architecture || {};
+    const type = arch.type || 'unknown';
+    
+    switch (type) {
+      case 'native':
+        return <Apple className="h-4 w-4 text-green-600" />;
+      case 'hybrid':
+        return <Monitor className="h-4 w-4 text-blue-600" />;
+      case 'fallback':
+        return <Settings className="h-4 w-4 text-yellow-600" />;
+      default:
+        return <XCircle className="h-4 w-4 text-red-600" />;
+    }
+  };
+
   return (
-    <Card className="w-full">
-      <CardHeader>
-        <CardTitle className="flex items-center space-x-2">
-          <Bug className="w-5 h-5" />
-          <span>Debug Panel</span>
-          <Badge variant="outline">{lastSync ? `Last sync: ${lastSync}` : 'Not synced'}</Badge>
-        </CardTitle>
-        <CardDescription>
-          Debug information for screen recording functionality
-        </CardDescription>
-      </CardHeader>
-
-      <CardContent className="space-y-4">
-        
-        {/* Enhanced Debug Actions */}
-        <div className="flex flex-wrap gap-2">
-          <Button variant="outline" size="sm" onClick={refreshDebugInfo}>
-            <RefreshCw className="w-4 h-4 mr-2" />
-            Refresh
-          </Button>
-          
-          {/* ✅ Main tests */}
-          <Button variant="outline" size="sm" onClick={testApertureSystem}>
-            <Apple className="w-4 h-4 mr-2" />
-            Test Aperture v7
-          </Button>
-          
-          <Button variant="outline" size="sm" onClick={checkRecordingReadiness}>
-            <CheckCircle className="w-4 h-4 mr-2" />
-            Check Readiness
-          </Button>
-          
-          <Button variant="outline" size="sm" onClick={testRecordingFlow}>
-            <Play className="w-4 h-4 mr-2" />
-            Test Full Flow
-          </Button>
-          
-          {/* ✅ Secondary tests */}
-          <Button variant="outline" size="sm" onClick={testFileSavingFlow}>
-            <Play className="w-4 h-4 mr-2" />
-            Test File Saving
-          </Button>
-          
-          <Button variant="outline" size="sm" onClick={testRecordingAPI}>
-            <Play className="w-4 h-4 mr-2" />
-            Test API
-          </Button>
-          
-          {/* ✅ System actions */}
-          <Button variant="outline" size="sm" onClick={requestPermissions}>
-            <Settings className="w-4 h-4 mr-2" />
-            Request Permissions
-          </Button>
-          
-          <Button variant="outline" size="sm" onClick={forceCleanup} disabled={isRecording}>
-            <XCircle className="w-4 h-4 mr-2" />
-            Force Cleanup
-          </Button>
-          
-          <Button variant="outline" size="sm" onClick={clearEventLog}>
-            <Trash2 className="w-4 h-4 mr-2" />
-            Clear Log
-          </Button>
-        </div>
-
-        <Separator />
-
-        {/* Status Overview */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-          <div>
-            <div className="font-medium">API Status</div>
-            <Badge variant={apiStatus === 'available' ? 'default' : 'secondary'}>
-              {apiStatus}
-            </Badge>
-          </div>
-          <div>
-            <div className="font-medium">Recording</div>
-            <Badge variant={isRecording ? 'destructive' : 'secondary'}>
-              {isRecording ? 'Active' : 'Idle'}
-            </Badge>
-          </div>
-          <div>
-            <div className="font-medium">Devices</div>
-            <div className="text-muted-foreground">
-              {debugInfo.deviceCounts?.screens || 0} screens, {debugInfo.deviceCounts?.audio || 0} audio
-            </div>
-          </div>
-          <div>
-            <div className="font-medium">Selections</div>
-            <div className="text-muted-foreground">
-              {selectedScreen ? '✅' : '❌'} Screen, {selectedAudioInput ? '✅' : '❌'} Audio
-            </div>
-          </div>
-        </div>
-
-        <Separator />
-
-        {/* Enhanced Configuration Details */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-          <div>
-            <div className="font-medium mb-2">Current Settings</div>
-            <div className="space-y-1 text-muted-foreground">
-              <div>Microphone: {recordingSettings.includeMicrophone ? '✅' : '❌'}</div>
-              <div>System Audio: {recordingSettings.includeSystemAudio ? '✅' : '❌'}</div>
-              <div>Video Quality: {recordingSettings.videoQuality}</div>
-              <div>Audio Quality: {recordingSettings.audioQuality}</div>
-              <div>Auto Transcribe: {recordingSettings.autoTranscribe ? '✅' : '❌'}</div>
-            </div>
-          </div>
-          <div>
-            <div className="font-medium mb-2">Device Selection</div>
-            <div className="space-y-1 text-muted-foreground">
-              <div>Screen ID: {selectedScreen || 'None'}</div>
-              <div>Audio ID: {selectedAudioInput || 'None'}</div>
-              <div className="truncate">Recording Dir: {recordingSettings.recordingDirectory || 'Default'}</div>
-              <div>Method: {debugInfo.backendStatus?.recordingMethod || 'Unknown'}</div>
-              <div>Platform: {navigator.platform}</div>
-            </div>
-          </div>
-        </div>
-
-        <Separator />
-
-        {/* Event Log */}
-        <div>
-          <div className="flex items-center justify-between mb-2">
-            <h4 className="font-medium">Event Log</h4>
-            <Badge variant="outline">{eventLog.length} events</Badge>
-          </div>
-          
-          <ScrollArea className="h-48 w-full border rounded-md p-2">
-            {eventLog.length === 0 ? (
-              <div className="text-center text-muted-foreground py-4">
-                No events logged yet
+    <div className="space-y-6">
+      {/* Architecture Overview Card */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            {getArchitectureIcon()}
+            Recording Architecture
+            {getArchitectureBadge()}
+          </CardTitle>
+          <CardDescription>
+            Current recording method and system capabilities
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {debugInfo.architecture && (
+            <div className="grid grid-cols-2 gap-4 text-sm">
+              <div>
+                <span className="font-medium">Type:</span> {debugInfo.architecture.type || 'Unknown'}
               </div>
-            ) : (
-              <div className="space-y-1">
-                {eventLog.map((log, index) => (
-                  <div key={index} className="text-xs font-mono">
-                    <span className="text-muted-foreground">[{log.timestamp}]</span> {log.event}
-                  </div>
-                ))}
+              <div>
+                <span className="font-medium">Quality:</span> {debugInfo.architecture.quality || 'Unknown'}
               </div>
+              <div className="col-span-2">
+                <span className="font-medium">Description:</span> {debugInfo.architecture.description || 'No description available'}
+              </div>
+              {debugInfo.architecture.components && (
+                <div className="col-span-2">
+                  <span className="font-medium">Components:</span> {debugInfo.architecture.components.join(', ')}
+                </div>
+              )}
+              <div>
+                <span className="font-medium">Stream Merging:</span> {debugInfo.architecture.merging ? 'Yes' : 'No'}
+              </div>
+              <div>
+                <span className="font-medium">Method:</span> {debugInfo.backendStatus?.recordingMethod || 'Unknown'}
+              </div>
+            </div>
+          )}
+          
+          <div className="flex gap-2">
+            <Button 
+              onClick={testArchitectureSystem} 
+              variant="outline" 
+              size="sm"
+              className="flex items-center gap-1"
+            >
+              <Bug className="h-4 w-4" />
+              Test Architecture
+            </Button>
+            <Button 
+              onClick={refreshDebugInfo} 
+              variant="outline" 
+              size="sm"
+              className="flex items-center gap-1"
+            >
+              <RefreshCw className="h-4 w-4" />
+              Refresh
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* System Status Card */}
+      <Card>
+        <CardHeader>
+          <CardTitle>System Status</CardTitle>
+          <CardDescription>
+            Backend status and device information
+            {lastSync && (
+              <span className="text-xs text-muted-foreground ml-2">
+                Last sync: {lastSync}
+              </span>
             )}
-          </ScrollArea>
-        </div>
-
-        {/* Enhanced Debug Info */}
-        {debugInfo.backendStatus && (
-          <div>
-            <h4 className="font-medium mb-2">Backend Status</h4>
-            <pre className="text-xs bg-muted p-2 rounded-md overflow-x-auto">
-              {JSON.stringify(debugInfo.backendStatus, null, 2)}
-            </pre>
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-2 gap-4 text-sm">
+            <div>
+              <span className="font-medium">API Available:</span> 
+              <Badge variant={debugInfo.apiAvailable ? "default" : "destructive"} className="ml-2">
+                {debugInfo.apiAvailable ? "Yes" : "No"}
+              </Badge>
+            </div>
+            <div>
+              <span className="font-medium">Recording:</span> 
+              <Badge variant={isRecording ? "default" : "secondary"} className="ml-2">
+                {isRecording ? "Active" : "Idle"}
+              </Badge>
+            </div>
+            <div>
+              <span className="font-medium">Screens:</span> {debugInfo.deviceCounts?.screens || 0}
+            </div>
+            <div>
+              <span className="font-medium">Audio Devices:</span> {debugInfo.deviceCounts?.audio || 0}
+            </div>
+            <div className="col-span-2">
+              <span className="font-medium">Selected Screen:</span> {selectedScreen?.name || 'None'}
+            </div>
+            <div className="col-span-2">
+              <span className="font-medium">Selected Audio:</span> {selectedAudioInput?.label || 'Default'}
+            </div>
           </div>
-        )}
+        </CardContent>
+      </Card>
 
-      </CardContent>
-    </Card>
+      {/* Test Controls */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Testing Controls</CardTitle>
+          <CardDescription>
+            Test various aspects of the recording system
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 gap-2">
+            <Button 
+              onClick={testArchitectureSystem} 
+              variant="outline" 
+              size="sm"
+              className="flex items-center gap-1"
+            >
+              <Bug className="h-4 w-4" />
+              Test Architecture
+            </Button>
+            <Button 
+              onClick={testFileSavingFlow} 
+              variant="outline" 
+              size="sm"
+              className="flex items-center gap-1"
+            >
+              <Settings className="h-4 w-4" />
+              Test File Saving
+            </Button>
+            <Button 
+              onClick={testDeviceEnumeration} 
+              variant="outline" 
+              size="sm"
+              className="flex items-center gap-1"
+            >
+              <Settings className="h-4 w-4" />
+              Test Device Enumeration
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Event Log */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center justify-between">
+            Event Log
+            <Button 
+              onClick={clearEventLog} 
+              variant="ghost" 
+              size="sm"
+              className="flex items-center gap-1"
+            >
+              <Trash2 className="h-4 w-4" />
+              Clear
+            </Button>
+          </CardTitle>
+          <CardDescription>
+            Real-time events and test results
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ScrollArea className="h-64 w-full border rounded p-2">
+            <div className="space-y-1">
+              {eventLog.slice(-50).map((event, index) => (
+                <div key={index} className="text-xs font-mono whitespace-pre-wrap">
+                  <span className="text-muted-foreground">
+                    [{event.timestamp}]
+                  </span>{' '}
+                  {event.message}
+                </div>
+              ))}
+              {eventLog.length === 0 && (
+                <div className="text-sm text-muted-foreground text-center py-4">
+                  No events logged yet. Click "Test Architecture" to start.
+                </div>
+              )}
+            </div>
+          </ScrollArea>
+        </CardContent>
+      </Card>
+    </div>
   );
 };

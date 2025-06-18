@@ -1,199 +1,132 @@
-# Screen Recorder Module
+# Screen Recorder Frontend Components
 
-This module provides a centralized screen recording system for WhisperDesk. It replaces the previous scattered implementation with a more organized, maintainable structure.
+This directory contains the frontend React components for WhisperDesk's screen recording functionality. The components are designed to work with the simplified backend architecture.
 
-## Architecture
+## Architecture Overview
 
-The screen recorder is organized into several key components:
+### Backend Architecture (Simplified)
 
-### Core Components
+The backend now uses a simplified, platform-specific approach:
 
-- **ScreenRecorderProvider**: Context provider that manages all screen recorder state
-- **ScreenRecorderCore**: Main UI component that combines all other components
-- **ScreenRecorderService**: Service layer that handles backend communication
-- **ScreenRecorder**: Simple wrapper component for easy usage
+- **macOS**: Pure ScreenCaptureKit (single stream, no merging)
+- **Windows/Linux**: Browser + CPAL + FFmpeg (hybrid approach)
+- **Fallback**: Pure browser recording (cross-platform compatibility)
 
-### UI Components
+### Frontend Components
 
-- **ScreenRecorderControls**: Recording start/stop/pause controls
-- **ScreenRecorderSettings**: Recording quality and audio settings
-- **ScreenRecorderDevices**: Device selection (screens and audio inputs)
-- **ScreenRecorderStatus**: Status indicator badge
-- **ScreenRecorderDebug**: Debug panel with logging and diagnostics
+#### Core Components
 
-### Hooks
+1. **PlatformRecorderBridge.js** - Main bridge between frontend and backend
+   - Detects recording method (`screencapturekit-native`, `windows-hybrid`, `linux-hybrid`, `browser-fallback`)
+   - Handles platform-specific coordination
+   - Only loads browser recorder for hybrid/fallback methods
+   - Provides architecture-aware status and testing
 
-- **useScreenRecorderContext**: Main context hook
-- **useScreenRecorderActions**: Hook for recording actions
-- **useScreenRecorderState**: Hook for reading state
-- **useScreenRecorderDebug**: Hook for debug functionality
+2. **ScreenRecorderProvider.jsx** - React context provider
+   - Manages global recording state
+   - Coordinates between UI components and service layer
+   - Handles device management and settings
 
-## Usage
+3. **ScreenRecorderServiceRenderer.js** - Service layer
+   - Wraps PlatformRecorderBridge for React integration
+   - Manages IPC communication with main process
+   - Handles event forwarding and state synchronization
 
-### Simple Usage (Recommended)
+#### UI Components
 
-```jsx
-import { ScreenRecorder } from './components/screen-recorder';
+4. **ScreenRecorder.jsx** - Main recording interface
+5. **ScreenRecorderControls.jsx** - Recording controls (start/stop/pause)
+6. **ScreenRecorderSettings.jsx** - Settings configuration
+7. **ScreenRecorderDevices.jsx** - Device selection
+8. **ScreenRecorderStatus.jsx** - Status display
+9. **ScreenRecorderDebug.jsx** - Debug and testing interface
 
-function MyComponent() {
-  return <ScreenRecorder />;
-}
-```
+## Recording Methods
 
-### Advanced Usage with Context
+### Native Recording (macOS)
+- **Method**: `screencapturekit-native`
+- **Components**: ScreenCaptureKit only
+- **Browser Recorder**: Not loaded
+- **Merging**: None (single stream)
+- **Quality**: Highest
 
-```jsx
-import { 
-  ScreenRecorderProvider, 
-  ScreenRecorderCore,
-  useScreenRecorderContext 
-} from './components/screen-recorder';
+### Hybrid Recording (Windows/Linux)
+- **Method**: `windows-hybrid` / `linux-hybrid`
+- **Components**: Browser MediaRecorder + CPAL + FFmpeg
+- **Browser Recorder**: Loaded for screen capture
+- **Merging**: FFmpeg combines streams
+- **Quality**: High
 
-function MyComponent() {
-  return (
-    <ScreenRecorderProvider>
-      <ScreenRecorderCore />
-      <CustomComponent />
-    </ScreenRecorderProvider>
-  );
-}
+### Fallback Recording (All Platforms)
+- **Method**: `browser-fallback`
+- **Components**: Browser MediaRecorder only
+- **Browser Recorder**: Loaded for all recording
+- **Merging**: None (browser output only)
+- **Quality**: Medium (limited system audio)
 
-function CustomComponent() {
-  const { isRecording, startRecording, stopRecording } = useScreenRecorderContext();
-  
-  return (
-    <button onClick={isRecording ? stopRecording : startRecording}>
-      {isRecording ? 'Stop' : 'Start'} Recording
-    </button>
-  );
-}
-```
+## Key Features
 
-### Using Individual Components
+### Architecture Awareness
+- Components detect recording method automatically
+- UI adapts based on capabilities (native vs hybrid vs fallback)
+- Debug interface shows architecture-specific information
 
-```jsx
-import { 
-  ScreenRecorderProvider,
-  ScreenRecorderControls,
-  ScreenRecorderSettings,
-  ScreenRecorderDevices
-} from './components/screen-recorder';
+### Platform-Specific Optimizations
+- **macOS**: No browser coordination needed, direct ScreenCaptureKit
+- **Windows/Linux**: Coordinated browser + native components
+- **Fallback**: Pure browser with graceful degradation
 
-function CustomRecorderUI() {
-  return (
-    <ScreenRecorderProvider>
-      <div className="grid grid-cols-2 gap-4">
-        <ScreenRecorderDevices />
-        <ScreenRecorderSettings />
-      </div>
-      <ScreenRecorderControls />
-    </ScreenRecorderProvider>
-  );
-}
-```
+### Event Handling
+- Unified event system across all recording methods
+- Progress tracking with fallback mechanisms
+- Error handling with architecture-specific context
 
-## State Management
+## Development
 
-The screen recorder uses a centralized state management system:
+### Testing
+Use the debug interface (`ScreenRecorderDebug.jsx`) to:
+- Test architecture detection
+- Verify component initialization
+- Check file saving flows
+- Validate platform-specific features
 
-```javascript
-{
-  // Recording state
-  isRecording: false,
-  isPaused: false,
-  recordingDuration: 0,
-  recordingValidated: false,
-  
-  // Device state
-  availableDevices: { screens: [], audio: [] },
-  selectedScreen: '',
-  selectedAudioInput: '',
-  devicesInitialized: false,
-  loadingDevices: false,
-  
-  // Settings state
-  recordingSettings: {
-    includeMicrophone: true,
-    includeSystemAudio: false,
-    videoQuality: 'medium',
-    audioQuality: 'medium',
-    recordingDirectory: null,
-    autoTranscribe: false
-  },
-  
-  // API state
-  apiStatus: 'checking',
-  localError: null,
-  
-  // Debug state
-  debugMode: false,
-  eventLog: []
-}
-```
+### Adding New Methods
+1. Update method detection in `PlatformRecorderBridge.js`
+2. Add method-specific logic in bridge methods
+3. Update architecture info in `getArchitectureInfo()`
+4. Add tests in debug component
 
-## Actions
-
-The context provides these actions:
-
-- `startRecording(options)`: Start recording with optional settings
-- `stopRecording()`: Stop the current recording
-- `pauseResume()`: Toggle pause/resume state
-- `refreshDevices()`: Refresh available devices
-- `updateSettings(newSettings)`: Update recording settings
-- `selectScreen(screenId)`: Select a screen device
-- `selectAudioInput(audioInputId)`: Select an audio input device
-- `toggleDebugMode()`: Toggle debug panel visibility
-- `addToEventLog(event)`: Add event to debug log
-- `clearEventLog()`: Clear the debug log
-
-## Migration from EnhancedScreenRecorder
-
-The old `EnhancedScreenRecorder` component has been replaced with this centralized system. To migrate:
-
-### Before
-```jsx
-import { EnhancedScreenRecorder } from './components/EnhancedScreenRecorder';
-
-function MyComponent() {
-  return <EnhancedScreenRecorder />;
-}
-```
-
-### After
-```jsx
-import { ScreenRecorder } from './components/screen-recorder';
-
-function MyComponent() {
-  return <ScreenRecorder />;
-}
-```
-
-The old component is still available as a deprecated wrapper for backward compatibility.
-
-## Benefits
-
-1. **Centralized State**: All screen recorder state is managed in one place
-2. **Modular Components**: Each component has a single responsibility
-3. **Reusable**: Components can be used independently or together
-4. **Type Safety**: Better TypeScript support (when migrated)
-5. **Testing**: Easier to test individual components
-6. **Maintainability**: Clear separation of concerns
-7. **Debugging**: Built-in debug panel and logging
-
-## Files Structure
+## File Structure
 
 ```
-src/components/screen-recorder/
-├── index.js                    # Main exports
-├── ScreenRecorderProvider.jsx  # Context provider
-├── ScreenRecorderService.js    # Service layer
-├── ScreenRecorderCore.jsx      # Main UI component
-├── ScreenRecorder.jsx          # Simple wrapper
-├── ScreenRecorderControls.jsx  # Recording controls
-├── ScreenRecorderSettings.jsx  # Settings UI
-├── ScreenRecorderDevices.jsx   # Device selection
-├── ScreenRecorderStatus.jsx    # Status indicator
-├── ScreenRecorderDebug.jsx     # Debug panel
-├── ScreenRecorderHooks.js      # Custom hooks
-└── README.md                   # This file
-``` 
+screen-recorder/
+├── README.md                           # This file
+├── index.js                           # Component exports
+├── PlatformRecorderBridge.js          # Core bridge (architecture-aware)
+├── ScreenRecorderProvider.jsx         # React context
+├── ScreenRecorderServiceRenderer.js   # Service layer
+├── ScreenRecorder.jsx                 # Main component
+├── ScreenRecorderControls.jsx         # Controls UI
+├── ScreenRecorderCore.jsx             # Core logic
+├── ScreenRecorderDebug.jsx            # Debug interface (updated)
+├── ScreenRecorderDevices.jsx          # Device selection
+├── ScreenRecorderHandler.js           # Browser recording handler
+├── ScreenRecorderHooks.js             # React hooks
+├── ScreenRecorderService.js           # Legacy service
+├── ScreenRecorderSettings.jsx         # Settings UI
+├── ScreenRecorderStatus.jsx           # Status display
+└── ScreenRecorderProvider.jsx         # Context provider
+```
+
+## Migration Notes
+
+### From Old Architecture
+- Method names changed: `aperture-screencapturekit` → `screencapturekit-native`
+- Hybrid methods now explicitly named: `windows-hybrid`, `linux-hybrid`
+- Browser coordination simplified for native methods
+- Debug interface updated with architecture awareness
+
+### Breaking Changes
+- `testApertureSystem()` renamed to `testArchitectureSystem()`
+- Architecture info now includes type, components, and merging info
+- Method detection updated for new naming scheme 

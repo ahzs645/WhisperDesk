@@ -1,7 +1,8 @@
 // src/renderer/whisperdesk-ui/src/components/screen-recorder/PlatformRecorderBridge.js
 /**
- * Fixed renderer bridge for platform-aware recording
- * Coordinates between browser recording and main process
+ * Updated renderer bridge for simplified platform-aware recording
+ * macOS: Pure ScreenCaptureKit (no browser recording needed)
+ * Windows/Linux: Browser + CPAL + FFmpeg (hybrid approach)
  * ✅ NO DIRECT NODE.JS MODULE USAGE - uses IPC bridge only
  */
 
@@ -17,10 +18,24 @@ class PlatformRecorderBridge {
     this.progressInterval = null;
     this.startTime = null;
     this.eventCleanups = [];
+    
+    // Platform detection
+    this.platform = this.detectPlatform();
+    this.isNativeMacOS = this.platform === 'darwin';
   }
 
   /**
-   * Initialize the bridge
+   * Detect current platform
+   */
+  detectPlatform() {
+    const platform = navigator.platform.toLowerCase();
+    if (platform.includes('mac')) return 'darwin';
+    if (platform.includes('win')) return 'win32';
+    return 'linux';
+  }
+
+  /**
+   * Initialize the bridge with platform-specific setup
    */
   async initialize() {
     try {
@@ -31,16 +46,23 @@ class PlatformRecorderBridge {
       const status = await window.electronAPI.screenRecorder.getStatus();
       this.recordingMethod = status.method;
       
-      console.log('🌉 Platform recorder bridge initialized:', this.recordingMethod);
+      console.log('🌉 Platform recorder bridge initialized:', {
+        method: this.recordingMethod,
+        platform: this.platform,
+        isNativeMacOS: this.isNativeMacOS
+      });
       
       // Set up event listeners for all recording events
       this.setupRecordingEventListeners();
       
-      // Import the appropriate browser recorder based on platform
-      if (this.recordingMethod?.includes('browser') || this.recordingMethod?.includes('fallback')) {
+      // ✅ UPDATED: Only import browser recorder for hybrid/fallback methods
+      if (this.requiresBrowserRecording()) {
         const ScreenRecorderHandler = (await import('./ScreenRecorderHandler.js')).default;
         this.browserRecorder = new ScreenRecorderHandler();
         this.setupBrowserEvents();
+        console.log('🌐 Browser recorder initialized for hybrid/fallback method');
+      } else {
+        console.log('🍎 Native recording - no browser recorder needed');
       }
       
       return true;
@@ -48,6 +70,55 @@ class PlatformRecorderBridge {
       console.error('❌ Failed to initialize platform recorder bridge:', error);
       throw error;
     }
+  }
+
+  /**
+   * ✅ UPDATED: Check if this method requires browser recording
+   */
+  requiresBrowserRecording() {
+    if (!this.recordingMethod) return false;
+    
+    // Methods that need browser recording
+    const browserMethods = [
+      'browser-fallback',
+      'windows-hybrid',
+      'linux-hybrid',
+      'browser-cpal-windows',
+      'browser-cpal-linux'
+    ];
+    
+    return browserMethods.some(method => this.recordingMethod.includes(method));
+  }
+
+  /**
+   * ✅ UPDATED: Check if this is pure native recording
+   */
+  isNativeRecording() {
+    if (!this.recordingMethod) return false;
+    
+    // Methods that are purely native (no browser coordination)
+    const nativeMethods = [
+      'screencapturekit-native',
+      'aperture-screencapturekit',
+      'macos-native'
+    ];
+    
+    return nativeMethods.some(method => this.recordingMethod.includes(method));
+  }
+
+  /**
+   * ✅ UPDATED: Check if this is a hybrid method (browser + native components)
+   */
+  isHybridRecording() {
+    if (!this.recordingMethod) return false;
+    
+    const hybridMethods = [
+      'windows-hybrid',
+      'linux-hybrid',
+      'browser-cpal'
+    ];
+    
+    return hybridMethods.some(method => this.recordingMethod.includes(method));
   }
 
   /**
@@ -61,24 +132,25 @@ class PlatformRecorderBridge {
       const cleanup1 = window.electronAPI.screenRecorder.onRecordingStarted((data) => {
         console.log('🎬 Main process recording started:', data);
         this.isRecording = true;
-        this.startTime = Date.now(); // ✅ FIXED: Set start time when recording actually starts
+        this.startTime = Date.now();
         this.startProgressTracking();
         
         if (this.onStarted) {
           this.onStarted({
             ...data,
             method: this.recordingMethod,
-            platform: 'main-process'
+            platform: this.platform,
+            isNative: this.isNativeRecording(),
+            isHybrid: this.isHybridRecording()
           });
         }
       });
       this.eventCleanups.push(cleanup1);
     }
 
-    // ✅ ADDED: Missing progress event handler
+    // Recording progress event
     if (window.electronAPI.screenRecorder.onRecordingProgress) {
       const cleanup4 = window.electronAPI.screenRecorder.onRecordingProgress((data) => {
-        console.log('📊 Progress event received:', data); // Debug log
         if (this.onProgress) {
           // Convert to seconds consistently
           const durationSeconds = Math.floor(data.duration / 1000);
@@ -99,7 +171,8 @@ class PlatformRecorderBridge {
         this.isRecording = false;
         this.stopProgressTracking();
         
-        // ✅ SIMPLIFIED: Just use the path directly
+        // ✅ SIMPLIFIED: For native methods, just use the path directly
+        // For hybrid methods, the backend handles merging
         const finalPath = data.outputPath;
         
         if (this.onStopped) {
@@ -107,7 +180,9 @@ class PlatformRecorderBridge {
             ...data,
             outputPath: finalPath,
             method: this.recordingMethod,
-            platform: 'main-process'
+            platform: this.platform,
+            isNative: this.isNativeRecording(),
+            isHybrid: this.isHybridRecording()
           });
         }
       });
@@ -132,32 +207,7 @@ class PlatformRecorderBridge {
   }
 
   /**
-   * ✅ FIXED: Handle file completion using IPC bridge only - NO FS MODULE
-   */
-  async handleFileCompletionViaIPC(data) {
-    try {
-      const tempPath = data.outputPath;
-      
-      if (!tempPath) {
-        console.warn('⚠️ No output path provided');
-        return tempPath;
-      }
-
-      // ✅ REMOVED: Direct fs access that was causing the error
-      // The main process handles all file operations
-      console.log('📁 Recording completed at:', tempPath);
-      
-      // Just return the path - main process has already handled the file
-      return tempPath;
-
-    } catch (error) {
-      console.error('❌ Error handling file completion via IPC:', error);
-      return data.outputPath;
-    }
-  }
-
-  /**
-   * ✅ FIXED: Improved progress tracking with better timing
+   * ✅ SIMPLIFIED: Progress tracking with better timing
    */
   startProgressTracking() {
     if (this.progressInterval) {
@@ -175,7 +225,6 @@ class PlatformRecorderBridge {
         // Only emit if we haven't received a main process progress event recently
         const timeSinceLastProgress = Date.now() - lastProgressTime;
         if (timeSinceLastProgress > 2000) {
-          console.log(`📊 Fallback progress: ${seconds} seconds`);
           this.onProgress({
             duration,
             isRecording: this.isRecording,
@@ -197,29 +246,31 @@ class PlatformRecorderBridge {
   }
 
   /**
-   * Set up browser recorder events
+   * ✅ UPDATED: Set up browser recorder events (only for hybrid methods)
    */
   setupBrowserEvents() {
     if (!this.browserRecorder) return;
 
     this.browserRecorder.onStarted = (data) => {
       console.log('🌐 Browser recording started:', data);
-      if (this.onStarted) this.onStarted(data);
+      // For hybrid methods, don't emit started here - wait for main process
     };
 
     this.browserRecorder.onStopped = async (data) => {
       console.log('🌐 Browser recording stopped:', data);
       
-      // For hybrid methods, notify main process
-      if (this.recordingMethod?.includes('hybrid')) {
+      // For hybrid methods, notify main process about browser completion
+      if (this.isHybridRecording()) {
         try {
           await window.electronAPI.screenRecorder.notifyBrowserCompleted?.(data.outputPath);
+          console.log('✅ Notified main process of browser completion');
         } catch (error) {
           console.warn('⚠️ Failed to notify main process:', error);
         }
+      } else {
+        // For pure browser fallback, emit stopped directly
+        if (this.onStopped) this.onStopped(data);
       }
-      
-      if (this.onStopped) this.onStopped(data);
     };
 
     this.browserRecorder.onError = (error) => {
@@ -229,7 +280,7 @@ class PlatformRecorderBridge {
   }
 
   /**
-   * Start recording with platform coordination
+   * ✅ UPDATED: Start recording with platform-specific coordination
    */
   async startRecording(options) {
     if (this.isRecording) {
@@ -238,24 +289,24 @@ class PlatformRecorderBridge {
 
     try {
       console.log(`🎬 Starting platform recording (${this.recordingMethod})...`);
+      console.log(`🎯 Platform: ${this.platform}, Native: ${this.isNativeRecording()}, Hybrid: ${this.isHybridRecording()}`);
       
-      // Start main process recording
+      // Start main process recording first
       const mainResult = await window.electronAPI.screenRecorder.startRecording(options);
       
       if (!mainResult.success) {
         throw new Error(mainResult.error);
       }
       
-      // For browser-based methods, also start browser recording
-      if (this.browserRecorder && (
-        this.recordingMethod?.includes('browser') || 
-        this.recordingMethod?.includes('hybrid') ||
-        this.recordingMethod?.includes('fallback')
-      )) {
+      // ✅ UPDATED: Only start browser recording for hybrid/fallback methods
+      if (this.browserRecorder && this.requiresBrowserRecording()) {
+        console.log('🌐 Starting browser recording for hybrid/fallback method...');
         await this.browserRecorder.startRecording({
           ...options,
           outputPath: mainResult.outputPath
         });
+      } else {
+        console.log('🍎 Native recording - no browser coordination needed');
       }
       
       console.log('✅ Platform recording started successfully');
@@ -269,7 +320,7 @@ class PlatformRecorderBridge {
   }
 
   /**
-   * Stop recording with platform coordination
+   * ✅ UPDATED: Stop recording with platform-specific coordination
    */
   async stopRecording() {
     if (!this.isRecording) {
@@ -284,9 +335,12 @@ class PlatformRecorderBridge {
       
       let browserResult = null;
       
-      // Stop browser recording first (if applicable)
-      if (this.browserRecorder && this.browserRecorder.isRecording) {
+      // ✅ UPDATED: Only stop browser recording for hybrid/fallback methods
+      if (this.browserRecorder && this.requiresBrowserRecording() && this.browserRecorder.isRecording) {
+        console.log('🌐 Stopping browser recording for hybrid/fallback method...');
         browserResult = await this.browserRecorder.stopRecording();
+      } else {
+        console.log('🍎 Native recording - no browser coordination needed');
       }
       
       // Stop main process recording
@@ -311,7 +365,7 @@ class PlatformRecorderBridge {
   }
 
   /**
-   * Get platform recording status
+   * ✅ UPDATED: Get platform recording status with enhanced info
    */
   async getStatus() {
     try {
@@ -320,121 +374,228 @@ class PlatformRecorderBridge {
       return {
         ...mainStatus,
         recordingMethod: this.recordingMethod,
+        platform: this.platform,
+        isNative: this.isNativeRecording(),
+        isHybrid: this.isHybridRecording(),
+        requiresBrowser: this.requiresBrowserRecording(),
         browserRecording: this.browserRecorder?.isRecording || false,
-        bridgeActive: true
+        bridgeActive: true,
+        architecture: this.getArchitectureInfo()
       };
     } catch (error) {
       console.warn('⚠️ Failed to get platform status:', error);
       return {
         isRecording: this.isRecording,
         recordingMethod: this.recordingMethod,
+        platform: this.platform,
         error: error.message
       };
     }
   }
 
   /**
-   * Test Aperture v7 system specifically
+   * ✅ NEW: Get architecture information
+   */
+  getArchitectureInfo() {
+    const method = this.recordingMethod;
+    
+    if (this.isNativeRecording()) {
+      return {
+        type: 'native',
+        description: 'Pure ScreenCaptureKit - single stream output',
+        components: ['ScreenCaptureKit'],
+        merging: false,
+        quality: 'highest'
+      };
+    } else if (this.isHybridRecording()) {
+      return {
+        type: 'hybrid',
+        description: 'Browser screen + CPAL microphone + FFmpeg merging',
+        components: ['Browser MediaRecorder', 'CPAL', 'FFmpeg'],
+        merging: true,
+        quality: 'high'
+      };
+    } else if (method?.includes('fallback')) {
+      return {
+        type: 'fallback',
+        description: 'Pure browser recording (limited system audio)',
+        components: ['Browser MediaRecorder'],
+        merging: false,
+        quality: 'medium'
+      };
+    }
+    
+    return {
+      type: 'unknown',
+      description: 'Unknown recording method',
+      components: [],
+      merging: false,
+      quality: 'unknown'
+    };
+  }
+
+  /**
+   * ✅ UPDATED: Test system with new architecture awareness
    */
   async testApertureSystem() {
     const results = [];
     
     try {
-      results.push('🧪 Testing Aperture v7 Screen Recording System...');
+      results.push('🧪 Testing Updated Screen Recording Architecture...');
+      results.push(`🎯 Platform: ${this.platform}`);
+      results.push(`🎯 Recording Method: ${this.recordingMethod}`);
       
-      // Test 1: Check if Aperture method is active
+      // Test 1: Check recording method type
       const status = await this.getStatus();
-      if (status.recordingMethod?.includes('aperture')) {
-        results.push(`✅ Aperture method active: ${status.recordingMethod}`);
+      const archInfo = this.getArchitectureInfo();
+      
+      results.push(`📋 Architecture: ${archInfo.type.toUpperCase()}`);
+      results.push(`📝 Description: ${archInfo.description}`);
+      results.push(`🔧 Components: ${archInfo.components.join(', ')}`);
+      results.push(`🔄 Stream Merging: ${archInfo.merging ? 'Yes' : 'No'}`);
+      results.push(`⭐ Quality Level: ${archInfo.quality}`);
+      
+      if (this.isNativeRecording()) {
+        results.push('✅ Native recording method detected (ScreenCaptureKit)');
+        results.push('🚫 No browser recording coordination needed');
+        results.push('🚫 No FFmpeg merging needed');
+        results.push('🚫 No CPAL dependency for microphone');
+        results.push('🎯 Single stream: screen + system audio + microphone');
+      } else if (this.isHybridRecording()) {
+        results.push('🌐 Hybrid recording method detected');
+        results.push('✅ Browser handles screen + system audio');
+        results.push('✅ CPAL provides high-quality microphone');
+        results.push('✅ FFmpeg merges streams');
+        results.push('🎯 Dual stream: browser + CPAL → FFmpeg merge');
+      } else if (this.requiresBrowserRecording()) {
+        results.push('🌐 Browser fallback method detected');
+        results.push('⚠️ Limited system audio capabilities');
+        results.push('✅ Cross-platform compatibility');
       } else {
-        results.push(`❌ Aperture method not active: ${status.recordingMethod}`);
+        results.push('❓ Unknown recording method type');
       }
       
       // Test 2: Check backend capabilities
       if (status.capabilities) {
-        results.push(`🎯 System Audio: ${status.capabilities.systemAudio ? '✅' : '❌'} (${status.capabilities.systemAudioMethod})`);
-        results.push(`🎤 Microphone: ${status.capabilities.microphone ? '✅' : '❌'} (${status.capabilities.microphoneMethod})`);
+        results.push(`🎯 System Audio: ${status.capabilities.systemAudio ? '✅' : '❌'} (${status.capabilities.systemAudioMethod || 'unknown'})`);
+        results.push(`🎤 Microphone: ${status.capabilities.microphone ? '✅' : '❌'} (${status.capabilities.microphoneMethod || 'unknown'})`);
         results.push(`🔄 Merger: ${status.capabilities.merger || 'none'}`);
         results.push(`⭐ Quality: ${status.capabilities.quality || 'unknown'}`);
         results.push(`⚡ Performance: ${status.capabilities.performance || 'unknown'}`);
       }
       
-      // Test 3: Check available screens via Aperture
+      // Test 3: Platform-specific features
+      if (this.isNativeMacOS) {
+        results.push('🍎 macOS Specific Tests:');
+        
+        // Check permissions
+        try {
+          const permissions = await window.electronAPI.screenRecorder.checkPermissions();
+          results.push(`  🔐 Screen Recording: ${permissions.screen || 'unknown'}`);
+          results.push(`  🎤 Microphone: ${permissions.microphone || 'unknown'}`);
+          
+          if (permissions.screen !== 'granted') {
+            results.push('  ⚠️ Screen recording permission required!');
+            results.push('  💡 Grant in: System Preferences > Security & Privacy > Privacy > Screen Recording');
+          }
+        } catch (error) {
+          results.push(`  ❌ Permission check failed: ${error.message}`);
+        }
+        
+        // Check ScreenCaptureKit availability
+        if (this.isNativeRecording()) {
+          results.push('  ✅ ScreenCaptureKit method active');
+          results.push('  ✅ Single stream output (no merging)');
+          results.push('  ✅ Native system audio + microphone support');
+          results.push('  🚫 No CPAL dependency');
+          results.push('  🚫 No FFmpeg dependency');
+        }
+      } else {
+        results.push(`💻 ${this.platform === 'win32' ? 'Windows' : 'Linux'} Specific Tests:`);
+        
+        if (this.isHybridRecording()) {
+          results.push('  🌐 Browser MediaRecorder for screen capture');
+          results.push('  🎤 CPAL for enhanced microphone quality');
+          results.push('  🔄 FFmpeg for stream merging');
+          results.push('  ✅ High-quality dual-stream recording');
+        } else {
+          results.push('  🌐 Browser MediaRecorder fallback');
+          results.push('  ⚠️ Limited system audio capabilities');
+        }
+      }
+      
+      // Test 4: Check available screens
       try {
         const screensResult = await window.electronAPI.screenRecorder.getAvailableScreens(true);
         if (screensResult.success) {
-          results.push(`🖥️ Aperture screens available: ${screensResult.screens?.length || 0}`);
-          screensResult.screens?.forEach((screen, index) => {
+          results.push(`🖥️ Available screens: ${screensResult.screens?.length || 0}`);
+          screensResult.screens?.slice(0, 3).forEach((screen, index) => {
             results.push(`  ${index + 1}. ${screen.name} (${screen.id})`);
           });
+          if (screensResult.screens?.length > 3) {
+            results.push(`  ... and ${screensResult.screens.length - 3} more`);
+          }
         } else {
-          results.push('❌ Failed to get Aperture screens');
+          results.push('❌ Failed to get screens');
         }
       } catch (error) {
         results.push(`❌ Screen enumeration error: ${error.message}`);
       }
       
-      // Test 4: Check permissions (macOS specific)
-      try {
-        const permissions = await window.electronAPI.screenRecorder.checkPermissions();
-        results.push(`🔐 Screen permission: ${permissions.screen || 'unknown'}`);
-        results.push(`🎤 Microphone permission: ${permissions.microphone || 'unknown'}`);
-      } catch (error) {
-        results.push(`❌ Permission check error: ${error.message}`);
-      }
+      // Test 5: Architecture summary
+      results.push('📋 Architecture Summary:');
+      results.push(`  Method: ${this.recordingMethod}`);
+      results.push(`  Type: ${archInfo.type}`);
+      results.push(`  Browser Recorder: ${this.browserRecorder ? '✅ Loaded' : '❌ Not needed'}`);
+      results.push(`  Native Recording: ${this.isNativeRecording() ? '✅ Yes' : '❌ No'}`);
+      results.push(`  Hybrid Recording: ${this.isHybridRecording() ? '✅ Yes' : '❌ No'}`);
+      results.push(`  Platform: ${this.platform}`);
       
-      // Test 5: Test file system access via IPC
-      try {
-        if (window.electronAPI?.file?.getDefaultRecordingsDirectory) {
-          const defaultDir = await window.electronAPI.file.getDefaultRecordingsDirectory();
-          results.push(`📁 Default recordings directory: ${defaultDir}`);
-        }
-      } catch (error) {
-        results.push(`❌ File system test error: ${error.message}`);
-      }
-      
-      // Test 6: Backend component status
-      if (status.components) {
-        results.push('🔧 Backend Components:');
-        Object.entries(status.components).forEach(([component, active]) => {
-          results.push(`  ${component}: ${active ? '✅ Active' : '❌ Inactive'}`);
-        });
-      }
-      
-      results.push('🎉 Aperture v7 system test completed!');
+      results.push('🎉 System test completed!');
       
     } catch (error) {
-      results.push(`❌ Aperture test failed: ${error.message}`);
+      results.push(`❌ System test failed: ${error.message}`);
     }
     
     return results;
   }
 
   /**
-   * Cleanup resources
+   * ✅ UPDATED: Cleanup with better error handling
    */
   cleanup() {
     console.log('🧹 Cleaning up platform recorder bridge...');
     
+    // Stop progress tracking
     this.stopProgressTracking();
     
     // Clean up event listeners
     this.eventCleanups.forEach(cleanup => {
       try {
-        cleanup();
+        if (typeof cleanup === 'function') {
+          cleanup();
+        }
       } catch (error) {
-        console.warn('⚠️ Error cleaning up event listener:', error);
+        console.warn('⚠️ Error during event cleanup:', error);
       }
     });
     this.eventCleanups = [];
     
-    if (this.browserRecorder) {
-      this.browserRecorder.cleanup();
-      this.browserRecorder = null;
+    // Clean up browser recorder
+    if (this.browserRecorder && typeof this.browserRecorder.cleanup === 'function') {
+      try {
+        this.browserRecorder.cleanup();
+      } catch (error) {
+        console.warn('⚠️ Error during browser recorder cleanup:', error);
+      }
     }
     
+    // Reset state
     this.isRecording = false;
+    this.startTime = null;
     this.recordingMethod = null;
+    
+    console.log('✅ Platform recorder bridge cleaned up');
   }
 }
 

@@ -18,6 +18,9 @@ class BasicHandlers {
     // Debug handlers
     this.setupDebugHandlers();
     
+    // Desktop capturer handlers
+    this.setupDesktopCapturerHandlers();
+    
     console.log('✅ Basic IPC handlers set up');
   }
 
@@ -104,6 +107,22 @@ class BasicHandlers {
       });
       
       return status;
+    });
+  }
+
+  setupDesktopCapturerHandlers() {
+    const { desktopCapturer } = require('electron');
+    
+    ipcMain.handle('desktopCapturer:getSources', async (event, options) => {
+      try {
+        console.log('🖥️ Getting desktop sources:', options);
+        const sources = await desktopCapturer.getSources(options);
+        console.log(`✅ Found ${sources.length} desktop sources`);
+        return sources;
+      } catch (error) {
+        console.error('❌ Failed to get desktop sources:', error);
+        return [];
+      }
     });
   }
 

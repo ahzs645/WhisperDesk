@@ -258,6 +258,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     onRecordingProgress: createEventListener('screenRecorder:progress')
   },
 
+  // Desktop capturer for fallback screen enumeration
+  desktopCapturer: {
+    getSources: createSafeIPC('desktopCapturer:getSources')
+  },
+
   // Settings
   settings: {
     get: createSafeIPC('settings:get'),

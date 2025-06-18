@@ -200,58 +200,128 @@ class ScreenRecorderServiceRenderer {
       let screens = [];
       let audio = [];
 
-      // Try to get screens from main process
+      // Try to get screens from main process first
       try {
         if (window.electronAPI?.screenRecorder?.getAvailableScreens) {
           const screenResult = await window.electronAPI.screenRecorder.getAvailableScreens(true);
-          if (screenResult.success) {
-            screens = screenResult.screens || [];
-          } else if (screenResult.screens) {
+          if (screenResult.success && screenResult.screens && screenResult.screens.length > 0) {
             screens = screenResult.screens;
+            this.addToEventLog(`✅ Got ${screens.length} screens from main process`);
+          } else {
+            this.addToEventLog('⚠️ Main process returned no screens, trying fallback...');
           }
         }
       } catch (error) {
         console.warn('Failed to get screens from main process:', error);
+        this.addToEventLog(`⚠️ Main process screen enumeration failed: ${error.message}`);
       }
 
-      // ✅ FIXED: Better audio device enumeration
+      // ✅ FALLBACK: If main process returns no screens, use renderer fallback
+      if (screens.length === 0) {
+        try {
+          if (window.electronAPI?.desktopCapturer?.getSources) {
+            this.addToEventLog('🔄 Using renderer fallback for screen enumeration...');
+            const sources = await window.electronAPI.desktopCapturer.getSources({
+              types: ['screen'],
+              thumbnailSize: { width: 0, height: 0 }
+            });
+            
+            screens = sources.map((source, index) => ({
+              id: source.id,
+              name: source.name || `Display ${index + 1}`,
+              type: 'screen',
+              displayId: source.display_id
+            }));
+            
+            this.addToEventLog(`✅ Fallback found ${screens.length} screens`);
+          } else if (navigator.mediaDevices?.getDisplayMedia) {
+            // Ultimate fallback: Create a generic screen option
+            screens = [{
+              id: 'screen:0:0',
+              name: 'Primary Display',
+              type: 'screen'
+            }];
+            this.addToEventLog('✅ Using generic screen fallback');
+          }
+        } catch (fallbackError) {
+          console.warn('Fallback screen enumeration failed:', fallbackError);
+          this.addToEventLog(`❌ Fallback screen enumeration failed: ${fallbackError.message}`);
+          
+          // Ultimate fallback
+          screens = [{
+            id: 'screen:0:0',
+            name: 'Primary Display',
+            type: 'screen'
+          }];
+        }
+      }
+
+      // ✅ IMPROVED: Better audio device enumeration without duplicates
       try {
         if (navigator.mediaDevices?.enumerateDevices) {
           const devices = await navigator.mediaDevices.enumerateDevices();
-          audio = devices
-            .filter(device => device.kind === 'audioinput')
+          const audioInputs = devices.filter(device => device.kind === 'audioinput');
+          
+          // Create a Set to track unique device IDs
+          const seenDeviceIds = new Set();
+          
+          audio = audioInputs
+            .filter(device => {
+              // Skip devices without proper IDs or duplicate IDs
+              if (!device.deviceId || device.deviceId === 'default' || seenDeviceIds.has(device.deviceId)) {
+                return false;
+              }
+              seenDeviceIds.add(device.deviceId);
+              return true;
+            })
             .map(device => ({
-              id: device.deviceId || `input-${Math.random().toString(36).substr(2, 9)}`,
-              name: device.label || `Audio Input ${device.deviceId?.slice(-4) || 'Unknown'}`,
+              id: device.deviceId,
+              name: device.label || `Audio Input ${device.deviceId.slice(-4)}`,
               type: 'audioinput',
               deviceId: device.deviceId
             }));
           
-          // ✅ Add a proper default option
+          // ✅ Add a proper default option at the beginning
           if (audio.length > 0) {
             audio.unshift({
-              id: audio[0].id, // Use the first real device as default
+              id: 'default',
               name: 'Default Audio Input',
               type: 'audioinput',
-              deviceId: audio[0].deviceId,
+              deviceId: 'default',
               isDefault: true
             });
           }
+          
+          this.addToEventLog(`✅ Found ${audio.length} unique audio devices`);
         }
       } catch (error) {
         console.warn('Failed to enumerate audio devices:', error);
+        this.addToEventLog(`⚠️ Audio enumeration failed: ${error.message}`);
       }
 
       // Fallback devices if none found
+      if (screens.length === 0) {
+        screens = [
+          { 
+            id: 'screen:0:0', 
+            name: 'Primary Display', 
+            type: 'screen'
+          }
+        ];
+        this.addToEventLog('🔧 Using minimal screen fallback');
+      }
+
       if (audio.length === 0) {
         audio = [
           { 
-            id: 'built-in-mic', 
-            name: 'Built-in Microphone', 
+            id: 'default', 
+            name: 'Default Microphone', 
             type: 'audioinput',
-            deviceId: 'built-in-mic'
+            deviceId: 'default',
+            isDefault: true
           }
         ];
+        this.addToEventLog('🔧 Using default audio fallback');
       }
 
       const devices = { screens, audio };
@@ -259,16 +329,35 @@ class ScreenRecorderServiceRenderer {
       if (this.updateStateCallback) {
         this.updateStateCallback({
           availableDevices: devices,
-          devicesInitialized: true
+          devicesInitialized: true,
+          loadingDevices: false
         });
       }
 
-      this.addToEventLog(`Devices refreshed: ${screens.length} screens, ${audio.length} audio`);
+      this.addToEventLog(`✅ Devices refreshed: ${screens.length} screens, ${audio.length} audio`);
+      this.addToEventLog(`📱 Screens: ${screens.map(s => s.name).join(', ')}`);
+      this.addToEventLog(`🎤 Audio: ${audio.map(a => a.name).join(', ')}`);
+      
       return devices;
 
     } catch (error) {
-      this.addToEventLog(`Device refresh failed: ${error.message}`);
-      throw error;
+      this.addToEventLog(`❌ Device refresh failed: ${error.message}`);
+      
+      // Emergency fallback
+      const fallbackDevices = {
+        screens: [{ id: 'screen:0:0', name: 'Primary Display', type: 'screen' }],
+        audio: [{ id: 'default', name: 'Default Microphone', type: 'audioinput', deviceId: 'default', isDefault: true }]
+      };
+      
+      if (this.updateStateCallback) {
+        this.updateStateCallback({
+          availableDevices: fallbackDevices,
+          devicesInitialized: true,
+          loadingDevices: false
+        });
+      }
+      
+      return fallbackDevices;
     }
   }
 

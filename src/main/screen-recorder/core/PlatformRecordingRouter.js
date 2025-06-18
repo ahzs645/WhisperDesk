@@ -1,8 +1,8 @@
 // src/main/screen-recorder/core/PlatformRecordingRouter.js
 /**
- * Platform-aware recording router that selects the optimal recording method
- * macOS: Aperture v7 + ScreenCaptureKit (pure native)
- * Windows/Linux: Browser MediaRecorder + CPAL microphone
+ * Updated Platform-aware recording router with simplified macOS approach
+ * macOS: Pure ScreenCaptureKit (no CPAL, no FFmpeg)
+ * Windows/Linux: Browser + CPAL + FFmpeg
  */
 
 const { EventEmitter } = require('events');
@@ -15,7 +15,6 @@ class PlatformRecordingRouter extends EventEmitter {
     this.architecture = process.arch;
     this.osVersion = this.getOSVersion();
     this.selectedMethod = null;
-    this.recorder = null;
   }
 
   /**
@@ -48,17 +47,18 @@ class PlatformRecordingRouter extends EventEmitter {
   async getAvailableMethods() {
     const methods = [];
 
-    // macOS: Aperture v7 + ScreenCaptureKit (highest priority)
+    // macOS: Pure ScreenCaptureKit (highest priority, simplified)
     if (this.platform === 'darwin') {
       methods.push({
-        name: 'aperture-screencapturekit',
+        name: 'screencapturekit-native',
         platform: 'darwin',
         systemAudio: 'native',
-        microphone: 'cpal',
-        merger: 'ffmpeg',
+        microphone: 'native', // ← ScreenCaptureKit handles microphone natively
+        merger: 'none',       // ← No merging needed
+        dependencies: ['screencapturekit'], // ← Only ScreenCaptureKit
         priority: 1,
-        test: () => this.testApertureV7(),
-        create: () => this.createApertureRecorder()
+        test: () => this.testScreenCaptureKit(),
+        create: () => this.createMacOSRecorder()
       });
     }
 
@@ -70,6 +70,7 @@ class PlatformRecordingRouter extends EventEmitter {
         systemAudio: 'browser',
         microphone: 'cpal',
         merger: 'ffmpeg',
+        dependencies: ['browser', 'cpal', 'ffmpeg'],
         priority: 2,
         test: () => this.testBrowserCPAL(),
         create: () => this.createWindowsRecorder()
@@ -84,6 +85,7 @@ class PlatformRecordingRouter extends EventEmitter {
         systemAudio: 'browser', 
         microphone: 'cpal',
         merger: 'ffmpeg',
+        dependencies: ['browser', 'cpal', 'ffmpeg'],
         priority: 2,
         test: () => this.testBrowserCPAL(),
         create: () => this.createLinuxRecorder()
@@ -97,6 +99,7 @@ class PlatformRecordingRouter extends EventEmitter {
       systemAudio: 'browser-limited',
       microphone: 'browser',
       merger: 'browser',
+      dependencies: ['browser'],
       priority: 10,
       test: () => this.testBrowserFallback(),
       create: () => this.createBrowserRecorder()
@@ -106,16 +109,19 @@ class PlatformRecordingRouter extends EventEmitter {
   }
 
   /**
-   * Test Aperture v7 + ScreenCaptureKit availability (macOS)
+   * Test pure ScreenCaptureKit availability (macOS - SIMPLIFIED)
    */
-  async testApertureV7() {
+  async testScreenCaptureKit() {
     if (this.platform !== 'darwin') return false;
     
     // Check macOS version (ScreenCaptureKit requires 13+)
-    if (this.osVersion < 13) return false;
+    if (this.osVersion < 13) {
+      console.log('ℹ️ macOS version too old for ScreenCaptureKit');
+      return false;
+    }
     
     try {
-      // Test dynamic import of Aperture v7
+      // Test Aperture v7 with ScreenCaptureKit
       const aperture = await import('aperture');
       if (!aperture.screens) return false;
       
@@ -123,20 +129,19 @@ class PlatformRecordingRouter extends EventEmitter {
       const screens = await aperture.screens();
       if (screens.length === 0) return false;
       
-      // Test CPAL availability (optional on macOS - system has native audio)
-      const cpalAvailable = await this.testCPAL().catch(() => false);
-      if (cpalAvailable) {
-        console.log('✅ CPAL available for enhanced microphone recording');
-      } else {
-        console.log('⚠️ CPAL not available, will use browser microphone fallback');
+      // Test audio devices (for microphone support)
+      try {
+        const audioDevices = await aperture.audioDevices();
+        console.log(`✅ ScreenCaptureKit: ${screens.length} screens, ${audioDevices.length} audio devices`);
+      } catch (audioError) {
+        console.log('⚠️ Audio devices unavailable, but ScreenCaptureKit still usable');
       }
       
-      // Test FFmpeg availability (required for merging)
-      await this.testFFmpeg();
-      
+      console.log('✅ Pure ScreenCaptureKit available (no CPAL/FFmpeg needed)');
       return true;
+      
     } catch (error) {
-      console.log('Aperture v7 test failed:', error.message);
+      console.log('ScreenCaptureKit test failed:', error.message);
       return false;
     }
   }
@@ -146,8 +151,9 @@ class PlatformRecordingRouter extends EventEmitter {
    */
   async testBrowserCPAL() {
     try {
-      // Test browser MediaRecorder
-      if (!window.MediaRecorder) return false;
+      // Test browser MediaRecorder (this would be done in renderer)
+      // For now, assume it's available
+      console.log('🌐 Browser MediaRecorder assumed available');
       
       // Test CPAL
       await this.testCPAL();
@@ -166,11 +172,12 @@ class PlatformRecordingRouter extends EventEmitter {
    * Test pure browser fallback
    */
   async testBrowserFallback() {
-    return typeof window !== 'undefined' && !!window.MediaRecorder;
+    // Browser is always available as fallback
+    return true;
   }
 
   /**
-   * Test CPAL availability
+   * Test CPAL availability (Windows/Linux only)
    */
   async testCPAL() {
     try {
@@ -186,7 +193,7 @@ class PlatformRecordingRouter extends EventEmitter {
   }
 
   /**
-   * Test FFmpeg availability
+   * Test FFmpeg availability (Windows/Linux only)
    */
   async testFFmpeg() {
     try {
@@ -202,23 +209,23 @@ class PlatformRecordingRouter extends EventEmitter {
   /**
    * Create recorders for different platforms
    */
-  createApertureRecorder() {
-    const MacOSNativeRecorder = require('./MacOSNativeRecorder');
-    return new MacOSNativeRecorder();
+  createMacOSRecorder() {
+    const MacOSScreenCaptureRecorder = require('../recorders/MacOSScreenCaptureRecorder');
+    return new MacOSScreenCaptureRecorder();
   }
 
   createWindowsRecorder() {
-    const WindowsHybridRecorder = require('./WindowsHybridRecorder');
+    const WindowsHybridRecorder = require('../recorders/WindowsHybridRecorder');
     return new WindowsHybridRecorder();
   }
 
   createLinuxRecorder() {
-    const LinuxHybridRecorder = require('./LinuxHybridRecorder');
+    const LinuxHybridRecorder = require('../recorders/LinuxHybridRecorder');
     return new LinuxHybridRecorder();
   }
 
   createBrowserRecorder() {
-    const BrowserFallbackRecorder = require('./BrowserFallbackRecorder');
+    const BrowserFallbackRecorder = require('../recorders/BrowserFallbackRecorder');
     return new BrowserFallbackRecorder();
   }
 
@@ -241,16 +248,28 @@ class PlatformRecordingRouter extends EventEmitter {
     const method = this.selectedMethod;
     if (!method) return null;
 
-    return {
+    const capabilities = {
       platform: method.platform,
       systemAudio: method.systemAudio === 'native' || method.systemAudio === 'browser',
       systemAudioMethod: method.systemAudio,
-      microphone: method.microphone === 'cpal' || method.microphone === 'browser',
+      microphone: method.microphone === 'native' || method.microphone === 'cpal' || method.microphone === 'browser',
       microphoneMethod: method.microphone,
       merger: method.merger,
-      quality: method.platform === 'darwin' ? 'excellent' : 'good',
-      performance: method.platform === 'darwin' ? 'excellent' : 'good'
+      dependencies: method.dependencies,
+      quality: 'good',
+      performance: 'good'
     };
+
+    // Enhanced capabilities for pure ScreenCaptureKit
+    if (method.name === 'screencapturekit-native') {
+      capabilities.quality = 'excellent';
+      capabilities.performance = 'excellent';
+      capabilities.singleStream = true;
+      capabilities.nativeIntegration = true;
+      capabilities.simplifiedArchitecture = true;
+    }
+
+    return capabilities;
   }
 }
 
