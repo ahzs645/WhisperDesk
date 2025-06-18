@@ -1,0 +1,4 @@
+#!/bin/bash
+echo "CPAL recorder not yet implemented for darwin-arm64"
+echo "This is a placeholder binary. The actual CPAL implementation is pending."
+exit 1 

@@ -1,35 +1,40 @@
+// ============================================================================
+
+// src/main/screen-recorder/index.js - Updated entry point
 /**
- * @fileoverview Main entry point for the centralized screen recorder system
+ * Updated entry point for the platform-aware screen recorder system
  */
 
-const ScreenRecorderService = require('./ScreenRecorderService');
+const PlatformAwareScreenRecorderService = require('./core/PlatformAwareScreenRecorderService');
 const ScreenRecorderHandlers = require('./handlers/ScreenRecorderHandlers');
-const ScreenRecorderEngine = require('./core/ScreenRecorderEngine');
-const DeviceManager = require('./managers/DeviceManager');
-const FileManager = require('./managers/FileManager');
 const { RECORDING_EVENTS, RECORDING_STATES, ERROR_TYPES } = require('./types');
 
 /**
- * Factory function to create a complete screen recorder system
+ * Factory function to create a platform-aware screen recorder system
  * @returns {Promise<Object>} Complete screen recorder system
  */
-async function createScreenRecorderSystem() {
-  console.log('🏗️ Creating centralized screen recorder system...');
+async function createPlatformAwareScreenRecorderSystem() {
+  console.log('🏗️ Creating Platform-Aware Screen Recorder System...');
   
   try {
-    // Create and initialize the main service
-    const service = new ScreenRecorderService();
+    // Create and initialize the platform-aware service
+    const service = new PlatformAwareScreenRecorderService();
     await service.initialize();
     
     // Create IPC handlers
     const handlers = new ScreenRecorderHandlers(service);
     handlers.setup();
     
-    console.log('✅ Centralized screen recorder system created successfully');
+    // Log platform information
+    const platformInfo = service.getPlatformInfo();
+    console.log('🎯 Platform Recording Setup:', platformInfo);
+    
+    console.log('✅ Platform-Aware Screen Recorder System created successfully');
     
     return {
       service,
       handlers,
+      platformInfo,
       // Expose constants for external use
       RECORDING_EVENTS,
       RECORDING_STATES,
@@ -37,41 +42,24 @@ async function createScreenRecorderSystem() {
     };
     
   } catch (error) {
-    console.error('❌ Failed to create screen recorder system:', error);
+    console.error('❌ Failed to create platform-aware screen recorder system:', error);
     throw error;
   }
 }
 
-/**
- * Factory function to create individual components
- * @returns {Object} Component constructors
- */
-function createComponents() {
-  return {
-    ScreenRecorderService,
-    ScreenRecorderEngine,
-    DeviceManager,
-    FileManager,
-    ScreenRecorderHandlers
-  };
-}
-
 module.exports = {
-  // Main factory function
-  createScreenRecorderSystem,
+  // Main factory function (new preferred method)
+  createPlatformAwareScreenRecorderSystem,
+  
+  // Legacy factory function for backward compatibility
+  createScreenRecorderSystem: createPlatformAwareScreenRecorderSystem,
   
   // Individual components
-  ScreenRecorderService,
+  PlatformAwareScreenRecorderService,
   ScreenRecorderHandlers,
-  ScreenRecorderEngine,
-  DeviceManager,
-  FileManager,
-  
-  // Component factory
-  createComponents,
   
   // Constants
   RECORDING_EVENTS,
   RECORDING_STATES,
   ERROR_TYPES
-}; 
+};

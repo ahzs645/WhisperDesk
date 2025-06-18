@@ -1,6 +1,6 @@
 // src/main/managers/service-manager.js
 const EventEmitter = require('events');
-const { createScreenRecorderSystem } = require('../screen-recorder');
+const { createScreenRecorderSystem, createPlatformAwareScreenRecorderSystem } = require('../screen-recorder');
 
 class ServiceManager extends EventEmitter {
   constructor() {
@@ -20,7 +20,7 @@ class ServiceManager extends EventEmitter {
       await this.initializeSettingsService();
       await this.initializeExportService();
       await this.initializeEnhancedDeviceManager();
-      await this.initializeEnhancedScreenRecorder(); // Updated for v7
+      await this.initializePlatformAwareScreenRecorder();
       
       console.log('✅ Services initialization completed');
       return true;
@@ -96,6 +96,43 @@ class ServiceManager extends EventEmitter {
     }
   }
 
+  async initializePlatformAwareScreenRecorder() {
+    try {
+      console.log('🔧 Initializing Platform-Aware Screen Recorder...');
+      
+      // Use the new platform-aware system
+      this.screenRecorderSystem = await createPlatformAwareScreenRecorderSystem();
+      
+      // Add the service to your services object
+      this.services.screenRecorder = this.screenRecorderSystem.service;
+      
+      // Log the platform information
+      const platformInfo = this.screenRecorderSystem.platformInfo;
+      console.log('🎯 Recording Architecture:', {
+        platform: platformInfo.platform,
+        method: platformInfo.selectedMethod,
+        features: platformInfo.supportedFeatures
+      });
+      
+      // Log recording method details
+      if (platformInfo.platform === 'darwin') {
+        console.log('🍎 macOS: Using Aperture v7 + ScreenCaptureKit + CPAL + FFmpeg');
+      } else if (platformInfo.platform === 'win32') {
+        console.log('🪟 Windows: Using Browser + CPAL + FFmpeg');
+      } else if (platformInfo.platform === 'linux') {
+        console.log('🐧 Linux: Using Browser + CPAL + FFmpeg');
+      }
+      
+      console.log('✅ Platform-Aware Screen Recorder initialized');
+    } catch (error) {
+      console.error('❌ Failed to initialize Platform-Aware Screen Recorder:', error);
+      console.warn('⚠️ Falling back to basic screen recorder');
+      
+      // Fallback to existing system
+      await this.initializeEnhancedScreenRecorder();
+    }
+  }
+
   async initializeEnhancedScreenRecorder() {
     try {
       console.log('🔧 Initializing Enhanced Screen Recorder System with Aperture v7...');
@@ -117,6 +154,9 @@ class ServiceManager extends EventEmitter {
     } catch (error) {
       console.error('❌ Failed to initialize Enhanced Screen Recorder System:', error);
       console.warn('⚠️ Screen recorder will use fallback mode');
+      
+      // Create a basic fallback screen recorder system with handlers
+      await this.initializeFallbackScreenRecorder();
     }
   }
 
