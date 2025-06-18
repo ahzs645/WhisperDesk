@@ -16,7 +16,14 @@ napi-derive = "2.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 
-# Foundation implementation dependencies (simplified)
+# objc2 ScreenCaptureKit bindings
+objc2 = "0.6"
+objc2-foundation = "0.3"
+objc2-core-media = "0.3"
+objc2-core-video = "0.3"
+objc2-av-foundation = "0.3"
+
+# Foundation implementation dependencies
 tokio = { version = "1.0", features = ["full"] }
 futures = "0.3"
 log = "0.4"

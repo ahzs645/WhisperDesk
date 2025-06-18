@@ -31,16 +31,10 @@ export declare function getVersion(): string
 export declare function checkMacosVersion(): string
 export declare class ScreenCaptureKitRecorder {
   constructor()
-  /** Get available screen sources (displays and windows) */
   getAvailableScreens(): Array<ScreenSource>
-  /** Get available audio devices */
   getAvailableAudioDevices(): Array<AudioDevice>
-  /** Start recording with the given configuration */
   startRecording(screenId: string, config: RecordingConfiguration): void
-  /** Stop the current recording */
   stopRecording(): string
-  /** Check if currently recording */
   isRecording(): boolean
-  /** Get recording status */
   getStatus(): string
 }
