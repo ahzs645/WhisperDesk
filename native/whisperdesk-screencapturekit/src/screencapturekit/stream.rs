@@ -39,9 +39,16 @@ impl RealStreamManager {
         let stream_config = self.create_stream_configuration(&config)?;
         
         // Create delegate
+        let width = config.width.unwrap_or(1920);
+        let height = config.height.unwrap_or(1080);
+        let fps = config.fps.unwrap_or(30);
+        
         let delegate = Arc::new(RealStreamDelegate::new(
             config.output_path.clone(),
             self.is_recording.clone(),
+            width,
+            height,
+            fps,
         ));
         
         // Create the actual SCStream instance

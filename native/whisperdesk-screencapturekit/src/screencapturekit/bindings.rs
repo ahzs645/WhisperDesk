@@ -5,6 +5,9 @@ use objc2_core_media::{CMSampleBuffer, CMTime};
 use objc2_core_video::CVPixelBuffer;
 use std::ptr;
 
+// Add block2 support for completion handlers
+use block2::{Block, StackBlock};
+
 // ScreenCaptureKit Class Names - we'll use AnyObject for the actual instances
 // and these constants for class lookup
 
@@ -22,6 +25,16 @@ pub type SCWindow = AnyObject;
 pub type SCContentFilter = AnyObject;
 pub type SCStream = AnyObject;
 pub type SCStreamConfiguration = AnyObject;
+
+// Completion handler type aliases
+pub type SCShareableContentCompletionHandler = 
+    Block<dyn Fn(*mut SCShareableContent, *mut NSError)>;
+
+pub type SCStreamStartCompletionHandler = 
+    Block<dyn Fn(*mut NSError)>;
+
+pub type SCStreamStopCompletionHandler = 
+    Block<dyn Fn(*mut NSError)>;
 
 // SCStreamDelegate Protocol
 // This needs to be implemented as a Rust struct that conforms to the protocol
@@ -81,17 +94,55 @@ unsafe impl Encode for CGSize {
 pub struct ScreenCaptureKitHelpers;
 
 impl ScreenCaptureKitHelpers {
-    pub unsafe fn get_shareable_content_with_completion_handler<F>(completion: F) 
+    pub unsafe fn get_shareable_content_async<F>(completion: F) 
     where
-        F: FnOnce(Option<*mut SCShareableContent>, Option<&NSError>) + Send + 'static,
+        F: Fn(Option<*mut SCShareableContent>, Option<&NSError>) + Send + Sync + Clone + 'static,
     {
-        // This would create a proper Objective-C block and call the API
-        // For now, we'll implement the foundation
-        let _class = class!(SCShareableContent);
-        // Implementation will be completed in the next phase
+        // Create Objective-C block
+        let block = StackBlock::new(move |content: *mut SCShareableContent, error: *mut NSError| {
+            let error_ref = if error.is_null() { None } else { Some(&*error) };
+            let content_opt = if content.is_null() { None } else { Some(content) };
+            completion(content_opt, error_ref);
+        });
+        let block = block.copy();
         
-        // Simulate completion for now
-        completion(None, None);
+        let class = class!(SCShareableContent);
+        let _: () = msg_send![
+            class,
+            getShareableContentWithCompletionHandler: &*block
+        ];
+    }
+    
+    pub unsafe fn start_stream_capture_async<F>(stream: *mut SCStream, completion: F)
+    where
+        F: Fn(Option<&NSError>) + Send + Sync + Clone + 'static,
+    {
+        let block = StackBlock::new(move |error: *mut NSError| {
+            let error_ref = if error.is_null() { None } else { Some(&*error) };
+            completion(error_ref);
+        });
+        let block = block.copy();
+        
+        let _: () = msg_send![
+            stream,
+            startCaptureWithCompletionHandler: &*block
+        ];
+    }
+    
+    pub unsafe fn stop_stream_capture_async<F>(stream: *mut SCStream, completion: F)
+    where
+        F: Fn(Option<&NSError>) + Send + Sync + Clone + 'static,
+    {
+        let block = StackBlock::new(move |error: *mut NSError| {
+            let error_ref = if error.is_null() { None } else { Some(&*error) };
+            completion(error_ref);
+        });
+        let block = block.copy();
+        
+        let _: () = msg_send![
+            stream,
+            stopCaptureWithCompletionHandler: &*block
+        ];
     }
     
     pub unsafe fn create_content_filter_with_display(display: *mut SCDisplay) -> *mut SCContentFilter {

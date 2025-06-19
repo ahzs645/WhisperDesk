@@ -26,10 +26,51 @@ export interface RecordingConfiguration {
   pixelFormat?: string
   colorSpace?: string
 }
+export const K_CV_PIXEL_FORMAT_TYPE_32_BGRA: number
+export const K_CG_COLOR_SPACE_SRGB: number
+export const K_CG_COLOR_SPACE_DISPLAY_P3: number
+export const kCVPixelFormatType_32BGRA: number
+export const kCGColorSpaceSRGB: number
+export interface DisplayInfo {
+  id: number
+  name: string
+  width: number
+  height: number
+}
+export interface WindowInfo {
+  id: number
+  title: string
+  width: number
+  height: number
+}
 export declare function initScreencapturekit(): void
 export declare function getVersion(): string
 export declare function checkMacosVersion(): string
 export declare function testPhase2Implementation(): string
+export declare class ContentManager {
+  constructor()
+  getShareableContent(): ShareableContent
+  getShareableContentSync(): ShareableContent
+}
+export declare class RealContentFilter {
+  constructor()
+  initWithDisplay(display: DisplayInfo): void
+  isValid(): boolean
+}
+export declare class RealStreamManager {
+  constructor()
+  initializeStream(contentFilter: RealContentFilter, streamConfig: string, outputPath: string): void
+  startCapture(): void
+  stopCapture(): void
+  getCaptureStats(): string
+}
+export declare class ShareableContent {
+  constructor()
+  getDisplays(): Array<DisplayInfo>
+  getWindows(): Array<WindowInfo>
+  get displays(): Array<DisplayInfo>
+  get windows(): Array<WindowInfo>
+}
 export declare class ScreenCaptureKitRecorder {
   constructor()
   getAvailableScreens(): Array<ScreenSource>
@@ -38,4 +79,9 @@ export declare class ScreenCaptureKitRecorder {
   stopRecording(): string
   isRecording(): boolean
   getStatus(): string
+}
+export declare class AudioManager {
+  constructor()
+  getAvailableAudioDevices(): Array<AudioDevice>
+  configureAudioSession(): void
 }

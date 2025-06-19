@@ -310,10 +310,20 @@ if (!nativeBinding) {
   throw new Error(`Failed to load native binding`)
 }
 
-const { ScreenCaptureKitRecorder, initScreencapturekit, getVersion, checkMacosVersion, testPhase2Implementation } = nativeBinding
+const { ContentManager, RealContentFilter, RealStreamManager, K_CV_PIXEL_FORMAT_TYPE_32_BGRA, K_CG_COLOR_SPACE_SRGB, K_CG_COLOR_SPACE_DISPLAY_P3, kCVPixelFormatType_32BGRA, kCGColorSpaceSRGB, ShareableContent, ScreenCaptureKitRecorder, initScreencapturekit, getVersion, checkMacosVersion, testPhase2Implementation, AudioManager } = nativeBinding
 
+module.exports.ContentManager = ContentManager
+module.exports.RealContentFilter = RealContentFilter
+module.exports.RealStreamManager = RealStreamManager
+module.exports.K_CV_PIXEL_FORMAT_TYPE_32_BGRA = K_CV_PIXEL_FORMAT_TYPE_32_BGRA
+module.exports.K_CG_COLOR_SPACE_SRGB = K_CG_COLOR_SPACE_SRGB
+module.exports.K_CG_COLOR_SPACE_DISPLAY_P3 = K_CG_COLOR_SPACE_DISPLAY_P3
+module.exports.kCVPixelFormatType_32BGRA = kCVPixelFormatType_32BGRA
+module.exports.kCGColorSpaceSRGB = kCGColorSpaceSRGB
+module.exports.ShareableContent = ShareableContent
 module.exports.ScreenCaptureKitRecorder = ScreenCaptureKitRecorder
 module.exports.initScreencapturekit = initScreencapturekit
 module.exports.getVersion = getVersion
 module.exports.checkMacosVersion = checkMacosVersion
 module.exports.testPhase2Implementation = testPhase2Implementation
+module.exports.AudioManager = AudioManager
