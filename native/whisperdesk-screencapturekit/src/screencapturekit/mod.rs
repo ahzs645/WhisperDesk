@@ -8,15 +8,6 @@ pub mod delegate;
 pub mod encoder;
 
 // Re-export key types for easier access
-pub use content::{ContentManager, ShareableContent, DisplayInfo, WindowInfo};
+pub use content::ShareableContent;
 pub use audio::AudioManager;
-pub use stream::{RealStreamManager, RealContentFilter};
-pub use delegate::RealStreamDelegate;
-pub use encoder::{VideoEncoder, AudioEncoder};
-pub use bindings::{
-    SCStream, SCStreamConfiguration, SCContentFilter, SCDisplay, SCWindow,
-    SCStreamDelegate, SCStreamOutputType,
-    kCVPixelFormatType_32BGRA, kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
-    kCGColorSpaceDisplayP3, kCGColorSpaceSRGB,
-    CGRect, CGPoint, CGSize
-}; 
+ 

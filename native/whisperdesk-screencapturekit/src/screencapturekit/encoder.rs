@@ -1,6 +1,6 @@
 use std::ptr;
 use objc2::runtime::AnyObject;
-use objc2::{msg_send, sel, class};
+use objc2::{msg_send, class};
 use objc2_foundation::{NSString, NSURL, NSError, NSDictionary, NSNumber};
 use objc2_av_foundation::{AVAssetWriter, AVAssetWriterInput, AVAssetWriterInputPixelBufferAdaptor};
 use objc2_core_video::{CVPixelBuffer, kCVPixelFormatType_32BGRA};

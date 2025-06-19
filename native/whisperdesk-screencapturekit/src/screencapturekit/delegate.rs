@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex};
 use objc2::runtime::AnyObject;
 use objc2::{msg_send, class};
-use objc2_foundation::{NSError, NSObject};
+use objc2_foundation::NSError;
 use objc2_core_media::{CMSampleBuffer, CMTime};
 use objc2_core_video::{CVImageBuffer, CVPixelBuffer};
 

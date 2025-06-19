@@ -1,10 +1,9 @@
 // Updated bindings.rs - Safe bindings without segfault-prone data extraction
 
-use objc2::runtime::{AnyObject, Class};
-use objc2::{msg_send, sel, class, Encode, Encoding};
-use objc2_foundation::{NSArray, NSString, NSNumber, NSError, NSObject};
+use objc2::runtime::AnyObject;
+use objc2::{msg_send, class, Encode, Encoding};
+use objc2_foundation::NSError;
 use objc2_core_media::{CMSampleBuffer, CMTime};
-use objc2_core_video::CVPixelBuffer;
 use std::ptr;
 
 // Add block2 support for completion handlers
@@ -100,7 +99,7 @@ impl ScreenCaptureKitHelpers {
     pub unsafe fn check_screen_recording_permission() -> bool {
         // Use CGPreflightScreenCaptureAccess to check screen recording permissions
         // This is the proper way to check ScreenCaptureKit permissions on macOS
-        use std::ffi::c_void;
+        
         
         // Define the CGPreflightScreenCaptureAccess function
         extern "C" {

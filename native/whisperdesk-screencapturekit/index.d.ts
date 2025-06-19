@@ -75,6 +75,8 @@ export declare class ShareableContent {
   getWindows(): Array<WindowInfo>
   get displays(): Array<DisplayInfo>
   get windows(): Array<WindowInfo>
+  getScDisplayById(displayId: number): bigint | null
+  getScWindowById(windowId: number): bigint | null
 }
 export declare class ScreenCaptureKitRecorder {
   constructor()

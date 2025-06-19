@@ -1,6 +1,6 @@
 use crate::AudioDevice;
 use napi::bindgen_prelude::*;
-use objc2::{msg_send, sel, class};
+use objc2::{msg_send, class};
 use objc2_foundation::{NSArray, NSString};
 use std::ptr;
 
@@ -34,8 +34,8 @@ impl AudioManager {
                         let uid: *mut NSString = msg_send![input, UID];
                         
                         if !port_name.is_null() && !uid.is_null() {
-                            let name_str = (&*port_name).to_string();
-                            let uid_str = (&*uid).to_string();
+                            let name_str = (*port_name).to_string();
+                            let uid_str = (*uid).to_string();
                             
                             devices.push(AudioDevice {
                                 id: uid_str,
@@ -62,8 +62,8 @@ impl AudioManager {
                             let uid: *mut NSString = msg_send![output, UID];
                             
                             if !port_name.is_null() && !uid.is_null() {
-                                let name_str = (&*port_name).to_string();
-                                let uid_str = (&*uid).to_string();
+                                let name_str = (*port_name).to_string();
+                                let uid_str = (*uid).to_string();
                                 
                                 devices.push(AudioDevice {
                                     id: uid_str,
@@ -99,7 +99,7 @@ impl AudioManager {
                 if !preferred_input.is_null() {
                     let uid: *mut NSString = msg_send![preferred_input, UID];
                     if !uid.is_null() {
-                        return Some((&*uid).to_string());
+                        return Some((*uid).to_string());
                     }
                 }
                 
@@ -114,11 +114,11 @@ impl AudioManager {
                         if !input.is_null() {
                             let port_name: *mut NSString = msg_send![input, portName];
                             if !port_name.is_null() {
-                                let name_str = (&*port_name).to_string();
+                                let name_str = (*port_name).to_string();
                                 if name_str.contains("Built-in") || name_str.contains("BuiltInMicrophoneDevice") {
                                     let uid: *mut NSString = msg_send![input, UID];
                                     if !uid.is_null() {
-                                        return Some((&*uid).to_string());
+                                        return Some((*uid).to_string());
                                     }
                                 }
                             }

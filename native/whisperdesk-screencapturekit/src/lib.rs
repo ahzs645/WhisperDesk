@@ -3,7 +3,6 @@ use napi_derive::napi;
 // ScreenCaptureKit implementation with objc2 bindings
 
 mod screencapturekit;
-use screencapturekit::*;
 
 // objc2 imports for ScreenCaptureKit integration
 
@@ -221,6 +220,32 @@ impl ShareableContent {
     #[napi(getter)]
     pub fn windows(&self) -> Result<Vec<WindowInfo>> {
         self.get_windows()
+    }
+    
+    #[napi]
+    pub fn get_sc_display_by_id(&self, display_id: u32) -> Result<Option<u64>> {
+        unsafe {
+            match self.inner.get_sc_display_by_id(display_id) {
+                Some(sc_display_ptr) => {
+                    // Return the pointer as a u64 for JavaScript
+                    Ok(Some(sc_display_ptr as u64))
+                }
+                None => Ok(None)
+            }
+        }
+    }
+    
+    #[napi]
+    pub fn get_sc_window_by_id(&self, window_id: u32) -> Result<Option<u64>> {
+        unsafe {
+            match self.inner.get_sc_window_by_id(window_id) {
+                Some(sc_window_ptr) => {
+                    // Return the pointer as a u64 for JavaScript
+                    Ok(Some(sc_window_ptr as u64))
+                }
+                None => Ok(None)
+            }
+        }
     }
 }
 

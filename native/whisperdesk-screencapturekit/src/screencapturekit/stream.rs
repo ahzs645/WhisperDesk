@@ -1,11 +1,9 @@
 use crate::RecordingConfiguration;
 use napi::bindgen_prelude::*;
 use std::sync::{Arc, Mutex};
-use std::ptr;
-use objc2::runtime::AnyObject;
 
 use super::bindings::{
-    SCStream, SCStreamConfiguration, SCContentFilter, SCDisplay, SCWindow,
+    SCStream, SCStreamConfiguration, SCContentFilter,
     kCVPixelFormatType_32BGRA, kCGColorSpaceSRGB, ScreenCaptureKitHelpers
 };
 use super::delegate::RealStreamDelegate;
