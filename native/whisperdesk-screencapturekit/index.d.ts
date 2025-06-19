@@ -49,6 +49,8 @@ export declare function checkScreenRecordingPermission(): boolean
 export declare function requestScreenRecordingPermission(): boolean
 export declare function checkMacosVersion(): string
 export declare function testPermissionsAndApi(): string
+/** Test function for the improved ScreenCaptureKit implementation with timeout */
+export declare function testScreencapturekitWithTimeout(): string
 export declare function testPhase2Implementation(): string
 export declare class ContentManager {
   constructor()
@@ -77,6 +79,8 @@ export declare class ShareableContent {
 export declare class ScreenCaptureKitRecorder {
   constructor()
   getAvailableScreens(): Array<ScreenSource>
+  /** Improved version that properly handles ScreenCaptureKit's async nature with timeout */
+  getAvailableScreensWithTimeout(timeoutMs?: number | undefined | null): Array<ScreenSource>
   getAvailableAudioDevices(): Array<AudioDevice>
   startRecording(screenId: string, config: RecordingConfiguration): void
   stopRecording(): string

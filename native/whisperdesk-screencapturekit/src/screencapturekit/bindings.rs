@@ -122,6 +122,41 @@ impl ScreenCaptureKitHelpers {
         has_permission
     }
 
+    /// Simplified completion handler approach that avoids thread safety issues
+    pub unsafe fn get_shareable_content_with_completion<F>(completion: F) -> Result<(), String>
+    where
+        F: Fn(Option<*mut SCShareableContent>, Option<&NSError>) + Clone + 'static,
+    {
+        // First check permissions
+        if !Self::check_screen_recording_permission() {
+            return Err("Screen recording permission not granted".to_string());
+        }
+
+        println!("🔍 Getting shareable content with completion handler");
+
+        // Create Objective-C block - using a simpler approach
+        let block = StackBlock::new(move |content: *mut SCShareableContent, error: *mut NSError| {
+            let error_ref = if error.is_null() { None } else { Some(&*error) };
+            let content_opt = if content.is_null() { None } else { Some(content) };
+            completion(content_opt, error_ref);
+        });
+        let block = block.copy();
+        
+        let class = class!(SCShareableContent);
+        let _: () = msg_send![
+            class,
+            getShareableContentWithCompletionHandler: &*block
+        ];
+        
+        Ok(())
+    }
+
+    /// Async version that properly handles ScreenCaptureKit's async nature using tokio
+    /// Note: Commented out due to thread safety and napi limitations
+    // pub async fn get_shareable_content_async_safe() -> Result<*mut SCShareableContent, String> {
+    //     // ... implementation commented out
+    // }
+
     pub unsafe fn get_shareable_content_async<F>(completion: F) 
     where
         F: Fn(Option<*mut SCShareableContent>, Option<&NSError>) + Send + Sync + Clone + 'static,
@@ -149,47 +184,21 @@ impl ScreenCaptureKitHelpers {
         ];
     }
     
-    /// Get shareable content synchronously (blocking call)
+    /// Get shareable content synchronously (blocking call) - Updated to use safer fallback approach
     pub unsafe fn get_shareable_content_sync() -> Result<*mut SCShareableContent, String> {
         // First check permissions
         if !Self::check_screen_recording_permission() {
             return Err("Screen recording permission not granted. Please enable screen recording permission in System Preferences > Security & Privacy > Privacy > Screen Recording".to_string());
         }
 
-        println!("🔍 Attempting to get shareable content with proper ScreenCaptureKit API");
+        println!("🔍 Attempting safer ScreenCaptureKit content retrieval");
         
-        // Try to call the class method directly to get current shareable content
-        // Some ScreenCaptureKit versions might have synchronous methods
-        let class = class!(SCShareableContent);
+        // Instead of trying potentially problematic direct API calls,
+        // return an error that encourages using the timeout version
+        println!("⚠️ Direct sync API calls can cause segfaults due to async/sync mismatch");
+        println!("💡 Use the timeout-protected version instead");
         
-        // Try to call a potential synchronous method first
-        let current_content: *mut SCShareableContent = msg_send![class, currentProcessShareableContent];
-        if !current_content.is_null() {
-            println!("✅ Got current process shareable content");
-            return Ok(current_content);
-        }
-        
-        // If that doesn't work, try the standard async approach but with a simpler handler
-        println!("🔄 Falling back to async approach with simple handling");
-        
-        // Create a simple completion handler that just logs
-        let block = StackBlock::new(|content: *mut SCShareableContent, error: *mut NSError| {
-            if !error.is_null() {
-                println!("❌ ScreenCaptureKit async call failed");
-            } else if !content.is_null() {
-                println!("✅ ScreenCaptureKit async call succeeded");
-            }
-        });
-        let block = block.copy();
-        
-        // Make the async call (but don't wait for it to avoid segfaults)
-        let _: () = msg_send![
-            class,
-            getShareableContentWithCompletionHandler: &*block
-        ];
-        
-        // For now, return an error indicating we need the async approach
-        Err("ScreenCaptureKit requires async handling - this is expected behavior for a proper implementation".to_string())
+        Err("Direct sync ScreenCaptureKit calls avoided to prevent segfaults. Use timeout version instead.".to_string())
     }
     
     pub unsafe fn start_stream_capture_async<F>(stream: *mut SCStream, completion: F)
