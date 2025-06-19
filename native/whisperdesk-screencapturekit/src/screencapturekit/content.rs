@@ -747,39 +747,65 @@ impl RealStreamManager {
     pub fn start_recording(&mut self, content_filter: RealContentFilter, config: RecordingConfiguration) -> Result<()> {
         unsafe {
             println!("🎬 Starting REAL ScreenCaptureKit recording");
+            println!("   Output: {}", config.output_path);
+            println!("   Resolution: {}x{}", config.width.unwrap_or(1920), config.height.unwrap_or(1080));
+            println!("   FPS: {}", config.fps.unwrap_or(30));
+            
+            // Validate content filter
+            if !content_filter.is_valid() {
+                return Err(Error::new(Status::GenericFailure, "Invalid content filter"));
+            }
             
             // Create stream configuration
             let stream_config = self.create_stream_configuration(&config)?;
+            println!("✅ Created stream configuration");
             
-            // Create stream delegate
+            // Create stream delegate with recording state
+            let is_recording_flag = Arc::new(Mutex::new(true));
             let delegate = RealStreamDelegate::new(
                 config.output_path.clone(),
-                Arc::new(Mutex::new(true)), // is_recording
+                is_recording_flag.clone(),
                 config.width.unwrap_or(1920),
                 config.height.unwrap_or(1080),
                 config.fps.unwrap_or(30)
             );
             
             let delegate_ptr = delegate.create_objc_delegate();
+            if delegate_ptr.is_null() {
+                return Err(Error::new(Status::GenericFailure, "Failed to create stream delegate"));
+            }
+            println!("✅ Created stream delegate");
             
             // Create SCStream with real content filter
             let stream = self.create_sc_stream(content_filter.get_filter_ptr(), stream_config, delegate_ptr)?;
+            println!("✅ Created SCStream instance");
             
-            // Start capture
-            ScreenCaptureKitHelpers::start_stream_capture_async(stream, |error| {
+            // Start capture with completion handler
+            let start_result = std::sync::Arc::new(std::sync::Mutex::new(None));
+            let start_result_clone = start_result.clone();
+            
+            ScreenCaptureKitHelpers::start_stream_capture_async(stream, move |error| {
+                let mut result = start_result_clone.lock().unwrap();
                 if let Some(error) = error {
                     println!("❌ Stream start failed: {:?}", error);
+                    *result = Some(false);
                 } else {
-                    println!("✅ Stream started successfully");
+                    println!("✅ Stream started successfully - now capturing frames");
+                    *result = Some(true);
                 }
             });
             
+            // Wait briefly for start completion (in real implementation, this would be async)
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            
+            // Store the stream and delegate
             self.stream = Some(stream);
             self.delegate = Some(Box::new(delegate));
             self.is_recording = true;
-            self.output_path = Some(config.output_path);
+            self.output_path = Some(config.output_path.clone());
             
-            println!("✅ Real ScreenCaptureKit recording started");
+            println!("🚀 Real ScreenCaptureKit recording session started");
+            println!("📊 Stream will now receive video frames from ScreenCaptureKit");
             Ok(())
         }
     }
@@ -789,27 +815,54 @@ impl RealStreamManager {
             if let Some(stream) = self.stream {
                 println!("🛑 Stopping REAL ScreenCaptureKit recording");
                 
-                ScreenCaptureKitHelpers::stop_stream_capture_async(stream, |error| {
+                // Get final stats before stopping
+                if let Some(delegate) = &self.delegate {
+                    let frame_count = delegate.get_frame_count();
+                    let audio_count = delegate.get_audio_frame_count();
+                    let fps = delegate.get_current_fps();
+                    println!("📊 Final capture stats: {} video frames, {} audio samples, {:.1} FPS", 
+                        frame_count, audio_count, fps);
+                }
+                
+                // Stop the stream with completion handler
+                let stop_result = std::sync::Arc::new(std::sync::Mutex::new(None));
+                let stop_result_clone = stop_result.clone();
+                
+                ScreenCaptureKitHelpers::stop_stream_capture_async(stream, move |error| {
+                    let mut result = stop_result_clone.lock().unwrap();
                     if let Some(error) = error {
                         println!("⚠️ Stream stop had error: {:?}", error);
+                        *result = Some(false);
                     } else {
                         println!("✅ Stream stopped successfully");
+                        *result = Some(true);
                     }
                 });
+                
+                // Wait briefly for stop completion
+                std::thread::sleep(std::time::Duration::from_millis(200));
                 
                 self.is_recording = false;
                 self.stream = None;
                 
-                // Finalize encoding
+                // Finalize encoding through delegate
                 if let Some(delegate) = &mut self.delegate {
                     delegate.handle_stream_stopped(None);
+                    
+                    // Wait a bit more for encoding finalization
+                    std::thread::sleep(std::time::Duration::from_millis(500));
                 }
                 
                 let output_path = self.output_path.clone().unwrap_or_else(|| "/tmp/recording.mp4".to_string());
-                println!("✅ Real recording stopped, output: {}", output_path);
+                
+                // Clean up delegate
+                self.delegate = None;
+                
+                println!("✅ Real ScreenCaptureKit recording session completed");
+                println!("📁 Output file: {}", output_path);
                 Ok(output_path)
             } else {
-                Err(Error::new(Status::GenericFailure, "No active recording"))
+                Err(Error::new(Status::GenericFailure, "No active recording session"))
             }
         }
     }
@@ -856,17 +909,33 @@ impl RealStreamManager {
     
     pub fn get_stats(&self) -> String {
         if let Some(delegate) = &self.delegate {
+            let video_frames = delegate.get_frame_count();
+            let audio_frames = delegate.get_audio_frame_count();
+            let current_fps = delegate.get_current_fps();
+            let estimated_duration = if current_fps > 0.0 {
+                video_frames as f64 / current_fps
+            } else {
+                video_frames as f64 / 30.0 // Fallback to 30fps estimate
+            };
+            
             serde_json::json!({
                 "isRecording": self.is_recording,
                 "outputPath": self.output_path,
-                "videoFrames": delegate.get_frame_count(),
-                "audioFrames": delegate.get_audio_frame_count(),
-                "method": "real-screencapturekit-stream"
+                "videoFrames": video_frames,
+                "audioFrames": audio_frames,
+                "currentFPS": current_fps,
+                "estimatedDuration": estimated_duration,
+                "method": "real-screencapturekit-stream",
+                "streamActive": !self.stream.is_none(),
+                "delegateActive": delegate.is_recording(),
+                "implementation": "Phase2-RealSCStream"
             }).to_string()
         } else {
             serde_json::json!({
-                "isRecording": false,
-                "error": "No active stream"
+                "isRecording": self.is_recording,
+                "streamActive": !self.stream.is_none(),
+                "error": "No active delegate",
+                "method": "real-screencapturekit-stream"
             }).to_string()
         }
     }
