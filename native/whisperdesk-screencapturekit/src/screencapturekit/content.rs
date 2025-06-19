@@ -122,48 +122,53 @@ impl ShareableContent {
     }
     
     unsafe fn fetch_real_sc_shareable_content() -> Result<*mut SCShareableContent> {
-        // For now, use a synchronous approach to avoid thread safety issues
-        // In a full implementation, this would properly handle async ScreenCaptureKit calls
+        println!("🔍 Fetching real shareable content using ScreenCaptureKit API");
         
-        // Try to get shareable content synchronously
-        // This is a simplified approach - real implementation would need proper async handling
-        let sc_class = class!(SCShareableContent);
-        let content: *mut SCShareableContent = msg_send![sc_class, alloc];
-        let content: *mut SCShareableContent = msg_send![content, init];
-        
-        if content.is_null() {
-            return Err(Error::new(Status::GenericFailure, "Failed to create SCShareableContent"));
+        // Use the new synchronous helper from bindings
+        match ScreenCaptureKitHelpers::get_shareable_content_sync() {
+            Ok(content) => {
+                println!("✅ Successfully retrieved real ScreenCaptureKit content");
+                Ok(content)
+            }
+            Err(error) => {
+                println!("❌ Failed to get shareable content: {}", error);
+                Err(Error::new(Status::GenericFailure, format!("ScreenCaptureKit error: {}", error)))
+            }
         }
-        
-        // Note: In a real implementation, you would call getShareableContentWithCompletionHandler
-        // but for now we'll return the allocated object
-        // This is a placeholder that will be properly implemented when we have the full async infrastructure
-        
-        Ok(content)
     }
     
     unsafe fn extract_real_displays(sc_content: *mut SCShareableContent) -> Vec<DisplayInfo> {
         let mut displays = Vec::new();
         
+        if sc_content.is_null() {
+            println!("❌ SCShareableContent is null");
+            return displays;
+        }
+        
         // Get displays array from SCShareableContent
         let displays_array: *mut NSArray = msg_send![sc_content, displays];
         if displays_array.is_null() {
+            println!("⚠️ No displays array found");
             return displays;
         }
         
         let array = &*displays_array;
         let count = array.count();
+        println!("🔍 Found {} displays in ScreenCaptureKit", count);
         
         for i in 0..count {
             let display: *mut SCDisplay = msg_send![array, objectAtIndex: i];
             if !display.is_null() {
                 let (id, name, width, height) = ScreenCaptureKitHelpers::get_display_info(display);
+                println!("  Display {}: {} ({}x{})", id, name, width, height);
                 displays.push(DisplayInfo {
                     id,
                     name,
                     width,
                     height,
                 });
+            } else {
+                println!("⚠️ Display at index {} is null", i);
             }
         }
         
@@ -173,14 +178,21 @@ impl ShareableContent {
     unsafe fn extract_real_windows(sc_content: *mut SCShareableContent) -> Vec<WindowInfo> {
         let mut windows = Vec::new();
         
+        if sc_content.is_null() {
+            println!("❌ SCShareableContent is null for windows");
+            return windows;
+        }
+        
         // Get windows array from SCShareableContent
         let windows_array: *mut NSArray = msg_send![sc_content, windows];
         if windows_array.is_null() {
+            println!("⚠️ No windows array found");
             return windows;
         }
         
         let array = &*windows_array;
         let count = array.count();
+        println!("🔍 Found {} windows in ScreenCaptureKit", count);
         
         for i in 0..count {
             let window: *mut SCWindow = msg_send![array, objectAtIndex: i];
@@ -189,13 +201,18 @@ impl ShareableContent {
                 
                 // Filter out windows that are too small or have empty titles
                 if !title.is_empty() && width > 100 && height > 100 {
+                    println!("  Window {}: {} ({}x{})", id, title, width, height);
                     windows.push(WindowInfo {
                         id,
                         title,
                         width,
                         height,
                     });
+                } else {
+                    println!("  Skipping window {}: {} ({}x{}) - too small or empty title", id, title, width, height);
                 }
+            } else {
+                println!("⚠️ Window at index {} is null", i);
             }
         }
         

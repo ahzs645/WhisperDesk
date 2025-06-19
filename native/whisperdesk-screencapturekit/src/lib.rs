@@ -392,6 +392,22 @@ pub fn get_version() -> String {
 }
 
 #[napi]
+pub fn check_screen_recording_permission() -> Result<bool> {
+    unsafe {
+        let has_permission = screencapturekit::bindings::ScreenCaptureKitHelpers::check_screen_recording_permission();
+        Ok(has_permission)
+    }
+}
+
+#[napi]
+pub fn request_screen_recording_permission() -> Result<bool> {
+    unsafe {
+        let has_permission = screencapturekit::bindings::ScreenCaptureKitHelpers::request_screen_recording_permission();
+        Ok(has_permission)
+    }
+}
+
+#[napi]
 pub fn check_macos_version() -> Result<String> {
     // Check actual macOS version
     use std::process::Command;
@@ -419,6 +435,93 @@ pub fn check_macos_version() -> Result<String> {
 }
 
 // Test function to demonstrate Phase 2 capabilities
+#[napi]
+pub fn test_permissions_and_api() -> Result<String> {
+    let mut results = Vec::new();
+    
+    // Test 1: Check permissions
+    results.push("🔐 Permission Tests:".to_string());
+    match check_screen_recording_permission() {
+        Ok(has_permission) => {
+            if has_permission {
+                results.push("✅ Screen recording permission: GRANTED".to_string());
+            } else {
+                results.push("❌ Screen recording permission: DENIED".to_string());
+                results.push("💡 Please enable screen recording permission in System Preferences > Security & Privacy > Privacy > Screen Recording".to_string());
+            }
+        }
+        Err(e) => {
+            results.push(format!("❌ Permission check failed: {}", e));
+        }
+    }
+    
+    // Test 2: Try to get shareable content
+    results.push("\n🖥️ ScreenCaptureKit API Tests:".to_string());
+    match ContentManager::new() {
+        Ok(manager) => {
+            match manager.get_shareable_content() {
+                Ok(content) => {
+                    match content.get_displays() {
+                        Ok(displays) => {
+                            results.push(format!("✅ Found {} display(s)", displays.len()));
+                            for (i, display) in displays.iter().enumerate() {
+                                results.push(format!("  {}. {} ({}x{})", i + 1, display.name, display.width, display.height));
+                            }
+                        }
+                        Err(e) => {
+                            results.push(format!("❌ Failed to get displays: {}", e));
+                        }
+                    }
+                    
+                    match content.get_windows() {
+                        Ok(windows) => {
+                            results.push(format!("✅ Found {} window(s)", windows.len()));
+                            for (i, window) in windows.iter().take(5).enumerate() {
+                                results.push(format!("  {}. {} ({}x{})", i + 1, window.title, window.width, window.height));
+                            }
+                            if windows.len() > 5 {
+                                results.push(format!("  ... and {} more windows", windows.len() - 5));
+                            }
+                        }
+                        Err(e) => {
+                            results.push(format!("❌ Failed to get windows: {}", e));
+                        }
+                    }
+                }
+                Err(e) => {
+                    results.push(format!("❌ Failed to get shareable content: {}", e));
+                }
+            }
+        }
+        Err(e) => {
+            results.push(format!("❌ Failed to create ContentManager: {}", e));
+        }
+    }
+    
+    // Test 3: Audio devices
+    results.push("\n🎤 Audio Device Tests:".to_string());
+    match AudioManager::new() {
+        Ok(audio_manager) => {
+            match audio_manager.get_available_audio_devices() {
+                Ok(devices) => {
+                    results.push(format!("✅ Found {} audio device(s)", devices.len()));
+                    for (i, device) in devices.iter().enumerate() {
+                        results.push(format!("  {}. {} ({})", i + 1, device.name, device.device_type));
+                    }
+                }
+                Err(e) => {
+                    results.push(format!("❌ Failed to get audio devices: {}", e));
+                }
+            }
+        }
+        Err(e) => {
+            results.push(format!("❌ Failed to create AudioManager: {}", e));
+        }
+    }
+    
+    Ok(results.join("\n"))
+}
+
 #[napi]
 pub fn test_phase2_implementation() -> Result<String> {
     println!("🧪 Testing Phase 2 ScreenCaptureKit implementation");

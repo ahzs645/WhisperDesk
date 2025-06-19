@@ -45,7 +45,10 @@ export interface WindowInfo {
 }
 export declare function initScreencapturekit(): void
 export declare function getVersion(): string
+export declare function checkScreenRecordingPermission(): boolean
+export declare function requestScreenRecordingPermission(): boolean
 export declare function checkMacosVersion(): string
+export declare function testPermissionsAndApi(): string
 export declare function testPhase2Implementation(): string
 export declare class ContentManager {
   constructor()

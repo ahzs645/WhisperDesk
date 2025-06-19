@@ -310,7 +310,7 @@ if (!nativeBinding) {
   throw new Error(`Failed to load native binding`)
 }
 
-const { ContentManager, RealContentFilter, RealStreamManager, K_CV_PIXEL_FORMAT_TYPE_32_BGRA, K_CG_COLOR_SPACE_SRGB, K_CG_COLOR_SPACE_DISPLAY_P3, kCVPixelFormatType_32BGRA, kCGColorSpaceSRGB, ShareableContent, ScreenCaptureKitRecorder, initScreencapturekit, getVersion, checkMacosVersion, testPhase2Implementation, AudioManager } = nativeBinding
+const { ContentManager, RealContentFilter, RealStreamManager, K_CV_PIXEL_FORMAT_TYPE_32_BGRA, K_CG_COLOR_SPACE_SRGB, K_CG_COLOR_SPACE_DISPLAY_P3, kCVPixelFormatType_32BGRA, kCGColorSpaceSRGB, ShareableContent, ScreenCaptureKitRecorder, initScreencapturekit, getVersion, checkScreenRecordingPermission, requestScreenRecordingPermission, checkMacosVersion, testPermissionsAndApi, testPhase2Implementation, AudioManager } = nativeBinding
 
 module.exports.ContentManager = ContentManager
 module.exports.RealContentFilter = RealContentFilter
@@ -324,6 +324,9 @@ module.exports.ShareableContent = ShareableContent
 module.exports.ScreenCaptureKitRecorder = ScreenCaptureKitRecorder
 module.exports.initScreencapturekit = initScreencapturekit
 module.exports.getVersion = getVersion
+module.exports.checkScreenRecordingPermission = checkScreenRecordingPermission
+module.exports.requestScreenRecordingPermission = requestScreenRecordingPermission
 module.exports.checkMacosVersion = checkMacosVersion
+module.exports.testPermissionsAndApi = testPermissionsAndApi
 module.exports.testPhase2Implementation = testPhase2Implementation
 module.exports.AudioManager = AudioManager
