@@ -4,7 +4,7 @@ use crate::ScreenSource;
 use napi::bindgen_prelude::*;
 use objc2::runtime::AnyObject;
 use objc2::{msg_send, sel, class};
-use objc2_foundation::{NSArray, NSString};
+use objc2_foundation::{NSArray, NSString, NSDictionary, NSNumber};
 use std::ptr;
 
 use super::bindings::{SCShareableContent, SCDisplay, SCWindow, CGRect, ScreenCaptureKitHelpers};
@@ -134,12 +134,12 @@ impl ShareableContent {
                 }
                 Err(error) => {
                     println!("⚠️ Sync content retrieval failed: {}", error);
-                    println!("💡 Providing fallback content to avoid crashes");
+                    println!("💡 Using safe system content with Core Graphics APIs instead");
                     
-                    // Provide fallback content instead of failing completely
-                    content = Self::create_fallback_content();
+                    // Use safe system content with real Core Graphics APIs instead of fallback
+                    content = Self::create_safe_system_content();
                     
-                    println!("✅ Using fallback content with {} displays and {} windows", 
+                    println!("✅ Using safe system content with {} displays and {} windows", 
                         content.displays.len(), content.windows.len());
                     
                     Ok(content)
@@ -165,8 +165,8 @@ impl ShareableContent {
                 }
             }
             
-            // Add some basic window information (safer approach)
-            content.windows.extend(Self::get_basic_window_info());
+            // Get real window information using Core Graphics APIs
+            content.windows.extend(Self::get_real_window_info());
         }
         
         content
@@ -222,8 +222,165 @@ impl ShareableContent {
         }
     }
 
-    /// Safe basic window information
-    fn get_basic_window_info() -> Vec<WindowInfo> {
+    /// Get real window information using Core Graphics APIs
+    unsafe fn get_real_window_info() -> Vec<WindowInfo> {
+        println!("🔍 Getting real window information via Core Graphics APIs");
+        
+        extern "C" {
+            fn CGWindowListCopyWindowInfo(option: u32, relativeToWindow: u32) -> *mut objc2_foundation::NSArray;
+        }
+        
+        // Types already imported at module level
+        
+        // CGWindowListOption constants
+        const kCGWindowListOptionOnScreenOnly: u32 = 1 << 0;
+        const kCGWindowListExcludeDesktopElements: u32 = 1 << 4;
+        
+        let mut windows = Vec::new();
+        
+        // Get the window list from Core Graphics
+        let window_list_raw = CGWindowListCopyWindowInfo(
+            kCGWindowListOptionOnScreenOnly | kCGWindowListExcludeDesktopElements,
+            0
+        );
+        
+        if window_list_raw.is_null() {
+            println!("⚠️ Failed to get window list from Core Graphics, using fallback");
+            return Self::get_fallback_window_info();
+        }
+        
+        let window_list: &NSArray = &*window_list_raw;
+        let count = window_list.count();
+        
+        println!("🪟 Found {} windows via Core Graphics", count);
+        
+        for i in 0..count {
+            let window_dict_obj = window_list.objectAtIndex(i);
+            if let Ok(window_dict) = window_dict_obj.downcast::<NSDictionary>() {
+                // Extract window information from the dictionary
+                if let Some(window_info) = Self::extract_window_info_from_dict(&*window_dict, i as u32) {
+                    windows.push(window_info);
+                }
+            }
+        }
+        
+        // Release the window list
+        objc2::rc::autoreleasepool(|_| {
+            std::ptr::drop_in_place(window_list_raw);
+        });
+        
+        if windows.is_empty() {
+            println!("⚠️ No valid windows found, using fallback");
+            Self::get_fallback_window_info()
+        } else {
+            println!("✅ Successfully extracted {} real windows", windows.len());
+            windows
+        }
+    }
+    
+    /// Extract window information from Core Graphics window dictionary
+    unsafe fn extract_window_info_from_dict(window_dict: &NSDictionary, fallback_id: u32) -> Option<WindowInfo> {
+        
+        // Core Graphics window info keys
+        let window_number_key = NSString::from_str("kCGWindowNumber");
+        let window_name_key = NSString::from_str("kCGWindowName");
+        let window_owner_name_key = NSString::from_str("kCGWindowOwnerName");
+        let window_bounds_key = NSString::from_str("kCGWindowBounds");
+        
+        // Get window ID
+        let window_id = if let Some(number_obj) = window_dict.objectForKey(&window_number_key) {
+            if let Ok(number) = number_obj.downcast::<NSNumber>() {
+                number.intValue() as u32
+            } else {
+                fallback_id
+            }
+        } else {
+            fallback_id
+        };
+        
+        // Get window title (prefer kCGWindowName, fallback to kCGWindowOwnerName)
+        let title = if let Some(name_obj) = window_dict.objectForKey(&window_name_key) {
+            if let Ok(name_str) = name_obj.downcast::<NSString>() {
+                let title_str = name_str.to_string();
+                if !title_str.is_empty() {
+                    title_str
+                } else {
+                    // Fallback to owner name if window name is empty
+                    if let Some(owner_obj) = window_dict.objectForKey(&window_owner_name_key) {
+                        if let Ok(owner_str) = owner_obj.downcast::<NSString>() {
+                            owner_str.to_string()
+                        } else {
+                            "Unknown Window".to_string()
+                        }
+                    } else {
+                        "Unknown Window".to_string()
+                    }
+                }
+            } else {
+                "Unknown Window".to_string()
+            }
+        } else {
+            // No window name, try owner name
+            if let Some(owner_obj) = window_dict.objectForKey(&window_owner_name_key) {
+                if let Ok(owner_str) = owner_obj.downcast::<NSString>() {
+                    owner_str.to_string()
+                } else {
+                    "Unknown Window".to_string()
+                }
+            } else {
+                "Unknown Window".to_string()
+            }
+        };
+        
+        // Get window bounds
+        let (width, height) = if let Some(bounds_obj) = window_dict.objectForKey(&window_bounds_key) {
+            if let Ok(bounds_dict) = bounds_obj.downcast::<NSDictionary>() {
+                let width_key = NSString::from_str("Width");
+                let height_key = NSString::from_str("Height");
+                
+                let width = if let Some(width_obj) = bounds_dict.objectForKey(&width_key) {
+                    if let Ok(width_num) = width_obj.downcast::<NSNumber>() {
+                        width_num.intValue() as u32
+                    } else {
+                        800 // Default width
+                    }
+                } else {
+                    800
+                };
+                
+                let height = if let Some(height_obj) = bounds_dict.objectForKey(&height_key) {
+                    if let Ok(height_num) = height_obj.downcast::<NSNumber>() {
+                        height_num.intValue() as u32
+                    } else {
+                        600 // Default height
+                    }
+                } else {
+                    600
+                };
+                
+                (width, height)
+            } else {
+                (800, 600) // Default size
+            }
+        } else {
+            (800, 600) // Default size
+        };
+        
+        // Filter out windows that are too small or have empty titles
+        if title.is_empty() || width < 100 || height < 100 {
+            return None;
+        }
+        
+        Some(WindowInfo {
+            id: window_id,
+            title,
+            width,
+            height,
+        })
+    }
+    
+    /// Fallback window information when Core Graphics APIs fail
+    fn get_fallback_window_info() -> Vec<WindowInfo> {
         vec![
             WindowInfo {
                 id: 1,
@@ -252,13 +409,8 @@ impl ShareableContent {
             height: 1080,
         });
         
-        // Add some common application windows as fallback
-        content.windows.push(WindowInfo {
-            id: 1001,
-            title: "Desktop".to_string(),
-            width: 1920,
-            height: 1080,
-        });
+        // Add fallback windows
+        content.windows.extend(Self::get_fallback_window_info());
         
         content
     }
@@ -336,12 +488,12 @@ impl ShareableContent {
                 }
                 Some(Err(e)) => {
                     println!("⚠️ ScreenCaptureKit error: {}", e);
-                    println!("💡 Providing fallback content to avoid crashes");
+                    println!("💡 Using safe system content with Core Graphics APIs instead");
                     
-                    // Provide fallback content instead of failing
-                    content = Self::create_fallback_content();
+                    // Use safe system content with real Core Graphics APIs instead of fallback
+                    content = Self::create_safe_system_content();
                     
-                    println!("✅ Using fallback content with {} displays and {} windows", 
+                    println!("✅ Using safe system content with {} displays and {} windows", 
                         content.displays.len(), content.windows.len());
                     
                     Ok(content)
