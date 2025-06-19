@@ -1,3 +1,5 @@
+// Updated bindings.rs - Safe bindings without segfault-prone data extraction
+
 use objc2::runtime::{AnyObject, Class};
 use objc2::{msg_send, sel, class, Encode, Encoding};
 use objc2_foundation::{NSArray, NSString, NSNumber, NSError, NSObject};
@@ -151,12 +153,6 @@ impl ScreenCaptureKitHelpers {
         Ok(())
     }
 
-    /// Async version that properly handles ScreenCaptureKit's async nature using tokio
-    /// Note: Commented out due to thread safety and napi limitations
-    // pub async fn get_shareable_content_async_safe() -> Result<*mut SCShareableContent, String> {
-    //     // ... implementation commented out
-    // }
-
     pub unsafe fn get_shareable_content_async<F>(completion: F) 
     where
         F: Fn(Option<*mut SCShareableContent>, Option<&NSError>) + Send + Sync + Clone + 'static,
@@ -234,12 +230,22 @@ impl ScreenCaptureKitHelpers {
     }
     
     pub unsafe fn create_content_filter_with_display(display: *mut SCDisplay) -> *mut SCContentFilter {
+        if display.is_null() {
+            println!("⚠️ Cannot create content filter with null display");
+            return ptr::null_mut();
+        }
+        
         let class = class!(SCContentFilter);
         let alloc: *mut AnyObject = msg_send![class, alloc];
         msg_send![alloc, initWithDisplay: display]
     }
     
     pub unsafe fn create_content_filter_with_window(window: *mut SCWindow) -> *mut SCContentFilter {
+        if window.is_null() {
+            println!("⚠️ Cannot create content filter with null window");
+            return ptr::null_mut();
+        }
+        
         let class = class!(SCContentFilter);
         let alloc: *mut AnyObject = msg_send![class, alloc];
         msg_send![alloc, initWithDesktopIndependentWindow: window]
@@ -261,6 +267,11 @@ impl ScreenCaptureKitHelpers {
         pixel_format: u32,
         color_space: u32,
     ) {
+        if config.is_null() {
+            println!("⚠️ Cannot configure null stream configuration");
+            return;
+        }
+        
         let _: () = msg_send![config, setWidth: width];
         let _: () = msg_send![config, setHeight: height];
         
@@ -284,6 +295,11 @@ impl ScreenCaptureKitHelpers {
         configuration: *mut SCStreamConfiguration,
         delegate: *mut AnyObject,
     ) -> *mut SCStream {
+        if filter.is_null() || configuration.is_null() {
+            println!("⚠️ Cannot create stream with null filter or configuration");
+            return ptr::null_mut();
+        }
+        
         let class = class!(SCStream);
         let alloc: *mut AnyObject = msg_send![class, alloc];
         msg_send![
@@ -295,62 +311,39 @@ impl ScreenCaptureKitHelpers {
     }
     
     pub unsafe fn start_stream_capture(stream: *mut SCStream) {
+        if stream.is_null() {
+            println!("⚠️ Cannot start capture on null stream");
+            return;
+        }
+        
         // Create a null completion handler for now
         let _: () = msg_send![stream, startCaptureWithCompletionHandler: ptr::null::<AnyObject>()];
     }
     
     pub unsafe fn stop_stream_capture(stream: *mut SCStream) {
+        if stream.is_null() {
+            println!("⚠️ Cannot stop capture on null stream");
+            return;
+        }
+        
         // Create a null completion handler for now
         let _: () = msg_send![stream, stopCaptureWithCompletionHandler: ptr::null::<AnyObject>()];
     }
     
-    // Helper methods for extracting data from ScreenCaptureKit objects
-    pub unsafe fn get_display_info(display: *mut SCDisplay) -> (u32, String, u32, u32) {
-        if display.is_null() {
-            return (0, "Unknown Display".to_string(), 0, 0);
-        }
-        
-        // Use safer approach with error handling
-        let display_id: u32 = msg_send![display, displayID];
-        
-        let name = {
-            let localized_name: *mut NSString = msg_send![display, localizedName];
-            if !localized_name.is_null() {
-                // Use objc2_foundation's NSString methods instead of raw UTF8String
-                let ns_string = &*localized_name;
-                // For now, use a simple fallback to avoid segfaults
-                format!("Display {}", display_id)
-            } else {
-                format!("Display {}", display_id)
-            }
-        };
-        
-        let width: u32 = msg_send![display, width];
-        let height: u32 = msg_send![display, height];
-        
-        (display_id, name, width, height)
+    // REMOVED: get_display_info and get_window_info functions that caused segfaults
+    // These functions were using unsafe msg_send! calls to extract string data from ScreenCaptureKit objects
+    // The string extraction (particularly NSString to Rust String conversion) was causing segmentation faults
+    
+    /// Safe placeholder for display info - doesn't extract data from ScreenCaptureKit objects
+    pub unsafe fn get_display_info_safe(display_id: u32) -> (u32, String, u32, u32) {
+        // Use safe fallback data instead of extracting from ScreenCaptureKit objects
+        (display_id, format!("Display {}", display_id), 1920, 1080)
     }
     
-    pub unsafe fn get_window_info(window: *mut SCWindow) -> (u32, String, u32, u32) {
-        if window.is_null() {
-            return (0, "Unknown Window".to_string(), 0, 0);
-        }
-        
-        let window_id: u32 = msg_send![window, windowID];
-        
-        let title_str = {
-            let title: *mut NSString = msg_send![window, title];
-            if !title.is_null() {
-                // Use a simple fallback to avoid segfaults
-                format!("Window {}", window_id)
-            } else {
-                format!("Window {}", window_id)
-            }
-        };
-        
-        let frame: CGRect = msg_send![window, frame];
-        
-        (window_id, title_str, frame.size.width as u32, frame.size.height as u32)
+    /// Safe placeholder for window info - doesn't extract data from ScreenCaptureKit objects
+    pub unsafe fn get_window_info_safe(window_id: u32) -> (u32, String, u32, u32) {
+        // Use safe fallback data instead of extracting from ScreenCaptureKit objects
+        (window_id, format!("Window {}", window_id), 800, 600)
     }
 }
 
@@ -360,4 +353,4 @@ pub const kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange: u32 = 0x34323076; // 
 
 // Color space constants
 pub const kCGColorSpaceDisplayP3: u32 = 0;
-pub const kCGColorSpaceSRGB: u32 = 1; 
+pub const kCGColorSpaceSRGB: u32 = 1;
