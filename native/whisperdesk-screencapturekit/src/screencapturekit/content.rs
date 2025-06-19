@@ -383,7 +383,7 @@ impl ShareableContent {
             let result_holder = Arc::new((Mutex::new(None), Condvar::new()));
             let result_holder_clone = result_holder.clone();
             
-            ScreenCaptureKitHelpers::get_shareable_content_with_completion(move |sc_content_opt, error_opt| {
+            ScreenCaptureKitHelpers::get_shareable_content_async(move |sc_content_opt, error_opt| {
                 let (lock, cvar) = &*result_holder_clone;
                 
                 let result = match (sc_content_opt, error_opt) {
@@ -405,7 +405,7 @@ impl ShareableContent {
                     *holder = Some(result);
                     cvar.notify_one();
                 }
-            }).map_err(|e| Error::new(Status::GenericFailure, format!("Completion handler setup failed: {}", e)))?;
+            });
             
             let (lock, cvar) = &*result_holder;
             let timeout_duration = Duration::from_millis(timeout_ms as u64);
@@ -471,7 +471,7 @@ impl ShareableContent {
         let result_holder = Arc::new((Mutex::new(None), Condvar::new()));
         let result_holder_clone = result_holder.clone();
         
-        ScreenCaptureKitHelpers::get_shareable_content_with_completion(move |sc_content_opt, error_opt| {
+        ScreenCaptureKitHelpers::get_shareable_content_async(move |sc_content_opt, error_opt| {
             let (lock, cvar) = &*result_holder_clone;
             
             let result = match (sc_content_opt, error_opt) {
@@ -493,7 +493,7 @@ impl ShareableContent {
                 *holder = Some(result);
                 cvar.notify_one();
             }
-        }).map_err(|e| Error::new(Status::GenericFailure, format!("Completion handler setup failed: {}", e)))?;
+        });
         
         let (lock, cvar) = &*result_holder;
         let timeout_duration = Duration::from_millis(3000);

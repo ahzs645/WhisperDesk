@@ -1,8 +1,0 @@
-/Users/ahzs645/Github/WhisperDesk/native/whisperdesk-screencapturekit/target/debug/deps/libobjc2_quartz_core-836cdb3fd1884038.rmeta: /Users/ahzs645/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/objc2-quartz-core-0.3.1/src/lib.rs /Users/ahzs645/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/objc2-quartz-core-0.3.1/src/generated/mod.rs /Users/ahzs645/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/objc2-quartz-core-0.3.1/src/generated/CALayer.rs /Users/ahzs645/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/objc2-quartz-core-0.3.1/src/generated/CAMediaTiming.rs
-
-/Users/ahzs645/Github/WhisperDesk/native/whisperdesk-screencapturekit/target/debug/deps/objc2_quartz_core-836cdb3fd1884038.d: /Users/ahzs645/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/objc2-quartz-core-0.3.1/src/lib.rs /Users/ahzs645/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/objc2-quartz-core-0.3.1/src/generated/mod.rs /Users/ahzs645/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/objc2-quartz-core-0.3.1/src/generated/CALayer.rs /Users/ahzs645/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/objc2-quartz-core-0.3.1/src/generated/CAMediaTiming.rs
-
-/Users/ahzs645/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/objc2-quartz-core-0.3.1/src/lib.rs:
-/Users/ahzs645/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/objc2-quartz-core-0.3.1/src/generated/mod.rs:
-/Users/ahzs645/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/objc2-quartz-core-0.3.1/src/generated/CALayer.rs:
-/Users/ahzs645/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/objc2-quartz-core-0.3.1/src/generated/CAMediaTiming.rs:
