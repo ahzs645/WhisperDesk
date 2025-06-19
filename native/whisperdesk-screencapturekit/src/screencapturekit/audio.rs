@@ -77,26 +77,10 @@ impl AudioManager {
             }
         }
         
-        // If no devices found via API, add some common fallback devices
+        // If no devices found via API, log the issue but don't add mock devices
         if devices.is_empty() {
-            println!("⚠️ No devices found via AVFoundation, adding fallback devices");
-            devices.extend(vec![
-                AudioDevice {
-                    id: "builtin-mic".to_string(),
-                    name: "Built-in Microphone".to_string(),
-                    device_type: "microphone".to_string(),
-                },
-                AudioDevice {
-                    id: "builtin-output".to_string(),
-                    name: "Built-in Output".to_string(),
-                    device_type: "speaker".to_string(),
-                },
-                AudioDevice {
-                    id: "system-audio".to_string(),
-                    name: "System Audio".to_string(),
-                    device_type: "system".to_string(),
-                },
-            ]);
+            println!("⚠️ No audio devices found via AVFoundation - this may indicate a permissions issue");
+            return Err(Error::new(Status::GenericFailure, "No audio devices available. Check microphone permissions."));
         }
         
         println!("✅ Found {} real audio devices", devices.len());

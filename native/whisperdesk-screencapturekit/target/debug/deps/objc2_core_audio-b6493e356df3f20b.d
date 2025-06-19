@@ -1,0 +1,8 @@
+/Users/ahzs645/Github/WhisperDesk/native/whisperdesk-screencapturekit/target/debug/deps/libobjc2_core_audio-b6493e356df3f20b.rmeta: /Users/ahzs645/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/objc2-core-audio-0.3.1/src/lib.rs /Users/ahzs645/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/objc2-core-audio-0.3.1/src/generated/mod.rs /Users/ahzs645/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/objc2-core-audio-0.3.1/src/generated/AudioHardware.rs /Users/ahzs645/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/objc2-core-audio-0.3.1/src/generated/AudioHardwareDeprecated.rs
+
+/Users/ahzs645/Github/WhisperDesk/native/whisperdesk-screencapturekit/target/debug/deps/objc2_core_audio-b6493e356df3f20b.d: /Users/ahzs645/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/objc2-core-audio-0.3.1/src/lib.rs /Users/ahzs645/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/objc2-core-audio-0.3.1/src/generated/mod.rs /Users/ahzs645/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/objc2-core-audio-0.3.1/src/generated/AudioHardware.rs /Users/ahzs645/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/objc2-core-audio-0.3.1/src/generated/AudioHardwareDeprecated.rs
+
+/Users/ahzs645/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/objc2-core-audio-0.3.1/src/lib.rs:
+/Users/ahzs645/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/objc2-core-audio-0.3.1/src/generated/mod.rs:
+/Users/ahzs645/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/objc2-core-audio-0.3.1/src/generated/AudioHardware.rs:
+/Users/ahzs645/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/objc2-core-audio-0.3.1/src/generated/AudioHardwareDeprecated.rs:

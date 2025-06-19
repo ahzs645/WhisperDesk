@@ -1,0 +1,4 @@
+std::sync::mpsc::Sender<std::result::Result<*mut AnyObject, std::string::String>>
+Option<std::sync::mpsc::Sender<std::result::Result<*mut AnyObject, std::string::String>>>
+Mutex<Option<std::sync::mpsc::Sender<std::result::Result<*mut AnyObject, std::string::String>>>>
+Arc<Mutex<Option<std::sync::mpsc::Sender<std::result::Result<*mut AnyObject, std::string::String>>>>>

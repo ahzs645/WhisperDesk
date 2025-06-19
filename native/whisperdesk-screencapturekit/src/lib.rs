@@ -129,11 +129,15 @@ impl RealStreamManager {
     
     #[napi]
     pub fn get_capture_stats(&self) -> String {
+        // This method should be called on an active stream manager instance
+        // For now, return empty stats indicating no active recording
         serde_json::json!({
-            "videoFrames": 150,
-            "audioSamples": 22050,
-            "duration": 5.0,
-            "outputPath": "/tmp/test-output"
+            "videoFrames": 0,
+            "audioSamples": 0,
+            "duration": 0.0,
+            "outputPath": null,
+            "isRecording": false,
+            "error": "No active recording session"
         }).to_string()
     }
 }
@@ -368,15 +372,7 @@ impl ScreenCaptureKitRecorder {
         }
     }
 
-    // Legacy method - will be removed
-    fn create_content_filter(
-        &self,
-        _content: &screencapturekit::content::ShareableContent,
-        screen_id: &str,
-    ) -> Result<screencapturekit::stream::RealContentFilter> {
-        // Redirect to real implementation
-        self.create_real_content_filter(_content, screen_id)
-    }
+
 }
 
 #[napi]

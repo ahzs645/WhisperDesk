@@ -191,49 +191,43 @@ enum ContentFilterType {
 }
 
 impl RealContentFilter {
-    pub fn new_with_display(_content: &ShareableContent, display_id: u32) -> Result<Self> {
+    pub fn new_with_display(content: &ShareableContent, display_id: u32) -> Result<Self> {
         unsafe {
-            // In a real implementation, this would:
-            // 1. Get the SCDisplay from the ShareableContent
-            // 2. Create an SCContentFilter with that display
-            
-            // For now, create a placeholder filter that won't crash
-            let display_ptr = _content.get_sc_display_by_id(display_id);
-            let filter_ptr = if let Some(display) = display_ptr {
-                ScreenCaptureKitHelpers::create_content_filter_with_display(display)
+            // Get the real SCDisplay from ShareableContent
+            if let Some(sc_display) = content.get_sc_display_by_id(display_id) {
+                let filter_ptr = ScreenCaptureKitHelpers::create_content_filter_with_display(sc_display);
+                if filter_ptr.is_null() {
+                    return Err(Error::new(Status::GenericFailure, "Failed to create display content filter"));
+                }
+                
+                println!("✅ Created real display content filter for display {}", display_id);
+                Ok(Self {
+                    filter_ptr,
+                    filter_type: ContentFilterType::Display(display_id),
+                })
             } else {
-                // Create a null pointer for now - this will be properly implemented in Phase 3
-                ptr::null_mut()
-            };
-            
-            println!("🎯 Created display content filter for display {} (Phase 2 foundation)", display_id);
-            Ok(Self {
-                filter_ptr,
-                filter_type: ContentFilterType::Display(display_id),
-            })
+                Err(Error::new(Status::InvalidArg, format!("Display with ID {} not found", display_id)))
+            }
         }
     }
     
-    pub fn new_with_window(_content: &ShareableContent, window_id: u32) -> Result<Self> {
+    pub fn new_with_window(content: &ShareableContent, window_id: u32) -> Result<Self> {
         unsafe {
-            // In a real implementation, this would:
-            // 1. Get the SCWindow from the ShareableContent
-            // 2. Create an SCContentFilter with that window
-            
-            // For now, create a placeholder filter that won't crash
-            let window_ptr = _content.get_sc_window_by_id(window_id);
-            let filter_ptr = if let Some(window) = window_ptr {
-                ScreenCaptureKitHelpers::create_content_filter_with_window(window)
+            // Get the real SCWindow from ShareableContent
+            if let Some(sc_window) = content.get_sc_window_by_id(window_id) {
+                let filter_ptr = ScreenCaptureKitHelpers::create_content_filter_with_window(sc_window);
+                if filter_ptr.is_null() {
+                    return Err(Error::new(Status::GenericFailure, "Failed to create window content filter"));
+                }
+                
+                println!("✅ Created real window content filter for window {}", window_id);
+                Ok(Self {
+                    filter_ptr,
+                    filter_type: ContentFilterType::Window(window_id),
+                })
             } else {
-                // Create a null pointer for now - this will be properly implemented in Phase 3
-                ptr::null_mut()
-            };
-            
-            println!("🎯 Created window content filter for window {} (Phase 2 foundation)", window_id);
-            Ok(Self {
-                filter_ptr,
-                filter_type: ContentFilterType::Window(window_id),
-            })
+                Err(Error::new(Status::InvalidArg, format!("Window with ID {} not found", window_id)))
+            }
         }
     }
     
@@ -246,43 +240,5 @@ impl RealContentFilter {
     }
 }
 
-// Legacy compatibility - will be removed once all references are updated
-pub struct StreamManager {
-    real_manager: RealStreamManager,
-}
-
-impl StreamManager {
-    pub fn new() -> Self {
-        Self {
-            real_manager: RealStreamManager::new(),
-        }
-    }
-    
-    pub async fn start_recording(
-        &mut self,
-        _content_filter: MockContentFilter,
-        config: RecordingConfiguration,
-    ) -> Result<()> {
-        // Convert mock filter to real filter
-        let real_filter = RealContentFilter::new_with_display(&ShareableContent::new(), 1)?;
-        
-        self.real_manager.start_recording(real_filter, config)
-    }
-    
-    pub async fn stop_recording(&mut self) -> Result<String> {
-        self.real_manager.stop_recording()
-    }
-    
-    pub async fn is_recording(&self) -> bool {
-        self.real_manager.is_recording()
-    }
-}
-
-// Temporary mock structure for backward compatibility
-pub struct MockContentFilter;
-
-impl MockContentFilter {
-    pub fn new() -> Self {
-        Self {}
-    }
-} 
+// Note: Legacy StreamManager and MockContentFilter have been removed.
+// All code should now use RealStreamManager and RealContentFilter directly. 

@@ -10,7 +10,7 @@ pub mod encoder;
 // Re-export key types for easier access
 pub use content::{ContentManager, ShareableContent, DisplayInfo, WindowInfo};
 pub use audio::AudioManager;
-pub use stream::{RealStreamManager, RealContentFilter, StreamManager, MockContentFilter};
+pub use stream::{RealStreamManager, RealContentFilter};
 pub use delegate::RealStreamDelegate;
 pub use encoder::{VideoEncoder, AudioEncoder};
 pub use bindings::{

@@ -8,10 +8,7 @@ use objc2_core_video::{CVImageBuffer, CVPixelBuffer};
 use super::bindings::{SCStream, SCStreamDelegate, SCStreamOutputType};
 use super::encoder::{VideoEncoder, AudioEncoder};
 
-// For now, we'll use a simpler approach without declare_class macro
-// This will be a placeholder implementation that can be extended later
-
-// Real SCStreamDelegate implementation
+// Real SCStreamDelegate implementation using objc2 bindings
 pub struct RealStreamDelegate {
     output_path: String,
     is_recording: Arc<Mutex<bool>>,
