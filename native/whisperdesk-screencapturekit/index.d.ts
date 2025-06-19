@@ -49,7 +49,7 @@ export declare function checkScreenRecordingPermission(): boolean
 export declare function requestScreenRecordingPermission(): boolean
 export declare function checkMacosVersion(): string
 export declare function testPermissionsAndApi(): string
-/** Test function for the improved ScreenCaptureKit implementation with timeout */
+/** Test function for the segfault-safe ScreenCaptureKit implementation */
 export declare function testScreencapturekitWithTimeout(): string
 export declare function testPhase2Implementation(): string
 export declare class ContentManager {
@@ -75,8 +75,10 @@ export declare class ShareableContent {
   getWindows(): Array<WindowInfo>
   get displays(): Array<DisplayInfo>
   get windows(): Array<WindowInfo>
-  getScDisplayById(displayId: number): bigint | null
-  getScWindowById(windowId: number): bigint | null
+  hasDisplay(displayId: number): boolean
+  hasWindow(windowId: number): boolean
+  getDisplayInfo(displayId: number): DisplayInfo | null
+  getWindowInfo(windowId: number): WindowInfo | null
 }
 export declare class ScreenCaptureKitRecorder {
   constructor()
