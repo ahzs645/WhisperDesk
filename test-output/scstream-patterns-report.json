@@ -1,0 +1,73 @@
+{
+  "timestamp": "2025-06-19T04:58:52.855Z",
+  "config": {
+    "timeout": 10000,
+    "display_id": "display:1",
+    "output_path": "/tmp/scstream-pattern-test.mp4",
+    "patterns": [
+      {
+        "id": 1,
+        "name": "Deferred Delegate Assignment",
+        "description": "Create stream without delegate, then assign"
+      },
+      {
+        "id": 2,
+        "name": "Minimal Delegate Approach",
+        "description": "Use minimal NSObject delegate"
+      },
+      {
+        "id": 3,
+        "name": "Factory Method Pattern",
+        "description": "Use different SCStream factory methods"
+      },
+      {
+        "id": 4,
+        "name": "Step-by-Step Initialization",
+        "description": "Break initialization into smallest steps"
+      }
+    ]
+  },
+  "results": [
+    {
+      "patternId": 1,
+      "patternName": "Deferred Delegate Assignment",
+      "success": false,
+      "segfault": false,
+      "exitCode": 1,
+      "signal": null,
+      "output": "🔍 Initializing ScreenCaptureKit recorder...\n🦀 Creating new ScreenCaptureKit recorder with objc2\n🔍 Getting available screens...\n📺 Getting available screens via ScreenCaptureKit with timeout handling\n🔍 Fetching real shareable content from ScreenCaptureKit with 3000ms timeout\n🛡️ COMPLETE BYPASS MODE: Using only safe system content to prevent crashes\n💡 This approach provides reliable screen/window enumeration without ScreenCaptureKit risks\n🔍 Creating safe system content using Core Graphics APIs\n🔍 Getting real window information via Core Graphics APIs\n✅ Retrieved 1 displays and 10 windows using safe system APIs\n✅ Extracted 11 screen sources from real ScreenCaptureKit data\n✅ Found 11 screen sources via timeout-protected API\n✅ Found 11 screens\n🎬 Starting recording with Pattern 1...\n❌ Pattern 1 FAILED: Missing field `outputPath`\n"
+    },
+    {
+      "patternId": 2,
+      "patternName": "Minimal Delegate Approach",
+      "success": false,
+      "segfault": false,
+      "exitCode": 1,
+      "signal": null,
+      "output": "🔍 Initializing ScreenCaptureKit recorder...\n🦀 Creating new ScreenCaptureKit recorder with objc2\n🔍 Getting available screens...\n📺 Getting available screens via ScreenCaptureKit with timeout handling\n🔍 Fetching real shareable content from ScreenCaptureKit with 3000ms timeout\n🛡️ COMPLETE BYPASS MODE: Using only safe system content to prevent crashes\n💡 This approach provides reliable screen/window enumeration without ScreenCaptureKit risks\n🔍 Creating safe system content using Core Graphics APIs\n🔍 Getting real window information via Core Graphics APIs\n✅ Retrieved 1 displays and 10 windows using safe system APIs\n✅ Extracted 11 screen sources from real ScreenCaptureKit data\n✅ Found 11 screen sources via timeout-protected API\n✅ Found 11 screens\n🎬 Starting recording with Pattern 2...\n❌ Pattern 2 FAILED: Missing field `outputPath`\n"
+    },
+    {
+      "patternId": 3,
+      "patternName": "Factory Method Pattern",
+      "success": false,
+      "segfault": false,
+      "exitCode": 1,
+      "signal": null,
+      "output": "🔍 Initializing ScreenCaptureKit recorder...\n🦀 Creating new ScreenCaptureKit recorder with objc2\n🔍 Getting available screens...\n📺 Getting available screens via ScreenCaptureKit with timeout handling\n🔍 Fetching real shareable content from ScreenCaptureKit with 3000ms timeout\n🛡️ COMPLETE BYPASS MODE: Using only safe system content to prevent crashes\n💡 This approach provides reliable screen/window enumeration without ScreenCaptureKit risks\n🔍 Creating safe system content using Core Graphics APIs\n🔍 Getting real window information via Core Graphics APIs\n✅ Retrieved 1 displays and 10 windows using safe system APIs\n✅ Extracted 11 screen sources from real ScreenCaptureKit data\n✅ Found 11 screen sources via timeout-protected API\n✅ Found 11 screens\n🎬 Starting recording with Pattern 3...\n❌ Pattern 3 FAILED: Missing field `outputPath`\n"
+    },
+    {
+      "patternId": 4,
+      "patternName": "Step-by-Step Initialization",
+      "success": false,
+      "segfault": false,
+      "exitCode": 1,
+      "signal": null,
+      "output": "🔍 Initializing ScreenCaptureKit recorder...\n🦀 Creating new ScreenCaptureKit recorder with objc2\n🔍 Getting available screens...\n📺 Getting available screens via ScreenCaptureKit with timeout handling\n🔍 Fetching real shareable content from ScreenCaptureKit with 3000ms timeout\n🛡️ COMPLETE BYPASS MODE: Using only safe system content to prevent crashes\n💡 This approach provides reliable screen/window enumeration without ScreenCaptureKit risks\n🔍 Creating safe system content using Core Graphics APIs\n🔍 Getting real window information via Core Graphics APIs\n✅ Retrieved 1 displays and 10 windows using safe system APIs\n✅ Extracted 11 screen sources from real ScreenCaptureKit data\n✅ Found 11 screen sources via timeout-protected API\n✅ Found 11 screens\n🎬 Starting recording with Pattern 4...\n❌ Pattern 4 FAILED: Missing field `outputPath`\n"
+    }
+  ],
+  "summary": {
+    "successful": 0,
+    "failed": 4,
+    "segfaults": 0
+  }
+}

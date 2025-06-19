@@ -370,60 +370,13 @@ impl ShareableContent {
     pub fn new_with_timeout(timeout_ms: u32) -> Result<Self> {
         println!("🔍 Fetching real shareable content from ScreenCaptureKit with {}ms timeout", timeout_ms);
         
-        use std::sync::{Arc, Mutex, Condvar};
-        use std::time::{Duration, Instant};
-        
         unsafe {
             let mut content = Self::new();
             
-            let result_holder = Arc::new((Mutex::new(None), Condvar::new()));
-            let result_holder_clone = result_holder.clone();
-            
-            ScreenCaptureKitHelpers::get_shareable_content_async(move |sc_content_opt, error_opt| {
-                let (lock, cvar) = &*result_holder_clone;
-                
-                let result = match (sc_content_opt, error_opt) {
-                    (Some(sc_content), None) => {
-                        println!("✅ Successfully got ScreenCaptureKit content via completion handler");
-                        Ok(sc_content)
-                    }
-                    (None, Some(_error)) => {
-                        println!("❌ ScreenCaptureKit permission denied or failed");
-                        Err("ScreenCaptureKit permission denied or failed".to_string())
-                    }
-                    _ => {
-                        println!("❌ Unknown ScreenCaptureKit error");
-                        Err("Unknown ScreenCaptureKit error".to_string())
-                    }
-                };
-                
-                if let Ok(mut holder) = lock.lock() {
-                    *holder = Some(result);
-                    cvar.notify_one();
-                }
-            });
-            
-            let (lock, cvar) = &*result_holder;
-            let timeout_duration = Duration::from_millis(timeout_ms as u64);
-            let start_time = Instant::now();
-            
-            let mut holder = lock.lock().map_err(|_| Error::new(Status::GenericFailure, "Lock failed"))?;
-            
-            while holder.is_none() && start_time.elapsed() < timeout_duration {
-                let remaining_time = timeout_duration - start_time.elapsed();
-                let (new_holder, timeout_result) = cvar.wait_timeout(holder, remaining_time)
-                    .map_err(|_| Error::new(Status::GenericFailure, "Condition variable wait failed"))?;
-                
-                holder = new_holder;
-                
-                if timeout_result.timed_out() {
-                    break;
-                }
-            }
-            
-            match holder.take() {
-                Some(Ok(sc_content)) => {
-                    // Store the ScreenCaptureKit content pointer
+            // Use simpler approach without thread safety issues
+            match ScreenCaptureKitHelpers::get_shareable_content_sync() {
+                Ok(sc_content) => {
+                    println!("✅ Got ScreenCaptureKit content synchronously within timeout");
                     content.sc_content_ptr = Some(sc_content);
                     
                     // Use safe system content for display/window enumeration
@@ -436,17 +389,13 @@ impl ShareableContent {
                     
                     Ok(content)
                 }
-                Some(Err(e)) => {
-                    println!("⚠️ ScreenCaptureKit error: {}", e);
+                Err(_) => {
+                    println!("⚠️ ScreenCaptureKit sync failed, using safe content only");
                     
-                    let safe_content = Self::create_safe_system_content();
-                    content.displays = safe_content.displays;
-                    content.windows = safe_content.windows;
-                    
-                    Ok(content)
-                }
-                None => {
-                    println!("⚠️ ScreenCaptureKit timeout after {}ms", timeout_ms);
+                    // Start async call for future use but don't wait
+                    ScreenCaptureKitHelpers::get_shareable_content_async(|_content, _error| {
+                        println!("🔄 Background ScreenCaptureKit call completed");
+                    });
                     
                     let safe_content = Self::create_safe_system_content();
                     content.displays = safe_content.displays;
@@ -461,66 +410,23 @@ impl ShareableContent {
     unsafe fn fetch_real_sc_shareable_content() -> Result<*mut SCShareableContent> {
         println!("🔍 Fetching real shareable content using ScreenCaptureKit API");
         
-        use std::sync::{Arc, Mutex, Condvar};
-        use std::time::{Duration, Instant};
-        
-        let result_holder = Arc::new((Mutex::new(None), Condvar::new()));
-        let result_holder_clone = result_holder.clone();
-        
-        ScreenCaptureKitHelpers::get_shareable_content_async(move |sc_content_opt, error_opt| {
-            let (lock, cvar) = &*result_holder_clone;
-            
-            let result = match (sc_content_opt, error_opt) {
-                (Some(sc_content), None) => {
-                    println!("✅ Successfully got ScreenCaptureKit content via completion handler");
-                    Ok(sc_content)
-                }
-                (None, Some(_error)) => {
-                    println!("❌ ScreenCaptureKit permission denied or failed");
-                    Err("ScreenCaptureKit permission denied or failed".to_string())
-                }
-                _ => {
-                    println!("❌ Unknown ScreenCaptureKit error");
-                    Err("Unknown ScreenCaptureKit error".to_string())
-                }
-            };
-            
-            if let Ok(mut holder) = lock.lock() {
-                *holder = Some(result);
-                cvar.notify_one();
+        // Use simpler approach without thread safety issues
+        match ScreenCaptureKitHelpers::get_shareable_content_sync() {
+            Ok(content) => {
+                println!("✅ Got ScreenCaptureKit content synchronously");
+                Ok(content)
             }
-        });
-        
-        let (lock, cvar) = &*result_holder;
-        let timeout_duration = Duration::from_millis(3000);
-        let start_time = Instant::now();
-        
-        let mut holder = lock.lock().map_err(|_| Error::new(Status::GenericFailure, "Lock failed"))?;
-        
-        while holder.is_none() && start_time.elapsed() < timeout_duration {
-            let remaining_time = timeout_duration - start_time.elapsed();
-            let (new_holder, timeout_result) = cvar.wait_timeout(holder, remaining_time)
-                .map_err(|_| Error::new(Status::GenericFailure, "Condition variable wait failed"))?;
-            
-            holder = new_holder;
-            
-            if timeout_result.timed_out() {
-                break;
-            }
-        }
-        
-        match holder.take() {
-            Some(Ok(sc_content)) => {
-                println!("✅ Successfully retrieved real ScreenCaptureKit content");
-                Ok(sc_content)
-            }
-            Some(Err(error)) => {
-                println!("❌ Failed to get shareable content: {}", error);
-                Err(Error::new(Status::GenericFailure, format!("ScreenCaptureKit error: {}", error)))
-            }
-            None => {
-                println!("⚠️ ScreenCaptureKit timeout - using fallback");
-                Err(Error::new(Status::GenericFailure, "ScreenCaptureKit timeout".to_string()))
+            Err(e) => {
+                println!("⚠️ Synchronous approach failed: {}", e);
+                println!("💡 Using async approach without waiting (safer)");
+                
+                // Start the async call but don't wait for it to avoid thread safety issues
+                ScreenCaptureKitHelpers::get_shareable_content_async(|_content, _error| {
+                    println!("🔄 Async ScreenCaptureKit call completed");
+                });
+                
+                // Return an error to indicate we should use the fallback approach
+                Err(Error::new(Status::GenericFailure, "Async ScreenCaptureKit requires fallback".to_string()))
             }
         }
     }

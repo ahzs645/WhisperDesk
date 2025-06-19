@@ -75,7 +75,7 @@ async function testPattern(patternId, patternName, description) {
     
     return new Promise((resolve) => {
         const testCode = `
-            const { ScreenCaptureKitRecorder } = require('./native/whisperdesk-screencapturekit');
+            const { ScreenCaptureKitRecorder } = require('../native/whisperdesk-screencapturekit');
             
             async function testPattern${patternId}() {
                 try {
@@ -83,7 +83,7 @@ async function testPattern(patternId, patternName, description) {
                     const recorder = new ScreenCaptureKitRecorder();
                     
                     console.log('🔍 Getting available screens...');
-                    const screens = await recorder.get_available_screens_with_timeout(3000);
+                    const screens = recorder.getAvailableScreensWithTimeout(3000);
                     console.log(\`✅ Found \${screens.length} screens\`);
                     
                     if (screens.length === 0) {
@@ -95,20 +95,20 @@ async function testPattern(patternId, patternName, description) {
                         width: 1280,
                         height: 720,
                         fps: 30,
-                        show_cursor: true,
-                        capture_audio: false,
-                        output_path: '${TEST_CONFIG.output_path}'
+                        showCursor: true,
+                        captureAudio: false,
+                        outputPath: '${TEST_CONFIG.output_path}'
                     };
                     
                     // This will trigger the new pattern-based create_stream method
-                    await recorder.start_recording('${TEST_CONFIG.display_id}', config);
+                    recorder.startRecording('${TEST_CONFIG.display_id}', config);
                     
                     console.log('✅ Pattern ${patternId} SUCCESS - Stream created without segfault!');
                     
                     // Stop recording after brief test
-                    setTimeout(async () => {
+                    setTimeout(() => {
                         try {
-                            await recorder.stop_recording();
+                            recorder.stopRecording();
                             console.log('✅ Recording stopped successfully');
                         } catch (e) {
                             console.log('⚠️ Stop recording error (expected):', e.message);
