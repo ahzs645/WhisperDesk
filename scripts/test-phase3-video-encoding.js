@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 
-const path = require('path');
 // test-phase3-video-encoding.js - Phase 3C: Complete Encoder Integration
 const { ScreenCaptureKitRecorder } = require('../native/whisperdesk-screencapturekit');
 const fs = require('fs');
