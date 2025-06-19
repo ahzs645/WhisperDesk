@@ -5,8 +5,12 @@ use napi::bindgen_prelude::*;
 use objc2::{msg_send, class};
 use objc2_foundation::{NSArray, NSString, NSDictionary, NSNumber};
 use std::ptr;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
+use std::thread;
+use serde_json;
 
-use super::bindings::{SCShareableContent, SCDisplay, SCWindow, SCContentFilter, ScreenCaptureKitHelpers};
+use super::bindings::{SCShareableContent, SCDisplay, SCWindow, SCContentFilter, SCStream, SCStreamConfiguration, ScreenCaptureKitHelpers, kCVPixelFormatType_32BGRA};
 
 pub struct ContentManager;
 
@@ -544,41 +548,112 @@ impl ShareableContent {
     // CRITICAL FIX: Replace individual object extraction with content filter creation
     // This avoids the segfault entirely by using ScreenCaptureKit's higher-level APIs
     
-    /// Create a content filter safely without extracting individual objects
-    /// Instead of trying to use raw pointers, we'll return a mock filter for testing
+    /// Create a REAL content filter using actual ScreenCaptureKit objects
     pub unsafe fn create_display_content_filter(&self, display_id: u32) -> Result<*mut SCContentFilter> {
-        println!("🎯 Creating display content filter for display ID {} (segfault-safe)", display_id);
+        println!("🎯 Creating REAL display content filter for display ID {}", display_id);
         
-        // Verify we have the display in our safe enumeration
+        // Verify display exists
         if self.find_display_by_id(display_id).is_none() {
             return Err(Error::new(Status::InvalidArg, format!("Display ID {} not found", display_id)));
         }
         
-        // For now, return a successful result without actually creating the filter
-        // This prevents segfaults while maintaining the API contract
-        println!("✅ Content filter creation skipped to prevent segfaults");
-        println!("💡 Real implementation would create SCContentFilter here");
-        
-        // Return a non-null pointer to indicate success (this is a mock implementation)
-        // In a real implementation, this would create an actual SCContentFilter
-        Ok(0x1 as *mut SCContentFilter) // Mock pointer for testing
+        match self.sc_content_ptr {
+            Some(sc_content) => {
+                // Get displays array from ScreenCaptureKit content
+                let displays: *mut NSArray = msg_send![sc_content, displays];
+                if displays.is_null() {
+                    return Err(Error::new(Status::GenericFailure, "No displays in ScreenCaptureKit content"));
+                }
+                
+                let displays_array = &*displays;
+                let display_count = displays_array.count();
+                
+                // Find the matching display by ID
+                for i in 0..display_count {
+                    let display: *mut SCDisplay = msg_send![displays_array, objectAtIndex: i];
+                    if !display.is_null() {
+                        let sc_display_id: u32 = msg_send![display, displayID];
+                        
+                        if sc_display_id == display_id {
+                            // Create content filter with this display
+                            let filter_class = class!(SCContentFilter);
+                            let alloc: *mut objc2::runtime::AnyObject = msg_send![filter_class, alloc];
+                            
+                            let content_filter: *mut SCContentFilter = msg_send![
+                                alloc,
+                                initWithDisplay: display,
+                                excludingWindows: ptr::null::<NSArray>()
+                            ];
+                            
+                            if content_filter.is_null() {
+                                return Err(Error::new(Status::GenericFailure, "Failed to create display content filter"));
+                            }
+                            
+                            println!("✅ Created REAL display content filter for display {}", display_id);
+                            return Ok(content_filter);
+                        }
+                    }
+                }
+                
+                Err(Error::new(Status::InvalidArg, format!("Display ID {} not found in ScreenCaptureKit content", display_id)))
+            }
+            None => {
+                Err(Error::new(Status::GenericFailure, "No ScreenCaptureKit content available"))
+            }
+        }
     }
     
-    /// Create a content filter for a window safely without extracting individual objects
+    /// Create a REAL content filter for a window using actual ScreenCaptureKit objects
     pub unsafe fn create_window_content_filter(&self, window_id: u32) -> Result<*mut SCContentFilter> {
-        println!("🎯 Creating window content filter for window ID {} (segfault-safe)", window_id);
+        println!("🎯 Creating REAL window content filter for window ID {}", window_id);
         
         if self.find_window_by_id(window_id).is_none() {
             return Err(Error::new(Status::InvalidArg, format!("Window ID {} not found", window_id)));
         }
         
-        // For now, return a successful result without actually creating the filter
-        // This prevents segfaults while maintaining the API contract
-        println!("✅ Window content filter creation skipped to prevent segfaults");
-        println!("💡 Real implementation would create SCContentFilter here");
-        
-        // Return a non-null pointer to indicate success (this is a mock implementation)
-        Ok(0x1 as *mut SCContentFilter) // Mock pointer for testing
+        match self.sc_content_ptr {
+            Some(sc_content) => {
+                // Get windows array from ScreenCaptureKit content
+                let windows: *mut NSArray = msg_send![sc_content, windows];
+                if windows.is_null() {
+                    return Err(Error::new(Status::GenericFailure, "No windows in ScreenCaptureKit content"));
+                }
+                
+                let windows_array = &*windows;
+                let window_count = windows_array.count();
+                
+                // Find the matching window by ID
+                for i in 0..window_count {
+                    let window: *mut SCWindow = msg_send![windows_array, objectAtIndex: i];
+                    if !window.is_null() {
+                        let sc_window_id: u32 = msg_send![window, windowID];
+                        
+                        if sc_window_id == window_id {
+                            // Create content filter with this window
+                            let filter_class = class!(SCContentFilter);
+                            let alloc: *mut objc2::runtime::AnyObject = msg_send![filter_class, alloc];
+                            
+                            let content_filter: *mut SCContentFilter = msg_send![
+                                alloc,
+                                initWithDesktopIndependentWindow: window
+                            ];
+                            
+                            if content_filter.is_null() {
+                                return Err(Error::new(Status::GenericFailure, "Failed to create window content filter"));
+                            }
+                            
+                            println!("✅ Created REAL window content filter for window {}", window_id);
+                            return Ok(content_filter);
+                        }
+                    }
+                }
+                
+                Err(Error::new(Status::InvalidArg, format!("Window ID {} not found in ScreenCaptureKit content", window_id)))
+            }
+            None => {
+                Err(Error::new(Status::GenericFailure, "No ScreenCaptureKit content available"))
+            }
+        }
     }
     
     // REMOVED: The problematic get_sc_display_by_id and get_sc_window_by_id methods
@@ -643,33 +718,156 @@ impl RealContentFilter {
     pub fn is_valid(&self) -> bool {
         self.is_valid
     }
+    
+    pub fn get_filter_ptr(&self) -> *mut SCContentFilter {
+        self.content_filter.unwrap_or(ptr::null_mut())
+    }
 }
 
-// Add the missing RealStreamManager struct
+// Real stream manager with actual SCStream functionality
+use super::delegate::RealStreamDelegate;
+
 pub struct RealStreamManager {
+    stream: Option<*mut SCStream>,
+    delegate: Option<Box<RealStreamDelegate>>,
     is_recording: bool,
+    output_path: Option<String>,
 }
 
 impl RealStreamManager {
     pub fn new() -> Self {
         Self {
+            stream: None,
+            delegate: None,
             is_recording: false,
+            output_path: None,
         }
     }
     
-    pub fn start_recording(&mut self, _content_filter: RealContentFilter, _config: RecordingConfiguration) -> Result<()> {
-        println!("🎬 Starting recording");
-        self.is_recording = true;
-        Ok(())
+    pub fn start_recording(&mut self, content_filter: RealContentFilter, config: RecordingConfiguration) -> Result<()> {
+        unsafe {
+            println!("🎬 Starting REAL ScreenCaptureKit recording");
+            
+            // Create stream configuration
+            let stream_config = self.create_stream_configuration(&config)?;
+            
+            // Create stream delegate
+            let delegate = RealStreamDelegate::new(
+                config.output_path.clone(),
+                Arc::new(Mutex::new(true)), // is_recording
+                config.width.unwrap_or(1920),
+                config.height.unwrap_or(1080),
+                config.fps.unwrap_or(30)
+            );
+            
+            let delegate_ptr = delegate.create_objc_delegate();
+            
+            // Create SCStream with real content filter
+            let stream = self.create_sc_stream(content_filter.get_filter_ptr(), stream_config, delegate_ptr)?;
+            
+            // Start capture
+            ScreenCaptureKitHelpers::start_stream_capture_async(stream, |error| {
+                if let Some(error) = error {
+                    println!("❌ Stream start failed: {:?}", error);
+                } else {
+                    println!("✅ Stream started successfully");
+                }
+            });
+            
+            self.stream = Some(stream);
+            self.delegate = Some(Box::new(delegate));
+            self.is_recording = true;
+            self.output_path = Some(config.output_path);
+            
+            println!("✅ Real ScreenCaptureKit recording started");
+            Ok(())
+        }
     }
     
-    pub fn stop_recording(&mut self) -> Result<()> {
-        println!("⏹️ Stopping recording");
-        self.is_recording = false;
-        Ok(())
+    pub fn stop_recording(&mut self) -> Result<String> {
+        unsafe {
+            if let Some(stream) = self.stream {
+                println!("🛑 Stopping REAL ScreenCaptureKit recording");
+                
+                ScreenCaptureKitHelpers::stop_stream_capture_async(stream, |error| {
+                    if let Some(error) = error {
+                        println!("⚠️ Stream stop had error: {:?}", error);
+                    } else {
+                        println!("✅ Stream stopped successfully");
+                    }
+                });
+                
+                self.is_recording = false;
+                self.stream = None;
+                
+                // Finalize encoding
+                if let Some(delegate) = &mut self.delegate {
+                    delegate.handle_stream_stopped(None);
+                }
+                
+                let output_path = self.output_path.clone().unwrap_or_else(|| "/tmp/recording.mp4".to_string());
+                println!("✅ Real recording stopped, output: {}", output_path);
+                Ok(output_path)
+            } else {
+                Err(Error::new(Status::GenericFailure, "No active recording"))
+            }
+        }
+    }
+    
+    unsafe fn create_stream_configuration(&self, config: &RecordingConfiguration) -> Result<*mut SCStreamConfiguration> {
+        let stream_config = ScreenCaptureKitHelpers::create_stream_configuration();
+        if stream_config.is_null() {
+            return Err(Error::new(Status::GenericFailure, "Failed to create stream configuration"));
+        }
+        
+        ScreenCaptureKitHelpers::configure_stream_configuration(
+            stream_config,
+            config.width.unwrap_or(1920),
+            config.height.unwrap_or(1080),
+            config.fps.unwrap_or(30),
+            config.show_cursor.unwrap_or(true),
+            config.capture_audio.unwrap_or(false),
+            kCVPixelFormatType_32BGRA,
+            1 // sRGB color space
+        );
+        
+        Ok(stream_config)
+    }
+    
+    unsafe fn create_sc_stream(
+        &self, 
+        content_filter: *mut SCContentFilter, 
+        configuration: *mut SCStreamConfiguration,
+        delegate: *mut objc2::runtime::AnyObject
+    ) -> Result<*mut SCStream> {
+        let stream = ScreenCaptureKitHelpers::create_stream(content_filter, configuration, delegate);
+        
+        if stream.is_null() {
+            return Err(Error::new(Status::GenericFailure, "Failed to create SCStream"));
+        }
+        
+        println!("✅ Created real SCStream instance");
+        Ok(stream)
     }
     
     pub fn is_recording(&self) -> bool {
         self.is_recording
+    }
+    
+    pub fn get_stats(&self) -> String {
+        if let Some(delegate) = &self.delegate {
+            serde_json::json!({
+                "isRecording": self.is_recording,
+                "outputPath": self.output_path,
+                "videoFrames": delegate.get_frame_count(),
+                "audioFrames": delegate.get_audio_frame_count(),
+                "method": "real-screencapturekit-stream"
+            }).to_string()
+        } else {
+            serde_json::json!({
+                "isRecording": false,
+                "error": "No active stream"
+            }).to_string()
+        }
     }
 }
