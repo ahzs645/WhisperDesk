@@ -1,0 +1,267 @@
+name: Build Platform
+
+on:
+  workflow_call:
+    inputs:
+      platform:
+        required: true
+        type: string
+        description: 'Platform to build (windows, macos, linux)'
+      arch:
+        required: true
+        type: string
+        description: 'Architecture to build (x64, arm64)'
+      version:
+        required: true
+        type: string
+        description: 'Version to build'
+      file_version:
+        required: true
+        type: string
+        description: 'File version for naming'
+    secrets:
+      APPLE_CERTIFICATE_P12:
+        required: false
+      APPLE_CERTIFICATE_PASSWORD:
+        required: false
+      APPLE_TEAM_ID:
+        required: false
+
+jobs:
+  build:
+    runs-on: ${{ 
+      (inputs.platform == 'windows' && 'windows-latest') ||
+      (inputs.platform == 'macos' && 'macos-latest') ||
+      (inputs.platform == 'linux' && 'ubuntu-22.04')
+    }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup build environment
+        uses: ./.github/actions/setup-build-env
+        with:
+          platform: ${{ inputs.platform }}
+
+      - name: Update package.json version
+        shell: bash
+        run: |
+          VERSION="${{ inputs.version }}"
+          echo "🏷️ Setting version to: $VERSION"
+          
+          # Platform-specific jq commands
+          if [[ "${{ inputs.platform }}" == "windows" ]]; then
+            # Windows PowerShell version
+            powershell -Command "
+              \$version = '$VERSION'
+              \$packageJson = Get-Content package.json -Raw | ConvertFrom-Json
+              \$packageJson.version = \$version
+              \$packageJson.main = 'src/main/main.js'
+              \$packageJson | ConvertTo-Json -Depth 100 | Set-Content package.json -Encoding UTF8
+            "
+          else
+            # Unix version
+            cat package.json | jq --arg version "$VERSION" '
+              .version = $version |
+              .main = "src/main/main.js"
+            ' > package.json.tmp && mv package.json.tmp package.json
+          fi
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          npm install
+          
+          # Install renderer dependencies if they exist
+          if [ -d "src/renderer/whisperdesk-ui" ]; then
+            cd src/renderer/whisperdesk-ui
+            if [ -f "package.json" ]; then
+              VERSION="${{ inputs.version }}"
+              if [[ "${{ inputs.platform }}" == "windows" ]]; then
+                powershell -Command "
+                  \$version = '$VERSION'
+                  \$packageJson = Get-Content package.json -Raw | ConvertFrom-Json
+                  \$packageJson.version = \$version
+                  \$packageJson | ConvertTo-Json -Depth 100 | Set-Content package.json
+                "
+              else
+                cat package.json | jq --arg version "$VERSION" '.version = $version' > package.json.tmp
+                mv package.json.tmp package.json
+              fi
+            fi
+            
+            # Use pnpm if available, otherwise npm
+            if command -v pnpm &> /dev/null; then
+              pnpm install --frozen-lockfile
+            else
+              npm install
+            fi
+            cd "${{ github.workspace }}"
+          fi
+
+      - name: Build whisper.cpp
+        uses: ./.github/actions/build-whisper
+        with:
+          platform: ${{ inputs.platform }}
+          arch: ${{ inputs.arch }}
+
+      - name: Build diarization system
+        uses: ./.github/actions/build-diarization
+        with:
+          platform: ${{ inputs.platform }}
+          arch: ${{ inputs.arch }}
+
+      - name: Download models
+        shell: bash
+        run: |
+          mkdir -p models
+          curl -L -o models/ggml-tiny.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin
+
+      - name: Build renderer
+        shell: bash
+        run: |
+          if [ -d "src/renderer/whisperdesk-ui" ]; then
+            cd src/renderer/whisperdesk-ui
+            if command -v pnpm &> /dev/null; then
+              pnpm run build
+            else
+              npm run build
+            fi
+            cd "${{ github.workspace }}"
+          fi
+
+      - name: Verify build
+        uses: ./.github/actions/verify-build
+        with:
+          platform: ${{ inputs.platform }}
+
+      - name: Setup Windows Code Signing
+        if: inputs.platform == 'windows'
+        shell: pwsh
+        run: |
+          Write-Host "🔐 Setting up Windows code signing..."
+          
+          try {
+            $cert = New-SelfSignedCertificate `
+              -DnsName "WhisperDesk" `
+              -Type CodeSigning `
+              -CertStoreLocation "cert:\LocalMachine\My" `
+              -FriendlyName "WhisperDesk Self-Signed Certificate" `
+              -NotAfter (Get-Date).AddDays(30)
+            
+            $password = ConvertTo-SecureString -String "temppass123" -Force -AsPlainText
+            $certPath = Join-Path $env:GITHUB_WORKSPACE "temp-cert.pfx"
+            
+            Export-PfxCertificate -Cert $cert -FilePath $certPath -Password $password | Out-Null
+            
+            echo "WIN_CSC_LINK=$certPath" >> $env:GITHUB_ENV
+            echo "WIN_CSC_KEY_PASSWORD=temppass123" >> $env:GITHUB_ENV
+            echo "CSC_LINK=$certPath" >> $env:GITHUB_ENV
+            echo "CSC_KEY_PASSWORD=temppass123" >> $env:GITHUB_ENV
+            
+            Write-Host "✅ Self-signed certificate created: $certPath"
+            
+          } catch {
+            Write-Host "⚠️ Certificate creation failed: $($_.Exception.Message)"
+            Write-Host "ℹ️ Build will continue without code signing"
+            echo "WIN_CSC_LINK=" >> $env:GITHUB_ENV
+            echo "CSC_LINK=" >> $env:GITHUB_ENV
+          }
+
+      - name: Setup macOS Code Signing
+        if: inputs.platform == 'macos'
+        env:
+          APPLE_CERTIFICATE_P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          echo "🔐 Setting up Apple Developer code signing..."
+          
+          # Create entitlements file
+          cat > entitlements.mac.plist << 'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>com.apple.security.cs.allow-jit</key>
+              <true/>
+              <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+              <true/>
+              <key>com.apple.security.cs.disable-executable-page-protection</key>
+              <true/>
+              <key>com.apple.security.cs.disable-library-validation</key>
+              <true/>
+              <key>com.apple.security.device.audio-input</key>
+              <true/>
+              <key>com.apple.security.files.user-selected.read-write</key>
+              <true/>
+          </dict>
+          </plist>
+          EOF
+          
+          if [ -n "$APPLE_CERTIFICATE_P12" ]; then
+            echo "✅ Certificate found in secrets"
+            
+            # Create temporary keychain
+            security create-keychain -p "temp-password" temp.keychain
+            security default-keychain -s temp.keychain
+            security unlock-keychain -p "temp-password" temp.keychain
+            security set-keychain-settings -lut 21600 temp.keychain
+            
+            # Import certificate
+            echo "$APPLE_CERTIFICATE_P12" | base64 --decode > certificate.p12
+            security import certificate.p12 -k temp.keychain -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+            security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "temp-password" temp.keychain
+            
+            # Set environment variables for electron-builder
+            echo "CSC_KEYCHAIN=temp.keychain" >> $GITHUB_ENV
+            echo "APPLE_TEAM_ID=$APPLE_TEAM_ID" >> $GITHUB_ENV
+            
+            echo "✅ Apple Developer certificate imported successfully"
+            
+          else
+            echo "⚠️ No Apple certificate found in secrets - using ad-hoc signing"
+            echo "CSC_IDENTITY_AUTO_DISCOVERY=false" >> $GITHUB_ENV
+          fi
+
+      - name: Build Electron app
+        shell: bash
+        env:
+          VERSION: ${{ inputs.version }}
+          FILE_VERSION: ${{ inputs.file_version }}
+        run: |
+          echo "🔧 Building Electron app for ${{ inputs.platform }} ${{ inputs.arch }}..."
+          
+          case "${{ inputs.platform }}" in
+            "windows")
+              npx electron-builder --win --${{ inputs.arch }} --publish=never
+              ;;
+            "macos")
+              if [ "${{ inputs.arch }}" = "arm64" ]; then
+                npx electron-builder --mac --arm64 --publish=never
+              else
+                npx electron-builder --mac --x64 --publish=never
+              fi
+              ;;
+            "linux")
+              npx electron-builder --linux --${{ inputs.arch }} --publish=never
+              ;;
+          esac
+          
+          # Rename portable files
+          node scripts/rename-portable.js
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: WhisperDesk-${{ inputs.platform }}-${{ inputs.arch }}
+          path: |
+            dist/*.exe
+            dist/*.zip
+            dist/*.app
+            dist/*.AppImage
+            dist/*.deb
+            dist/*.rpm
+            dist/*.tar.gz
+          retention-days: 30

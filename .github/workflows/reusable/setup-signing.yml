@@ -1,0 +1,133 @@
+name: Setup Code Signing
+
+on:
+  workflow_call:
+    inputs:
+      platform:
+        required: true
+        type: string
+        description: 'Platform to setup signing for (windows, macos, linux)'
+    secrets:
+      APPLE_CERTIFICATE_P12:
+        required: false
+      APPLE_CERTIFICATE_PASSWORD:
+        required: false
+      APPLE_TEAM_ID:
+        required: false
+
+jobs:
+  setup-signing:
+    runs-on: ${{ 
+      (inputs.platform == 'windows' && 'windows-latest') ||
+      (inputs.platform == 'macos' && 'macos-latest') ||
+      (inputs.platform == 'linux' && 'ubuntu-22.04')
+    }}
+    
+    steps:
+      - name: Setup Windows Code Signing
+        if: inputs.platform == 'windows'
+        shell: pwsh
+        run: |
+          Write-Host "🔐 Setting up Windows code signing..."
+          
+          try {
+            $cert = New-SelfSignedCertificate `
+              -DnsName "WhisperDesk" `
+              -Type CodeSigning `
+              -CertStoreLocation "cert:\LocalMachine\My" `
+              -FriendlyName "WhisperDesk Self-Signed Certificate" `
+              -NotAfter (Get-Date).AddDays(30)
+            
+            $password = ConvertTo-SecureString -String "temppass123" -Force -AsPlainText
+            $certPath = Join-Path $env:GITHUB_WORKSPACE "temp-cert.pfx"
+            
+            Export-PfxCertificate -Cert $cert -FilePath $certPath -Password $password | Out-Null
+            
+            echo "WIN_CSC_LINK=$certPath" >> $env:GITHUB_ENV
+            echo "WIN_CSC_KEY_PASSWORD=temppass123" >> $env:GITHUB_ENV
+            echo "CSC_LINK=$certPath" >> $env:GITHUB_ENV
+            echo "CSC_KEY_PASSWORD=temppass123" >> $env:GITHUB_ENV
+            
+            Write-Host "✅ Self-signed certificate created: $certPath"
+            
+            $signtoolPath = Get-Command signtool.exe -ErrorAction SilentlyContinue
+            if (-not $signtoolPath) {
+              Write-Host "📦 Installing Windows SDK for signtool..."
+              choco install windows-sdk-10-version-2004-all -y --no-progress --limitoutput
+              $env:SIGNTOOL_PATH = "C:\Program Files (x86)\Windows Kits\10\bin\10.0.19041.0\x64\signtool.exe"
+              echo "SIGNTOOL_PATH=$env:SIGNTOOL_PATH" >> $env:GITHUB_ENV
+            } else {
+              echo "SIGNTOOL_PATH=$($signtoolPath.Source)" >> $env:GITHUB_ENV
+            }
+            
+          } catch {
+            Write-Host "⚠️ Certificate creation failed: $($_.Exception.Message)"
+            Write-Host "ℹ️ Build will continue without code signing"
+            echo "WIN_CSC_LINK=" >> $env:GITHUB_ENV
+            echo "CSC_LINK=" >> $env:GITHUB_ENV
+          }
+
+      - name: Setup macOS Code Signing
+        if: inputs.platform == 'macos'
+        env:
+          APPLE_CERTIFICATE_P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          echo "🔐 Setting up Apple Developer code signing..."
+          
+          # Create entitlements file
+          cat > entitlements.mac.plist << 'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>com.apple.security.cs.allow-jit</key>
+              <true/>
+              <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+              <true/>
+              <key>com.apple.security.cs.disable-executable-page-protection</key>
+              <true/>
+              <key>com.apple.security.cs.disable-library-validation</key>
+              <true/>
+              <key>com.apple.security.device.audio-input</key>
+              <true/>
+              <key>com.apple.security.files.user-selected.read-write</key>
+              <true/>
+          </dict>
+          </plist>
+          EOF
+          
+          if [ -n "$APPLE_CERTIFICATE_P12" ]; then
+            echo "✅ Certificate found in secrets"
+            
+            # Create temporary keychain
+            security create-keychain -p "temp-password" temp.keychain
+            security default-keychain -s temp.keychain
+            security unlock-keychain -p "temp-password" temp.keychain
+            security set-keychain-settings -lut 21600 temp.keychain
+            
+            # Import certificate
+            echo "$APPLE_CERTIFICATE_P12" | base64 --decode > certificate.p12
+            security import certificate.p12 -k temp.keychain -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+            security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "temp-password" temp.keychain
+            
+            # Set environment variables for electron-builder
+            echo "CSC_KEYCHAIN=temp.keychain" >> $GITHUB_ENV
+            echo "APPLE_TEAM_ID=$APPLE_TEAM_ID" >> $GITHUB_ENV
+            
+            echo "✅ Apple Developer certificate imported successfully"
+            
+            # List available signing identities
+            echo "📋 Available signing identities:"
+            security find-identity -v -p codesigning temp.keychain
+            
+          else
+            echo "⚠️ No Apple certificate found in secrets - using ad-hoc signing"
+            echo "CSC_IDENTITY_AUTO_DISCOVERY=false" >> $GITHUB_ENV
+          fi
+
+      - name: Setup Linux (no signing needed)
+        if: inputs.platform == 'linux'
+        run: |
+          echo "ℹ️ Linux builds don't require code signing setup"

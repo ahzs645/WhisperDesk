@@ -1,0 +1,58 @@
+name: 'Build Diarization System'
+description: 'Build enhanced multi-speaker diarization system'
+inputs:
+  platform:
+    description: 'Platform to build for (windows, macos, linux)'
+    required: true
+  arch:
+    description: 'Architecture to build for (x64, arm64)'
+    required: true
+runs:
+  using: 'composite'
+  steps:
+    - name: Build diarization system
+      shell: bash
+      run: |
+        echo "🎭 Building enhanced multi-speaker diarization system for ${{ inputs.platform }}..."
+        
+        if [ -f ".github/scripts/build-diarization.sh" ]; then
+          ./.github/scripts/build-diarization.sh "${{ inputs.platform }}" "${{ inputs.arch }}"
+        elif npm run build:diarization --if-present; then
+          echo "✅ Diarization built via npm script"
+        else
+          echo "⚠️ No diarization build script found - will use fallback"
+        fi
+
+    - name: Verify diarization build
+      shell: bash
+      run: |
+        DIARIZE_BIN="binaries/diarize-cli"
+        if [ "${{ inputs.platform }}" = "windows" ]; then
+          DIARIZE_BIN="binaries/diarize-cli.exe"
+        fi
+        
+        if [ -f "$DIARIZE_BIN" ]; then
+          echo "✅ Diarization binary found: $DIARIZE_BIN"
+          chmod +x "$DIARIZE_BIN" 2>/dev/null || true
+          ls -la "$DIARIZE_BIN"
+          
+          if [ "${{ inputs.platform }}" != "windows" ]; then
+            echo "📊 Binary size: $(ls -lh $DIARIZE_BIN | awk '{print $5}')"
+          fi
+          
+          # Check for required models
+          if [ -f "models/segmentation-3.0.onnx" ]; then
+            echo "✅ Segmentation model found"
+          else
+            echo "⚠️ Segmentation model missing"
+          fi
+          
+          if [ -f "models/embedding-1.0.onnx" ]; then
+            echo "✅ Embedding model found"
+          else
+            echo "⚠️ Embedding model missing"
+          fi
+          
+        else
+          echo "⚠️ Diarization binary not found - single speaker mode only"
+        fi

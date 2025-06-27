@@ -1,0 +1,51 @@
+name: 'Setup Build Environment'
+description: 'Setup Node.js, pnpm, and platform-specific dependencies'
+inputs:
+  platform:
+    description: 'Platform to setup (windows, macos, linux)'
+    required: true
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+
+    - name: Setup pnpm
+      uses: pnpm/action-setup@v4
+      with:
+        version: latest
+
+    - name: Install Windows dependencies
+      if: inputs.platform == 'windows'
+      shell: pwsh
+      run: |
+        # Add MSBuild to PATH
+        $msbuildPath = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2022\Enterprise\MSBuild\Current\Bin"
+        if (-not (Test-Path $msbuildPath)) {
+          $msbuildPath = "${env:ProgramFiles}\Microsoft Visual Studio\2022\Enterprise\MSBuild\Current\Bin"
+        }
+        echo "$msbuildPath" >> $env:GITHUB_PATH
+        
+        # Install jsoncpp via vcpkg
+        $vcpkgRoot = "C:/vcpkg"
+        & "$vcpkgRoot/vcpkg.exe" install jsoncpp:x64-windows
+        echo "VCPKG_ROOT=$vcpkgRoot" >> $env:GITHUB_ENV
+        echo "VCPKG_DEFAULT_TRIPLET=x64-windows" >> $env:GITHUB_ENV
+        echo "CMAKE_TOOLCHAIN_FILE=$vcpkgRoot/scripts/buildsystems/vcpkg.cmake" >> $env:GITHUB_ENV
+
+    - name: Install macOS dependencies
+      if: inputs.platform == 'macos'
+      shell: bash
+      run: |
+        brew update
+        brew install cmake
+
+    - name: Install Linux dependencies
+      if: inputs.platform == 'linux'
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential cmake libasound2-dev fuse libfuse2

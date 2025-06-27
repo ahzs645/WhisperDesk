@@ -1,0 +1,107 @@
+name: 'Build Whisper.cpp'
+description: 'Build whisper.cpp binary for the target platform'
+inputs:
+  platform:
+    description: 'Platform to build for (windows, macos, linux)'
+    required: true
+  arch:
+    description: 'Architecture to build for (x64, arm64)'
+    required: true
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup SDL2 for Windows
+      if: inputs.platform == 'windows'
+      shell: pwsh
+      run: |
+        C:/msys64/usr/bin/wget.exe -qO sdl2.zip https://github.com/libsdl-org/SDL/releases/download/release-2.28.5/SDL2-devel-2.28.5-VC.zip
+        7z x sdl2.zip
+        echo "SDL2_DIR=$env:GITHUB_WORKSPACE/SDL2-2.28.5/cmake" >> $env:GITHUB_ENV
+
+    - name: Build whisper.cpp for Windows
+      if: inputs.platform == 'windows'
+      shell: pwsh
+      run: |
+        Write-Host "🔧 Building whisper.cpp for Windows..."
+        
+        $tempDir = Join-Path $env:TEMP "whisper-cpp-official"
+        if (Test-Path $tempDir) { Remove-Item -Recurse -Force $tempDir }
+        
+        git clone --depth 1 https://github.com/ggerganov/whisper.cpp.git $tempDir
+        Set-Location $tempDir
+        
+        cmake -S . -B ./build -A ${{ inputs.arch }} `
+          -DCMAKE_BUILD_TYPE=Release `
+          -DBUILD_SHARED_LIBS=ON `
+          -DWHISPER_SDL2=ON `
+          -DWHISPER_BUILD_EXAMPLES=ON
+        
+        Set-Location ./build
+        msbuild ALL_BUILD.vcxproj -t:build -p:configuration=Release -p:platform=${{ inputs.arch }}
+        
+        $binariesDir = Join-Path $env:GITHUB_WORKSPACE "binaries"
+        New-Item -ItemType Directory -Force -Path $binariesDir
+        
+        $buildBin = "bin/Release"
+        
+        Copy-Item "$buildBin/whisper.dll" $binariesDir -Force
+        Copy-Item "$buildBin/ggml.dll" $binariesDir -Force
+        Copy-Item "$buildBin/ggml-base.dll" $binariesDir -Force  
+        Copy-Item "$buildBin/ggml-cpu.dll" $binariesDir -Force
+        Copy-Item "$buildBin/whisper-cli.exe" $binariesDir -Force
+        Copy-Item "$env:SDL2_DIR/../lib/${{ inputs.arch }}/SDL2.dll" $binariesDir -Force
+        
+        Write-Host "✅ Whisper binaries copied"
+        Set-Location $env:GITHUB_WORKSPACE
+
+    - name: Build whisper.cpp for Unix (macOS/Linux)
+      if: inputs.platform != 'windows'
+      shell: bash
+      run: |
+        echo "🔧 Building whisper.cpp for ${{ inputs.platform }}..."
+        
+        if [ -f ".github/scripts/build-whisper.sh" ]; then
+          ./.github/scripts/build-whisper.sh
+        elif npm run build:whisper --if-present; then
+          echo "✅ Built via npm script"
+        else
+          echo "🔧 Building whisper.cpp manually..."
+          
+          TEMP_DIR="/tmp/whisper-cpp-official"
+          rm -rf "$TEMP_DIR"
+          
+          git clone --depth 1 https://github.com/ggerganov/whisper.cpp.git "$TEMP_DIR"
+          cd "$TEMP_DIR"
+          
+          mkdir build
+          cd build
+          
+          cmake .. \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_SHARED_LIBS=ON \
+            -DWHISPER_BUILD_EXAMPLES=ON
+          
+          make -j$(nproc)
+          
+          mkdir -p "$GITHUB_WORKSPACE/binaries"
+          cp whisper-cli "$GITHUB_WORKSPACE/binaries/"
+          
+          if [ -f "libwhisper.so" ]; then
+            cp libwhisper.so "$GITHUB_WORKSPACE/binaries/"
+          elif [ -f "libwhisper.dylib" ]; then
+            cp libwhisper.dylib "$GITHUB_WORKSPACE/binaries/"
+          fi
+          
+          cd "$GITHUB_WORKSPACE"
+        fi
+        
+        # Verify binary
+        BINARY_PATH="binaries/whisper-cli"
+        if [ -f "$BINARY_PATH" ]; then
+          chmod +x "$BINARY_PATH"
+          echo "✅ whisper-cli binary built successfully"
+          ls -la "$BINARY_PATH"
+        else
+          echo "❌ whisper-cli binary not found"
+          exit 1
+        fi

@@ -1,0 +1,97 @@
+name: 'Verify Build'
+description: 'Verify all build prerequisites are met'
+inputs:
+  platform:
+    description: 'Platform being built (windows, macos, linux)'
+    required: true
+runs:
+  using: 'composite'
+  steps:
+    - name: Verify build prerequisites
+      shell: bash
+      run: |
+        echo "📋 Verifying build prerequisites for ${{ inputs.platform }}..."
+        
+        # Check main entry point
+        if [ -f "src/main/main.js" ]; then
+          echo "✅ Main entry point: src/main/main.js"
+        else
+          echo "❌ CRITICAL: Main entry point missing: src/main/main.js"
+          exit 1
+        fi
+        
+        # Check package.json
+        if [ -f "package.json" ]; then
+          if command -v jq &> /dev/null; then
+            MAIN_FIELD=$(cat package.json | jq -r '.main // "unknown"')
+            VERSION_FIELD=$(cat package.json | jq -r '.version // "unknown"')
+            echo "✅ Package.json main field: $MAIN_FIELD"
+            echo "✅ Package.json version: $VERSION_FIELD"
+          else
+            echo "✅ Package.json exists"
+          fi
+        else
+          echo "❌ CRITICAL: package.json missing"
+          exit 1
+        fi
+        
+        # Check whisper binary
+        WHISPER_BINARY="binaries/whisper-cli"
+        if [ "${{ inputs.platform }}" = "windows" ]; then
+          WHISPER_BINARY="binaries/whisper-cli.exe"
+        fi
+        
+        if [ -f "$WHISPER_BINARY" ]; then
+          echo "✅ Whisper binary found: $WHISPER_BINARY"
+          if [ "${{ inputs.platform }}" != "windows" ]; then
+            chmod +x "$WHISPER_BINARY"
+            echo "📊 Size: $(ls -lh $WHISPER_BINARY | awk '{print $5}')"
+          fi
+        else
+          echo "❌ CRITICAL: Whisper binary missing: $WHISPER_BINARY"
+          exit 1
+        fi
+        
+        # Check model
+        if [ -f "models/ggml-tiny.bin" ]; then
+          echo "✅ Model ready"
+          if [ "${{ inputs.platform }}" != "windows" ]; then
+            echo "📊 Model size: $(ls -lh models/ggml-tiny.bin | awk '{print $5}')"
+          fi
+        else
+          echo "❌ CRITICAL: Model missing: models/ggml-tiny.bin"
+          exit 1
+        fi
+        
+        # Check renderer build
+        if [ -d "src/renderer/whisperdesk-ui/dist" ]; then
+          echo "✅ Renderer build found"
+        else
+          echo "❌ CRITICAL: Renderer build missing: src/renderer/whisperdesk-ui/dist"
+          exit 1
+        fi
+        
+        # Check platform-specific requirements
+        case "${{ inputs.platform }}" in
+          "windows")
+            REQUIRED_DLLS=("whisper.dll" "ggml.dll" "ggml-base.dll" "ggml-cpu.dll" "SDL2.dll")
+            for dll in "${REQUIRED_DLLS[@]}"; do
+              if [ -f "binaries/$dll" ]; then
+                echo "✅ $dll found"
+              else
+                echo "❌ CRITICAL: $dll missing"
+                exit 1
+              fi
+            done
+            ;;
+          "macos"|"linux")
+            # Check for shared libraries if they exist
+            if [ -f "binaries/libwhisper.so" ] || [ -f "binaries/libwhisper.dylib" ]; then
+              echo "✅ Whisper shared library found"
+            else
+              echo "ℹ️ No shared library found (static build)"
+            fi
+            ;;
+        esac
+        
+        echo "✅ All build prerequisites verified for ${{ inputs.platform }}"

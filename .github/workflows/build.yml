@@ -1,0 +1,145 @@
+name: Build WhisperDesk
+
+on:
+  push:
+    branches: [ main, master, release ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+    inputs:
+      create_artifacts:
+        description: 'Create build artifacts'
+        required: false
+        type: boolean
+        default: true
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref && github.ref || github.run_id }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  actions: read
+  checks: write
+  pull-requests: write
+
+jobs:
+  determine-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag_name: ${{ steps.version.outputs.tag_name }}
+      file_version: ${{ steps.version.outputs.file_version }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Determine version
+        id: version
+        shell: bash
+        run: |
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            VERSION="${{ github.ref_name }}"
+            VERSION="${VERSION#v}"
+            TAG_NAME="${{ github.ref_name }}"
+            FILE_VERSION="$VERSION"
+            echo "🏷️ Official release: $TAG_NAME"
+            
+          else
+            PACKAGE_VERSION=$(node -p "require('./package.json').version")
+            VERSION="${PACKAGE_VERSION}-dev"
+            TAG_NAME="dev"
+            FILE_VERSION="dev"
+            echo "🚧 Development build: $VERSION"
+          fi
+          
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
+          echo "file_version=$FILE_VERSION" >> $GITHUB_OUTPUT
+          echo "🏷️ Version: $VERSION"
+          echo "🏷️ Tag: $TAG_NAME"
+          echo "📁 File Version: $FILE_VERSION"
+
+  # Build Windows
+  build-windows:
+    needs: [determine-version]
+    strategy:
+      matrix:
+        arch: [x64]
+    uses: ./.github/workflows/reusable/build-platform.yml
+    with:
+      platform: windows
+      arch: ${{ matrix.arch }}
+      version: ${{ needs.determine-version.outputs.version }}
+      file_version: ${{ needs.determine-version.outputs.file_version }}
+
+  # Build macOS
+  build-macos:
+    needs: [determine-version]
+    strategy:
+      matrix:
+        arch: [x64, arm64]
+    uses: ./.github/workflows/reusable/build-platform.yml
+    with:
+      platform: macos
+      arch: ${{ matrix.arch }}
+      version: ${{ needs.determine-version.outputs.version }}
+      file_version: ${{ needs.determine-version.outputs.file_version }}
+    secrets:
+      APPLE_CERTIFICATE_P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
+      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+  # Build Linux
+  build-linux:
+    needs: [determine-version]
+    strategy:
+      matrix:
+        arch: [x64]
+    uses: ./.github/workflows/reusable/build-platform.yml
+    with:
+      platform: linux
+      arch: ${{ matrix.arch }}
+      version: ${{ needs.determine-version.outputs.version }}
+      file_version: ${{ needs.determine-version.outputs.file_version }}
+
+  # Summary job
+  build-summary:
+    if: always()
+    needs: [build-windows, build-macos, build-linux]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Build Summary
+        run: |
+          echo "## 🏗️ Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Check each platform status
+          if [ "${{ needs.build-windows.result }}" = "success" ]; then
+            echo "✅ **Windows**: Build successful" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Windows**: Build failed (${{ needs.build-windows.result }})" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [ "${{ needs.build-macos.result }}" = "success" ]; then
+            echo "✅ **macOS**: Build successful" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **macOS**: Build failed (${{ needs.build-macos.result }})" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [ "${{ needs.build-linux.result }}" = "success" ]; then
+            echo "✅ **Linux**: Build successful" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Linux**: Build failed (${{ needs.build-linux.result }})" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "📦 Artifacts are available for download if builds succeeded." >> $GITHUB_STEP_SUMMARY

@@ -1,0 +1,250 @@
+name: Release WhisperDesk
+
+on:
+  push:
+    tags: [ 'v*' ]
+  workflow_dispatch:
+    inputs:
+      create_release:
+        description: 'Create new release'
+        required: true
+        type: boolean
+      release_tag:
+        description: 'Release tag name (e.g., v2.1.0)'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+  actions: read
+  id-token: write
+
+jobs:
+  determine-release-info:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag_name: ${{ steps.version.outputs.tag_name }}
+      file_version: ${{ steps.version.outputs.file_version }}
+      is_prerelease: ${{ steps.version.outputs.is_prerelease }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Determine release info
+        id: version
+        shell: bash
+        run: |
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            VERSION="${{ github.ref_name }}"
+            VERSION="${VERSION#v}"
+            TAG_NAME="${{ github.ref_name }}"
+            FILE_VERSION="$VERSION"
+            echo "🏷️ Official release: $TAG_NAME"
+            
+          elif [ -n "${{ github.event.inputs.release_tag }}" ]; then
+            TAG_NAME="${{ github.event.inputs.release_tag }}"
+            VERSION="${TAG_NAME#v}"
+            FILE_VERSION="$VERSION"
+            echo "🏷️ Manual release: $TAG_NAME"
+            
+          else
+            echo "❌ Release workflow triggered without tag or release_tag input"
+            exit 1
+          fi
+          
+          # Determine if this is a prerelease
+          IS_PRERELEASE="false"
+          if [[ "$VERSION" =~ (alpha|beta|rc|dev) ]]; then
+            IS_PRERELEASE="true"
+            echo "🚧 Prerelease detected"
+          fi
+          
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
+          echo "file_version=$FILE_VERSION" >> $GITHUB_OUTPUT
+          echo "is_prerelease=$IS_PRERELEASE" >> $GITHUB_OUTPUT
+          echo "🏷️ Version: $VERSION"
+          echo "🏷️ Tag: $TAG_NAME"
+          echo "📁 File Version: $FILE_VERSION"
+          echo "🚧 Prerelease: $IS_PRERELEASE"
+
+  update-package-version:
+    if: github.ref_type == 'tag' || github.event.inputs.create_release == 'true'
+    runs-on: ubuntu-latest
+    needs: determine-release-info
+    permissions:
+      contents: write
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Update package.json versions
+        run: |
+          VERSION="${{ needs.determine-release-info.outputs.version }}"
+          echo "🏷️ Updating package.json to version: $VERSION"
+          
+          if [ -f "package.json" ]; then
+            cat package.json | jq --arg version "$VERSION" '.version = $version' > package.json.tmp
+            mv package.json.tmp package.json
+            echo "✅ Updated main package.json to $VERSION"
+          fi
+          
+          if [ -f "src/renderer/whisperdesk-ui/package.json" ]; then
+            cd src/renderer/whisperdesk-ui
+            cat package.json | jq --arg version "$VERSION" '.version = $version' > package.json.tmp
+            mv package.json.tmp package.json
+            echo "✅ Updated renderer package.json to $VERSION"
+            cd "$GITHUB_WORKSPACE"
+          fi
+
+      - name: Commit version updates
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          
+          if git diff --quiet; then
+            echo "No changes to commit"
+          else
+            git add package.json
+            if [ -f "src/renderer/whisperdesk-ui/package.json" ]; then
+              git add src/renderer/whisperdesk-ui/package.json
+            fi
+            
+            git commit -m "🔖 Update version to ${{ needs.determine-release-info.outputs.version }}"
+            git push origin HEAD:${{ github.ref_name }}
+            echo "✅ Version updates committed and pushed"
+          fi
+
+  build-for-release:
+    needs: [determine-release-info, update-package-version]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows
+            arch: x64
+          - platform: macos
+            arch: x64
+          - platform: macos
+            arch: arm64
+          - platform: linux
+            arch: x64
+    
+    uses: ./.github/workflows/reusable/build-platform.yml
+    with:
+      platform: ${{ matrix.platform }}
+      arch: ${{ matrix.arch }}
+      version: ${{ needs.determine-release-info.outputs.version }}
+      file_version: ${{ needs.determine-release-info.outputs.file_version }}
+    secrets:
+      APPLE_CERTIFICATE_P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
+      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+  create-release:
+    needs: [determine-release-info, build-for-release]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Organize release files
+        run: |
+          echo "🔧 Organizing release files..."
+          mkdir -p release-files
+          
+          find artifacts/ -type f \( -name "*.exe" -o -name "*.zip" -o -name "*.app" -o -name "*.AppImage" -o -name "*.deb" -o -name "*.rpm" -o -name "*.tar.gz" \) -exec cp {} release-files/ \;
+          
+          echo "📋 Release files:"
+          ls -la release-files/
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: release-files/*
+          draft: false
+          prerelease: ${{ needs.determine-release-info.outputs.is_prerelease }}
+          generate_release_notes: true
+          name: "WhisperDesk ${{ needs.determine-release-info.outputs.tag_name }}"
+          tag_name: ${{ needs.determine-release-info.outputs.tag_name }}
+          body: |
+            ## WhisperDesk ${{ needs.determine-release-info.outputs.tag_name }}
+            
+            🎉 **Enhanced Release with Multi-Speaker Diarization!**
+            
+            ### 📦 Download Options:
+            
+            **🖥️ Windows (64-bit)**:
+            - `WhisperDesk-Setup-${{ needs.determine-release-info.outputs.file_version }}-win-x64.exe` - Installer (recommended)
+            - `WhisperDesk-Portable-${{ needs.determine-release-info.outputs.file_version }}-win-x64.zip` - **True Portable** (extract and run)
+            
+            **🍎 macOS**:
+            - `WhisperDesk-Portable-${{ needs.determine-release-info.outputs.file_version }}-mac-x64.zip` - Intel Mac portable
+            - `WhisperDesk-Portable-${{ needs.determine-release-info.outputs.file_version }}-mac-arm64.zip` - Apple Silicon portable
+            
+            **🐧 Linux (64-bit)**:
+            - `WhisperDesk-${{ needs.determine-release-info.outputs.file_version }}-linux-x64.AppImage` - Portable (recommended)
+            - `WhisperDesk-${{ needs.determine-release-info.outputs.file_version }}-linux-x64.deb` - Debian/Ubuntu package
+            - `WhisperDesk-${{ needs.determine-release-info.outputs.file_version }}-linux-x64.rpm` - Red Hat/Fedora package
+            - `WhisperDesk-${{ needs.determine-release-info.outputs.file_version }}-linux-x64.tar.gz` - Generic archive
+            
+            ### ✨ Enhanced Multi-Speaker Features:
+            - 🎭 **Advanced Speaker Diarization** - Built-in PyAnnote 3.0 ONNX models
+            - 👥 **Multi-Speaker Detection** - Automatic speaker identification and labeling
+            - 🎚️ **Configurable Sensitivity** - Adjust speaker detection threshold (0.001-0.1)
+            - 📊 **Speaker Statistics** - Detailed analytics per speaker
+            - 🌍 **Cross-Platform ONNX** - Consistent results across Windows, macOS, Linux
+            
+            ### 🔧 Core Features:
+            - 🎵 Native whisper.cpp integration with **whisper-cli** binary
+            - 📱 Cross-platform support (Windows, macOS, Linux)
+            - 🔄 Real-time progress tracking
+            - 💾 Persistent state management
+            - 🎯 Multiple model support (Tiny, Base, Small, Medium, Large)
+            - 📁 Drag & drop file upload
+            - 🎨 Modern, responsive UI
+            
+            ### 🚀 Quick Start:
+            1. **Download** the appropriate file for your platform
+            2. **Windows Portable**: Extract the ZIP file and run `WhisperDesk.exe`
+            3. **Install Models**: Download a model in the Models tab (start with Tiny)
+            4. **Enable Multi-Speaker**: Toggle "Speaker Diarization" in settings
+            5. **Start Transcribing** with automatic speaker detection!
+            
+            ---
+            
+            **Technical Details:**
+            - Version: ${{ needs.determine-release-info.outputs.version }}
+            - Whisper Binary: whisper-cli (official, replaces deprecated main.exe)
+            - Diarization: PyAnnote 3.0 ONNX models with cross-platform C++ engine
+            - Build: CMake + electron-builder + official whisper.cpp + enhanced diarization
+            
+            Auto-generated release notes below ⬇️
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
