@@ -1,73 +1,59 @@
-// ============================================================================
-
-// src/main/screen-recorder/index.js - Updated entry point
 /**
- * Updated entry point for the platform-aware screen recorder system
+ * @fileoverview WhisperDesk Screen Recorder - CapRecorder Implementation
+ * Entry point for the CapRecorder-based screen recording system
  */
 
-const PlatformAwareScreenRecorderService = require('./core/PlatformAwareScreenRecorderService');
-const ScreenRecorderHandlers = require('./handlers/ScreenRecorderHandlers');
+const { createCapRecorderSystem, getCapRecorderSystemInfo } = require('./caprecorder');
 const { RECORDING_EVENTS, RECORDING_STATES, ERROR_TYPES } = require('./types');
 
 /**
- * Factory function to create a platform-aware screen recorder system
+ * Create a CapRecorder-based screen recorder system
  * @returns {Promise<Object>} Complete screen recorder system
  */
 async function createPlatformAwareScreenRecorderSystem() {
-  console.log('🏗️ Creating Platform-Aware Screen Recorder System...');
+  console.log('🏗️ Creating CapRecorder Screen Recorder System...');
   
   try {
-    // Create and initialize the platform-aware service
-    console.log('🔧 Creating PlatformAwareScreenRecorderService...');
-    const service = new PlatformAwareScreenRecorderService();
-    console.log('✅ PlatformAwareScreenRecorderService created');
+    // Create and initialize the CapRecorder system
+    const capRecorderSystem = await createCapRecorderSystem();
+    console.log('✅ CapRecorder system created successfully');
     
-    console.log('🔧 Initializing service...');
-    await service.initialize();
-    console.log('✅ Service initialized');
+    // Log system info
+    const systemInfo = getCapRecorderSystemInfo();
+    console.log('🎯 CapRecorder Info:', systemInfo.name, '-', systemInfo.description);
     
-    // Create IPC handlers
-    console.log('🔧 Creating ScreenRecorderHandlers...');
-    const handlers = new ScreenRecorderHandlers(service);
-    console.log('✅ ScreenRecorderHandlers created');
-    
-    console.log('🔧 Setting up handlers...');
-    handlers.setup();
-    console.log('✅ Handlers set up');
-    
-    // Log platform information
-    const platformInfo = service.getPlatformInfo();
-    console.log('🎯 Platform Recording Setup:', platformInfo);
-    
-    console.log('✅ Platform-Aware Screen Recorder System created successfully');
+    // Create platform info for compatibility
+    const platformInfo = capRecorderSystem.platformInfo;
+    console.log('🎯 Platform Setup:', platformInfo.platform, '|', platformInfo.selectedMethod);
     
     return {
-      service,
-      handlers,
+      service: capRecorderSystem.service,
+      handlers: capRecorderSystem.handlers,
       platformInfo,
-      // Expose constants for external use
+      // Constants for compatibility
       RECORDING_EVENTS,
       RECORDING_STATES,
-      ERROR_TYPES
+      ERROR_TYPES,
+      // Cleanup function
+      cleanup: capRecorderSystem.cleanup
     };
     
   } catch (error) {
-    console.error('❌ Failed to create platform-aware screen recorder system:', error);
-    console.error('❌ Error stack:', error.stack);
+    console.error('❌ Failed to create CapRecorder system:', error);
     throw error;
   }
 }
 
+// Export the main factory function and CapRecorder components
 module.exports = {
-  // Main factory function (new preferred method)
+  // Primary factory function
   createPlatformAwareScreenRecorderSystem,
   
-  // Legacy factory function for backward compatibility
+  // Backward compatibility alias
   createScreenRecorderSystem: createPlatformAwareScreenRecorderSystem,
   
-  // Individual components
-  PlatformAwareScreenRecorderService,
-  ScreenRecorderHandlers,
+  // CapRecorder components
+  ...require('./caprecorder'),
   
   // Constants
   RECORDING_EVENTS,

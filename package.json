@@ -24,33 +24,6 @@
     "build:main": "echo 'Main process ready'",
     "build:whisper": "node tools/setup/build-whisper-official.js",
     "build:all": "npm run build:whisper && npm run build:diarization",
-    "_comment_platform_aware_recording": "=== PLATFORM-AWARE RECORDING SETUP ===",
-    "setup:recording": "npm run setup:recording:platform && npm run setup:recording:deps",
-    "setup:recording:platform": "node scripts/setup-platform-recording.js",
-    "setup:recording:deps": "npm run setup:cpal && npm run setup:ffmpeg",
-    "setup:recording:complete": "npm run setup:recording && npm run test:recording:platform",
-    "_comment_cpal_scripts": "=== CPAL AUDIO LIBRARY SETUP ===",
-    "setup:cpal": "npm run setup:cpal:check && npm run setup:cpal:install",
-    "setup:cpal:check": "node scripts/check-cpal-requirements.js",
-    "setup:cpal:install": "node scripts/install-cpal-binaries.js",
-    "setup:cpal:build": "node scripts/build-cpal-from-source.js",
-    "test:cpal": "node scripts/test-cpal-recording.js",
-    "test:cpal:devices": "node scripts/test-cpal-devices.js",
-    "_comment_ffmpeg_scripts": "=== FFMPEG SETUP & TESTING ===",
-    "setup:ffmpeg": "node scripts/setup-ffmpeg.js",
-    "setup:ffmpeg:static": "npm install ffmpeg-static@latest",
-    "check:ffmpeg": "ffmpeg -version",
-    "test:ffmpeg": "node scripts/test-ffmpeg.js",
-    "test:ffmpeg:merge": "node scripts/test-ffmpeg-stream-merge.js",
-    "setup:audio": "npm run setup:ffmpeg && npm run setup:cpal",
-    "_comment_platform_testing": "=== PLATFORM-AWARE TESTING ===",
-    "test:recording": "npm run test:recording:detection && npm run test:recording:platform",
-    "test:recording:detection": "node scripts/test-platform-detection.js",
-    "test:recording:platform": "node scripts/test-platform-recording.js",
-    "test:recording:macos": "node scripts/test-macos-native-recording.js",
-    "test:recording:windows": "node scripts/test-windows-hybrid-recording.js",
-    "test:recording:linux": "node scripts/test-linux-hybrid-recording.js",
-    "test:recording:all": "npm run test:cpal && npm run test:ffmpeg && npm run test:recording:platform",
     "_comment_whisper_platform_scripts": "=== WHISPER PLATFORM-SPECIFIC ===",
     "build:whisper:windows": "powershell -ExecutionPolicy Bypass -File tools/setup/compile-whisper-windows.ps1",
     "build:whisper:unix": "bash tools/setup/build-whisper.sh",
@@ -78,11 +51,8 @@
     "setup": "./setup.sh",
     "setup:platform": "node scripts/setup-platform-specific.js",
     "setup:check": "node tools/setup/setup-check.js",
-    "setup:complete": "npm run build:whisper && npm run setup:diarization && npm run download:model:tiny && npm run setup:recording:complete",
+    "setup:complete": "npm run build:whisper && npm run setup:diarization && npm run download:model:tiny",
     "setup:dev": "npm run setup:complete && npm run dev",
-    "setup:macos": "chmod +x tools/setup/build-whisper.sh && ./tools/setup/build-whisper.sh && npm run download:model:tiny && npm run setup:cpal",
-    "setup:windows": "powershell -ExecutionPolicy Bypass -File tools/setup/compile-whisper-windows.ps1 && npm run setup:cpal",
-    "setup:linux": "bash tools/setup/build-whisper.sh && npm run setup:cpal",
     "_comment_model_scripts": "=== MODEL MANAGEMENT ===",
     "download:model:tiny": "mkdir -p models && curl -L -o models/ggml-tiny.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin",
     "_comment_objc2_scripts": "=== OBJC2 SCREENCAPTUREKIT NATIVE MODULE ===",
@@ -94,7 +64,6 @@
     "_comment_testing_scripts": "=== TESTING & VALIDATION ===",
     "test": "jest",
     "test:transcription": "node test-transcription.js",
-    "test:audio": "npm run test:ffmpeg && npm run test:cpal",
     "test:binary": "node -e \"const BinaryManager = require('./src/main/services/binary-manager-dll'); (async () => { const bm = new BinaryManager(); await bm.initialize(); const status = await bm.getStatus(); console.log(JSON.stringify(status, null, 2)); })()\"",
     "_comment_dev_server_scripts": "=== DEVELOPMENT SERVERS ===",
     "web": "concurrently \"npm run server\" \"cd src/renderer/whisperdesk-ui && pnpm run dev\"",
@@ -103,7 +72,6 @@
     "clean": "rimraf dist build node_modules/.cache temp",
     "clean:all": "npm run clean && rimraf binaries models",
     "clean:binary": "rimraf binaries",
-    "clean:recording": "rimraf temp/whisperdesk-recordings temp/whisperdesk-cpal",
     "_comment_release_scripts": "=== RELEASE MANAGEMENT ===",
     "release:prepare": "npm run clean && npm run build && npm run dist:all",
     "release:github": "gh release create v$npm_package_version dist/* --generate-notes",
@@ -112,15 +80,12 @@
     "version:major": "npm version major && git push && git push --tags"
   },
   "dependencies": {
+    "@firstform/caprecorder": "^1.0.0",
     "axios": "^1.6.2",
     "electron-store": "^8.1.0",
     "electron-updater": "^6.1.7",
     "execa": "^8.0.1",
-    "ffmpeg-static": "^5.2.0",
     "form-data": "^4.0.0",
-    "macos-version": "^6.0.0",
-    "node-cpal": "^0.1.1",
-    "screencapturekit": "^1.0.22",
     "uuid": "^11.1.0",
     "ws": "^8.14.2"
   },
@@ -134,9 +99,6 @@
     "wait-on": "^7.2.0"
   },
   "optionalDependencies": {
-    "@whisperdesk/cpal-recorder": "^1.0.0",
-    "aperture": "^7.0.0",
-    "fluent-ffmpeg": "^2.1.2"
   },
   "whisperdesk": {
     "binaryManagement": {
@@ -179,130 +141,6 @@
         }
       }
     },
-    "recording": {
-      "platformAware": true,
-      "methods": {
-        "macos-native": {
-          "platform": "darwin",
-          "minVersion": "13.0.0",
-          "components": {
-            "screen": "screencapturekit-node",
-            "systemAudio": "screencapturekit",
-            "microphone": "cpal",
-            "merger": "ffmpeg"
-          },
-          "systemAudio": true,
-          "quality": "excellent",
-          "performance": "excellent",
-          "dependencies": [
-            "screencapturekit",
-            "node-cpal",
-            "ffmpeg-static"
-          ]
-        },
-        "windows-hybrid": {
-          "platform": "win32",
-          "components": {
-            "screen": "browser",
-            "systemAudio": "browser",
-            "microphone": "cpal",
-            "merger": "ffmpeg"
-          },
-          "systemAudio": "good",
-          "quality": "good",
-          "performance": "good",
-          "dependencies": [
-            "node-cpal",
-            "ffmpeg-static"
-          ]
-        },
-        "linux-hybrid": {
-          "platform": "linux",
-          "components": {
-            "screen": "browser",
-            "systemAudio": "browser",
-            "microphone": "cpal",
-            "merger": "ffmpeg"
-          },
-          "systemAudio": "good",
-          "quality": "good",
-          "performance": "good",
-          "audioSystems": [
-            "pulseaudio",
-            "alsa",
-            "jack"
-          ],
-          "dependencies": [
-            "node-cpal",
-            "ffmpeg-static"
-          ]
-        },
-        "browser-fallback": {
-          "platform": "all",
-          "components": {
-            "screen": "browser",
-            "systemAudio": "browser",
-            "microphone": "browser",
-            "merger": "browser"
-          },
-          "systemAudio": "limited",
-          "quality": "basic",
-          "performance": "basic",
-          "dependencies": []
-        }
-      },
-      "audioProcessing": {
-        "merger": "ffmpeg",
-        "cpal": {
-          "sampleRates": [
-            44100,
-            48000,
-            96000
-          ],
-          "bitDepths": [
-            16,
-            24,
-            32
-          ],
-          "channels": [
-            1,
-            2
-          ],
-          "formats": [
-            "wav",
-            "flac"
-          ]
-        },
-        "codecs": {
-          "video": [
-            "h264",
-            "vp9",
-            "vp8"
-          ],
-          "audio": [
-            "aac",
-            "opus",
-            "mp3"
-          ]
-        },
-        "ffmpeg": {
-          "presets": {
-            "high": {
-              "video": "-c:v libx264 -crf 18 -preset medium",
-              "audio": "-c:a aac -b:a 192k"
-            },
-            "medium": {
-              "video": "-c:v libx264 -crf 23 -preset medium",
-              "audio": "-c:a aac -b:a 128k"
-            },
-            "low": {
-              "video": "-c:v libx264 -crf 28 -preset fast",
-              "audio": "-c:a aac -b:a 96k"
-            }
-          }
-        }
-      }
-    },
     "models": {
       "defaultModel": "tiny",
       "downloadOnSetup": true,
@@ -342,10 +180,7 @@
     "asar": true,
     "asarUnpack": [
       "binaries/**/*",
-      "models/**/*",
-      "node_modules/ffmpeg-static/**/*",
-      "node_modules/node-cpal/**/*",
-      "node_modules/@whisperdesk/cpal-recorder/**/*"
+      "models/**/*"
     ],
     "files": [
       "dist/main/**/*",
@@ -369,20 +204,6 @@
       {
         "from": "models/",
         "to": "models/",
-        "filter": [
-          "**/*"
-        ]
-      },
-      {
-        "from": "node_modules/ffmpeg-static/",
-        "to": "audio-tools/",
-        "filter": [
-          "**/*"
-        ]
-      },
-      {
-        "from": "resources/cpal-binaries/",
-        "to": "cpal-binaries/",
         "filter": [
           "**/*"
         ]
@@ -446,10 +267,6 @@
         {
           "from": "binaries/onnxruntime.dll",
           "to": "binaries/onnxruntime.dll"
-        },
-        {
-          "from": "resources/cpal-binaries/cpal-recorder-win32-x64.exe",
-          "to": "binaries/cpal-recorder.exe"
         }
       ]
     },
@@ -508,14 +325,6 @@
         {
           "from": "binaries/libonnxruntime.1.16.3.dylib",
           "to": "binaries/libonnxruntime.1.16.3.dylib"
-        },
-        {
-          "from": "resources/cpal-binaries/cpal-recorder-darwin-x64",
-          "to": "binaries/cpal-recorder-x64"
-        },
-        {
-          "from": "resources/cpal-binaries/cpal-recorder-darwin-arm64",
-          "to": "binaries/cpal-recorder-arm64"
         }
       ]
     },
@@ -559,10 +368,6 @@
         {
           "from": "binaries/diarize-cli",
           "to": "binaries/diarize-cli"
-        },
-        {
-          "from": "resources/cpal-binaries/cpal-recorder-linux-x64",
-          "to": "binaries/cpal-recorder"
         }
       ]
     }
@@ -582,14 +387,7 @@
     "diarization",
     "multi-speaker",
     "screen-recording",
-    "system-audio",
-    "screencapturekit",
-    "cpal",
-    "platform-aware",
-    "ffmpeg",
-    "audio-processing",
-    "stream-merging",
-    "hybrid-recording"
+    "caprecorder"
   ],
   "repository": {
     "type": "git",

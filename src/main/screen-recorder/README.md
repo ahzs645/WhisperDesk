@@ -1,224 +1,136 @@
-# Centralized Screen Recorder System
+# WhisperDesk Screen Recorder
 
-This directory contains the centralized and restructured screen recording functionality for WhisperDesk. The system is designed with separation of concerns, modularity, and maintainability in mind.
+This directory contains the screen recording implementation for WhisperDesk, powered by **CapRecorder** - a high-performance screen recording library built with Rust and exposed to Node.js via NAPI.
 
-## Architecture Overview
+## 🎯 Architecture
 
-The screen recorder system is organized into several key components:
+WhisperDesk uses a unified CapRecorder-based implementation that replaces the previous complex platform-specific recording system.
 
 ```
 src/main/screen-recorder/
-├── core/                    # Core recording logic
-│   └── ScreenRecorderEngine.js
-├── managers/                # Specialized managers
-│   ├── DeviceManager.js     # Device discovery and validation
-│   └── FileManager.js       # File operations and storage
-├── handlers/                # IPC communication
-│   └── ScreenRecorderHandlers.js
-├── types/                   # Type definitions and constants
-│   └── index.js
-├── ScreenRecorderService.js # Main orchestrator service
-├── index.js                 # Entry point and factory
-└── README.md               # This documentation
+├── index.js              # Main entry point and factory
+├── types/                # TypeScript definitions and constants
+├── caprecorder/          # CapRecorder implementation
+│   ├── CapRecorderService.js    # Core recording service
+│   ├── CapRecorderHandlers.js   # IPC communication handlers  
+│   ├── index.js                 # CapRecorder system factory
+│   ├── examples.js              # Usage examples
+│   └── README.md                # Detailed CapRecorder docs
+└── README.md             # This file
 ```
 
-## Components
+## ✨ Features
 
-### 1. ScreenRecorderEngine (`core/ScreenRecorderEngine.js`)
-The core recording engine that handles:
-- Recording state management
-- Start/stop/pause/resume operations
-- Duration tracking and progress events
-- File path generation and validation
-- Error handling and recovery
+🎥 **High-performance recording** - Native Rust backend via Cap  
+🖥️ **Screen & window capture** - Flexible recording targets  
+🔊 **System audio recording** - Built-in audio capture  
+🎯 **Cross-platform** - macOS, Windows, Linux support  
+⚡ **Async/await API** - Modern JavaScript interface  
+🎮 **Headless operation** - No GUI required  
+⏸️ **Pause/resume** - Full recording control  
 
-### 2. DeviceManager (`managers/DeviceManager.js`)
-Manages recording devices:
-- Screen and window source discovery
-- Audio device enumeration (from renderer)
-- Device validation and compatibility checks
-- Permission management (macOS)
-- Periodic device refresh
-
-### 3. FileManager (`managers/FileManager.js`)
-Handles file operations:
-- Recording file registration and tracking
-- File cleanup and storage management
-- Recording completion confirmation
-- Storage statistics and monitoring
-- Automatic cleanup of old files
-
-### 4. ScreenRecorderService (`ScreenRecorderService.js`)
-Main orchestrator that:
-- Coordinates all components
-- Provides unified API
-- Handles component initialization
-- Manages service lifecycle
-- Forwards events between components
-
-### 5. ScreenRecorderHandlers (`handlers/ScreenRecorderHandlers.js`)
-Centralized IPC handlers:
-- All screen recorder IPC communication
-- Device-related operations
-- Recording control operations
-- File management operations
-- Permission handling
-
-### 6. Types (`types/index.js`)
-Type definitions and constants:
-- TypeScript-style JSDoc type definitions
-- Recording events and states
-- Error type categorization
-- Shared constants
-
-## Usage
-
-### Basic Setup
+## 🚀 Quick Start
 
 ```javascript
-const { createScreenRecorderSystem } = require('./screen-recorder');
+const { createPlatformAwareScreenRecorderSystem } = require('./screen-recorder');
 
-// Create and initialize the complete system
-const screenRecorderSystem = await createScreenRecorderSystem();
+// Initialize the recording system
+const system = await createPlatformAwareScreenRecorderSystem();
+const { service, handlers } = system;
 
-// Access components
-const service = screenRecorderSystem.service;
-const handlers = screenRecorderSystem.handlers;
-```
-
-### Integration with Service Manager
-
-The system integrates with the existing service manager:
-
-```javascript
-// In service-manager.js
-const { createScreenRecorderSystem } = require('../screen-recorder');
-
-async initializeEnhancedScreenRecorder() {
-  const screenRecorderSystem = await createScreenRecorderSystem();
-  this.services.screenRecorder = screenRecorderSystem.service;
-  this.screenRecorderSystem = screenRecorderSystem;
-}
-```
-
-### Recording Operations
-
-```javascript
 // Start recording
-const result = await service.startRecording({
-  screenId: 'screen:0',
-  audioInputId: 'default',
-  includeMicrophone: true,
-  videoQuality: 'medium'
+await service.startRecording({
+  outputPath: './recordings/my-recording',
+  screenId: screens[0].id,
+  captureSystemAudio: true,
+  fps: 30
 });
 
 // Stop recording
-await service.stopRecording();
-
-// Confirm completion (called by renderer)
-await service.confirmRecordingComplete('/path/to/actual/file.webm');
+const result = await service.stopRecording();
+console.log('Recording saved to:', result.outputPath);
 ```
 
-### Device Management
+## 🔌 Integration
+
+The screen recorder integrates with WhisperDesk through:
+
+1. **Service Manager** - Initializes the CapRecorder system
+2. **IPC Manager** - Sets up communication channels with the renderer
+3. **Event System** - Forwards recording events to the UI
+
+### Service Integration
 
 ```javascript
-// Get available screens
-const screens = await service.getAvailableScreens();
-
-// Update audio devices from renderer
-service.updateAudioDevices(audioDeviceList);
-
-// Validate device selection
-const validation = service.validateDeviceSelection(screenId, audioId);
+// In ServiceManager
+await this.initializePlatformAwareScreenRecorder();
+this.services.screenRecorder = this.screenRecorderSystem.service;
 ```
 
-## Events
+### IPC Channels
 
-The system emits various events for monitoring and UI updates:
+- `screenRecorder:startRecording` - Begin new recording
+- `screenRecorder:stopRecording` - End current recording  
+- `screenRecorder:pauseRecording` - Pause recording
+- `screenRecorder:resumeRecording` - Resume paused recording
+- `screenRecorder:getAvailableScreens` - List capture sources
+- `screenRecorder:getStatus` - Get current state
 
-### Recording Events
-- `started` - Recording has started
-- `completed` - Recording completed successfully
-- `paused` - Recording paused
-- `resumed` - Recording resumed
-- `error` - Recording error occurred
-- `progress` - Recording progress update
-- `validated` - Recording validated by renderer
+## 📁 Output Format
 
-### Device Events
-- `devicesRefreshed` - Device list updated
-- `audioDevicesUpdated` - Audio devices updated from renderer
+Recordings are saved in Cap's structured format:
 
-## Error Handling
-
-The system uses categorized error types for better error handling:
-
-```javascript
-const { ERROR_TYPES } = require('./screen-recorder');
-
-// Error types include:
-// - SERVICE_UNAVAILABLE
-// - VALIDATION_ERROR
-// - START_ERROR, STOP_ERROR, PAUSE_ERROR, RESUME_ERROR
-// - PERMISSION_ERROR, DEVICE_ERROR, FILE_ERROR
+```
+recording-name/
+├── project-config.json    # Recording metadata
+└── content/
+    └── segments/
+        └── segment-0/
+            ├── display.mp4      # Video (H.264)
+            └── system_audio.ogg # Audio (Opus)
 ```
 
-## Configuration
+## 🛠️ Development
 
-Each component has configurable options:
+### Testing
 
-### DeviceManager Configuration
-```javascript
-{
-  refreshIntervalMs: 30000,    // Device refresh interval
-  maxWindows: 10,              // Max windows to show
-  cacheTimeoutMs: 60000        // Cache validity timeout
-}
+Run CapRecorder examples:
+
+```bash
+# All examples
+node src/main/screen-recorder/caprecorder/examples.js
+
+# Specific examples  
+node src/main/screen-recorder/caprecorder/examples.js screen
+node src/main/screen-recorder/caprecorder/examples.js window
+node src/main/screen-recorder/caprecorder/examples.js audio
 ```
 
-### FileManager Configuration
-```javascript
-{
-  maxTempFiles: 50,            // Max temp files to keep
-  maxFileAge: 7 * 24 * 60 * 60 * 1000,  // 7 days
-  allowedExtensions: ['.webm', '.mp4', '.mov', '.avi'],
-  maxFileSize: 5 * 1024 * 1024 * 1024    // 5GB
-}
-```
+### Adding Features
 
-## Migration from Old System
+To extend the recording system:
 
-The new system maintains API compatibility with the old screen recorder service. Existing code should continue to work without changes, but new features should use the centralized system.
+1. **Service Level** - Add methods to `CapRecorderService.js`
+2. **IPC Level** - Add handlers to `CapRecorderHandlers.js`  
+3. **Integration** - Update event forwarding in `ServiceManager.js`
 
-### Key Improvements
+## 🔄 Migration Notes
 
-1. **Separation of Concerns**: Each component has a specific responsibility
-2. **Better Error Handling**: Categorized errors with detailed context
-3. **Improved Device Management**: Centralized device discovery and validation
-4. **File Management**: Proper file tracking and cleanup
-5. **Event System**: Comprehensive event emission for monitoring
-6. **Type Safety**: JSDoc type definitions for better development experience
-7. **Testability**: Modular design makes testing easier
-8. **Maintainability**: Clear structure and documentation
+This implementation replaces the previous multi-recorder system with:
 
-## Future Enhancements
+- **Simplified Architecture** - Single service instead of multiple engines
+- **Better Performance** - Native Rust implementation  
+- **Unified API** - Same interface across all platforms
+- **Reduced Complexity** - Much smaller, maintainable codebase
 
-The modular design allows for easy extension:
+## 📚 Documentation
 
-- **Recording Formats**: Add support for different output formats
-- **Quality Presets**: Implement recording quality presets
-- **Cloud Storage**: Add cloud storage integration
-- **Recording Scheduling**: Implement scheduled recordings
-- **Advanced Permissions**: Enhanced permission management
-- **Performance Monitoring**: Add performance metrics and monitoring
+For detailed API documentation and examples, see:
+- [CapRecorder Implementation](./caprecorder/README.md)
+- [Examples](./caprecorder/examples.js)
 
-## Cleanup
+## 🔗 Dependencies
 
-The system properly cleans up all resources:
-
-```javascript
-// Cleanup is handled automatically by the service manager
-// Manual cleanup if needed:
-screenRecorderSystem.handlers.cleanup();
-screenRecorderSystem.service.destroy();
-``` 
+- `@firstform/caprecorder` - Core recording library
+- `events` - Event emitter for state management
+- `path` & `fs` - File system operations

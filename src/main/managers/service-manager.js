@@ -98,15 +98,15 @@ class ServiceManager extends EventEmitter {
 
   async initializePlatformAwareScreenRecorder() {
     try {
-      console.log('🔧 Initializing Platform-Aware Screen Recorder...');
+      console.log('🔧 Initializing CapRecorder-Based Screen Recorder...');
       
-      // Use simplified system
-      console.log('🔧 Creating platform-aware screen recorder system...');
+      // Use CapRecorder system
+      console.log('🔧 Creating CapRecorder screen recorder system...');
       this.screenRecorderSystem = await createPlatformAwareScreenRecorderSystem();
-      console.log('✅ Screen recorder system created successfully');
+      console.log('✅ CapRecorder screen recorder system created successfully');
       
       this.services.screenRecorder = this.screenRecorderSystem.service;
-      console.log('✅ Screen recorder service assigned');
+      console.log('✅ CapRecorder screen recorder service assigned');
       
       // Log platform information
       const platformInfo = this.screenRecorderSystem.platformInfo;
@@ -118,59 +118,31 @@ class ServiceManager extends EventEmitter {
       
       // Verify handlers were created
       if (this.screenRecorderSystem.handlers) {
-        console.log('✅ Screen recorder handlers created');
+        console.log('✅ CapRecorder screen recorder handlers created');
         console.log('🔍 Handlers registered count:', this.screenRecorderSystem.handlers.registeredHandlers?.size || 0);
       } else {
-        console.warn('⚠️ Screen recorder handlers not created');
+        console.warn('⚠️ CapRecorder screen recorder handlers not created');
       }
       
-      // Simplified logging based on platform
-      if (platformInfo.platform === 'darwin') {
-        console.log('🍎 macOS: Pure ScreenCaptureKit (screen + system audio + microphone)');
-        console.log('🚫 No CPAL dependency');
-        console.log('🚫 No FFmpeg merging needed');
-      } else if (platformInfo.platform === 'win32') {
-        console.log('🪟 Windows: Browser MediaRecorder + CPAL + FFmpeg');
-      } else if (platformInfo.platform === 'linux') {
-        console.log('🐧 Linux: Browser MediaRecorder + CPAL + FFmpeg');
-      }
+      // Log CapRecorder features
+      console.log('🎯 CapRecorder Features:');
+      console.log('  � High-performance screen recording');
+      console.log('  �️ Support for screen and window capture');
+      console.log('  � System audio recording');
+      console.log('  🎯 Cross-platform (macOS, Windows, Linux)');
+      console.log('  ⚡ Native Rust performance');
+      console.log('  🚀 Async/await API');
+      console.log('  ⏸️ Pause/resume functionality');
       
-      console.log('✅ Platform-Aware Screen Recorder initialized');
+      console.log('✅ CapRecorder-Based Screen Recorder initialized');
     } catch (error) {
-      console.error('❌ Failed to initialize Platform-Aware Screen Recorder:', error);
+      console.error('❌ Failed to initialize CapRecorder-Based Screen Recorder:', error);
       console.error('❌ Error details:', error.stack);
       
       // Don't throw - let the app continue with fallback handlers
       console.warn('⚠️ Screen recorder will use fallback mode');
       this.screenRecorderSystem = null;
       this.services.screenRecorder = null;
-    }
-  }
-
-  async initializeEnhancedScreenRecorder() {
-    try {
-      console.log('🔧 Initializing Enhanced Screen Recorder System with Aperture v7...');
-      
-      // Create the complete enhanced screen recorder system
-      this.screenRecorderSystem = await createScreenRecorderSystem();
-      
-      // Add the service to your services object
-      this.services.screenRecorder = this.screenRecorderSystem.service;
-      
-      // Log the recording method for debugging
-      const methodInfo = this.services.screenRecorder.engine?.getMethodInfo?.();
-      if (methodInfo) {
-        console.log('🎯 Recording method selected:', methodInfo.name);
-        console.log('📊 Capabilities:', methodInfo.features.join(', '));
-      }
-      
-      console.log('✅ Enhanced Screen Recorder System initialized');
-    } catch (error) {
-      console.error('❌ Failed to initialize Enhanced Screen Recorder System:', error);
-      console.warn('⚠️ Screen recorder will use fallback mode');
-      
-      // Create a basic fallback screen recorder system with handlers
-      await this.initializeFallbackScreenRecorder();
     }
   }
 
@@ -252,55 +224,58 @@ class ServiceManager extends EventEmitter {
     if (!this.services.screenRecorder || !this.mainWindow) return;
     
     try {
+      console.log('🔧 Setting up CapRecorder events...');
+      
+      // Setup event forwarding through the handlers
+      if (this.screenRecorderSystem?.handlers) {
+        this.screenRecorderSystem.handlers.setupEventForwarding(this.mainWindow);
+        console.log('✅ CapRecorder event forwarding set up through handlers');
+      } else {
+        console.warn('⚠️ CapRecorder handlers not available for event forwarding');
+      }
+      
+      // Additional compatibility events for existing UI
       const screenRecorderEvents = {
-        'started': 'screenRecorder:started',
-        'completed': 'screenRecorder:completed', 
-        'error': 'screenRecorder:error',
-        'paused': 'screenRecorder:paused',
-        'resumed': 'screenRecorder:resumed',
-        'progress': 'screenRecorder:progress',
-        'validated': 'screenRecorder:validated'
+        'recordingStarted': 'screenRecorder:started',
+        'recordingStopped': 'screenRecorder:completed', 
+        'recordingPaused': 'screenRecorder:paused',
+        'recordingResumed': 'screenRecorder:resumed',
+        'recordingCanceled': 'screenRecorder:error'
       };
 
       Object.entries(screenRecorderEvents).forEach(([eventName, channelName]) => {
         this.services.screenRecorder.on(eventName, (data) => {
-          console.log(`📹 Recording ${eventName} event:`, data);
+          console.log(`📹 CapRecorder ${eventName} event:`, data);
           
-          // Enhance error events with additional context
-          if (eventName === 'error') {
-            const enhancedError = {
+          // Transform CapRecorder events to match existing UI expectations
+          let transformedData = data;
+          
+          if (eventName === 'recordingStopped') {
+            transformedData = {
               ...data,
+              success: true,
+              filePath: data.outputPath,
+              duration: 'unknown' // CapRecorder doesn't provide duration in event
+            };
+          } else if (eventName === 'recordingCanceled') {
+            transformedData = {
+              ...data,
+              error: 'Recording was canceled',
               timestamp: new Date().toISOString(),
               platform: process.platform,
-              method: data.method || 'unknown',
-              apiVersion: data.apiVersion || 'unknown'
+              method: 'caprecorder'
             };
-            
-            if (data.error?.includes('Selected framerate') || data.error?.includes('Input/output error')) {
-              enhancedError.suggestion = 'Try refreshing devices or check screen recording permissions';
-            } else if (data.error?.includes('permission')) {
-              enhancedError.suggestion = 'Please grant screen recording and microphone permissions';
-            } else if (data.error?.includes('ESM') || data.error?.includes('import')) {
-              enhancedError.suggestion = 'Aperture v7 compatibility issue - using browser fallback';
-            }
-            
-            this.mainWindow?.webContents.send(channelName, enhancedError);
-          } else {
-            // Add method info to success events
-            const enhancedData = {
-              ...data,
-              method: data.method || 'unknown',
-              apiVersion: data.apiVersion || 'unknown'
-            };
-            
-            this.mainWindow?.webContents.send(channelName, enhancedData);
+          }
+          
+          if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+            this.mainWindow.webContents.send(channelName, transformedData);
           }
         });
       });
-      
-      console.log('✅ Enhanced screen recorder events set up');
+
+      console.log('✅ CapRecorder events set up');
     } catch (error) {
-      console.error('❌ Failed to set up enhanced screen recorder events:', error);
+      console.error('❌ Failed to set up CapRecorder events:', error);
     }
   }
 
@@ -381,13 +356,17 @@ class ServiceManager extends EventEmitter {
   async cleanup() {
     console.log('🔧 Cleaning up services...');
     
-    // Cleanup enhanced screen recorder system first
-    if (this.screenRecorderSystem?.handlers) {
+    // Cleanup CapRecorder screen recorder system first
+    if (this.screenRecorderSystem) {
       try {
-        this.screenRecorderSystem.handlers.cleanup();
-        console.log('✅ Enhanced screen recorder system cleaned up');
+        if (this.screenRecorderSystem.cleanup) {
+          await this.screenRecorderSystem.cleanup();
+        } else if (this.screenRecorderSystem.handlers) {
+          this.screenRecorderSystem.handlers.cleanup();
+        }
+        console.log('✅ CapRecorder screen recorder system cleaned up');
       } catch (error) {
-        console.error('❌ Failed to cleanup enhanced screen recorder system:', error);
+        console.error('❌ Failed to cleanup CapRecorder screen recorder system:', error);
       }
       this.screenRecorderSystem = null;
     }

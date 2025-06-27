@@ -138,11 +138,11 @@ npm run server
 - **Clipboard Integration**: Quick copy/paste functionality
 
 ### Screen Recording
-- **Enhanced Recorder**: Built-in screen capture with audio
-- **Device Management**: Smart detection and validation of screens/microphones
+- **CapRecorder Integration**: High-performance screen capture powered by Rust/NAPI
+- **Cross-Platform Unified**: Single solution for macOS, Windows, and Linux
+- **System Audio Support**: Built-in system audio recording capabilities
 - **Auto-transcription**: Seamless recording-to-text workflow
-- **Permission Handling**: Intelligent permission management across platforms
-- **Debug Tools**: Comprehensive troubleshooting and diagnostics
+- **Modern Architecture**: Simplified, maintainable recording system
 
 ## 📋 Available Scripts
 
