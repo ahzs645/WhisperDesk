@@ -9,7 +9,7 @@ import CustomMicIcon from './components/icons/CustomMicIcon'
 import { ModelMarketplace } from './components/ModelMarketplace-WebCompatible'
 import { AnalyticsTab } from './components/analytics/AnalyticsTab'
 import { EnhancedTranscriptionTab } from './components/transcription/EnhancedTranscriptionTab'
-import { EnhancedSettingsTab } from './components/EnhancedSettingsTab'
+import { SettingsTab } from './components/settings'
 import { ScreenRecorderProvider } from './components/screen-recorder/ScreenRecorderProvider'
 import { UnifiedWindowControls } from './components/UnifiedWindowControls'
 import { Toaster } from './components/ui/sonner'
@@ -383,7 +383,7 @@ function AppContent() {
           </TabsContent>
 
           <TabsContent value="settings" className="space-y-6">
-            <EnhancedSettingsTab />
+            <SettingsTab />
           </TabsContent>
         </Tabs>
       </main>

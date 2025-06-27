@@ -1,13 +1,20 @@
 import React from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
+import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart'
+import { PieChart, Pie, Cell } from 'recharts'
 import { Brain } from 'lucide-react'
 
 export default function EmotionalTone({ analytics, selectedSpeakerId }) {
   if (!analytics) return null
 
   const selectedSpeakerInfo = analytics.speakers.find(s => s.id === selectedSpeakerId)
+
+  const chartConfig = {
+    emotions: {
+      label: "Emotions",
+    },
+  }
 
   return (
     <Card>
@@ -27,7 +34,10 @@ export default function EmotionalTone({ analytics, selectedSpeakerId }) {
       </CardHeader>
       <CardContent>
         <div className="h-48">
-          <ResponsiveContainer width="100%" height="100%">
+          <ChartContainer 
+            config={chartConfig} 
+            className="h-full w-full [&>.recharts-wrapper]:!h-full [&>.recharts-wrapper]:!w-full"
+          >
             <PieChart>
               <Pie
                 data={analytics.emotions}
@@ -42,9 +52,15 @@ export default function EmotionalTone({ analytics, selectedSpeakerId }) {
                   <Cell key={`cell-${index}`} fill={entry.color} />
                 ))}
               </Pie>
-              <Tooltip formatter={(value) => `${value}%`} />
+              <ChartTooltip 
+                content={
+                  <ChartTooltipContent 
+                    formatter={(value) => [`${value}%`]}
+                  />
+                }
+              />
             </PieChart>
-          </ResponsiveContainer>
+          </ChartContainer>
         </div>
         <div className="grid grid-cols-2 gap-2 mt-2 text-xs">
           {analytics.emotions.map((emotion, index) => (
