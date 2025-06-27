@@ -18,7 +18,7 @@ export const ScreenRecorderSettings = () => {
   };
 
   const selectRecordingDirectory = async () => {
-    if (window.electronAPI?.file?.showSaveDialog) {
+    if (window.electronAPI?.file?.showOpenDialog) {
       const result = await window.electronAPI.file.showOpenDialog({
         properties: ['openDirectory'],
         title: 'Select Recording Directory'

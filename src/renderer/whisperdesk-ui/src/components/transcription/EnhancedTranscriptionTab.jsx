@@ -6,7 +6,6 @@ import { useAppState } from '@/App'
 import { appInitializer } from '@/utils/AppInitializer'
 import { ScreenRecorder } from '../screen-recorder'
 import { FileUploadSection } from './FileUploadSection'
-import { QuickRecordSection } from './QuickRecordSection'
 import { TranscriptionSettings } from './TranscriptionSettings'
 import { TranscriptionControls } from './TranscriptionControls'
 import { TranscriptDisplay } from './TranscriptDisplay'
@@ -388,22 +387,6 @@ export function EnhancedTranscriptionTab() {
   const handleManualRefreshProviders = () => refreshProviders(true)
   const handleManualRefreshModels = () => refreshModels(true)
 
-  // FIXED: Updated QuickRecordSection to not auto-scroll
-  const handleQuickRecordClick = () => {
-    // Instead of auto-scrolling, just show a gentle hint
-    toast.info('📹 See enhanced recording options below', {
-      action: {
-        label: 'Scroll to Recorder',
-        onClick: () => {
-          document.getElementById('enhanced-recorder')?.scrollIntoView({ 
-            behavior: 'smooth',
-            block: 'start'
-          })
-        }
-      }
-    })
-  }
-
   return (
     <div 
       ref={containerRef}
@@ -419,8 +402,10 @@ export function EnhancedTranscriptionTab() {
           onFileChange={(fileInfo) => updateAppState({ selectedFile: fileInfo })}
         />
 
-        {/* Enhanced Recording - FIXED: No auto-scroll */}
-        <QuickRecordSection onQuickRecordClick={handleQuickRecordClick} />
+        {/* Screen Recorder */}
+        <div id="enhanced-recorder">
+          <ScreenRecorder />
+        </div>
       </div>
 
       {/* Enhanced Transcription Settings */}
@@ -468,11 +453,6 @@ export function EnhancedTranscriptionTab() {
         progressMessage={appState.progressMessage}
         onCopy={handleCopyText}
       />
-
-      {/* Enhanced Screen Recorder - FIXED: Scroll position preserved */}
-      <div id="enhanced-recorder">
-        <ScreenRecorder />
-      </div>
     </div>
   )
 }

@@ -50,19 +50,11 @@ export const ScreenRecorderDevices = () => {
                   <div className="flex items-center space-x-2">
                     <Monitor className="w-4 h-4" />
                     <span>{screen.name}</span>
-                    {screen.id && (
-                      <span className="text-xs text-muted-foreground">(ID: {screen.id})</span>
-                    )}
                   </div>
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
-          {selectedScreen && (
-            <div className="text-xs text-muted-foreground">
-              Selected device ID: {selectedScreen}
-            </div>
-          )}
         </div>
         
         <div className="space-y-2">
@@ -81,19 +73,11 @@ export const ScreenRecorderDevices = () => {
                   <div className="flex items-center space-x-2">
                     <Mic className="w-4 h-4" />
                     <span>{device.name}</span>
-                    {device.id && (
-                      <span className="text-xs text-muted-foreground">(ID: {device.id})</span>
-                    )}
                   </div>
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
-          {selectedAudioInput && (
-            <div className="text-xs text-muted-foreground">
-              Selected device ID: {selectedAudioInput}
-            </div>
-          )}
           {!recordingSettings.includeMicrophone && (
             <div className="text-xs text-amber-600">
               Audio input disabled - enable microphone in settings
@@ -101,27 +85,6 @@ export const ScreenRecorderDevices = () => {
           )}
         </div>
       </div>
-
-      {/* Device debugging info */}
-      {availableDevices.screens.length > 0 && (
-        <div className="p-3 bg-muted/50 rounded-lg">
-          <h5 className="font-medium text-sm mb-2">Current Device Selection</h5>
-          <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
-            <div>
-              <strong>Available Screens:</strong> {availableDevices.screens.map(s => s.id).join(', ')}
-            </div>
-            <div>
-              <strong>Available Audio:</strong> {availableDevices.audio.map(a => a.id).join(', ')}
-            </div>
-            <div>
-              <strong>Selected Screen:</strong> {selectedScreen || 'None'}
-            </div>
-            <div>
-              <strong>Selected Audio:</strong> {selectedAudioInput || 'None'}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }; 

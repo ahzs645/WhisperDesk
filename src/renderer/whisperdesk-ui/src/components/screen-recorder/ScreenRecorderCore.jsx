@@ -1,22 +1,19 @@
 import React from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
-import { Separator } from '../ui/separator';
 import { Alert, AlertDescription } from '../ui/alert';
 import { Button } from '../ui/button';
-import { AlertCircle, Video } from 'lucide-react';
+import { Badge } from '../ui/badge';
+import { AlertCircle, Video, Zap } from 'lucide-react';
 import { ScreenRecorderDevices } from './ScreenRecorderDevices';
-import { ScreenRecorderSettings } from './ScreenRecorderSettings';
 import { ScreenRecorderControls } from './ScreenRecorderControls';
 import { ScreenRecorderStatus } from './ScreenRecorderStatus';
-import { ScreenRecorderDebug } from './ScreenRecorderDebug';
 import { useScreenRecorderContext } from './ScreenRecorderProvider';
 
 export const ScreenRecorderCore = () => {
   const {
     apiStatus,
     localError,
-    debugMode,
-    toggleDebugMode
+    recordingSettings
   } = useScreenRecorderContext();
 
   return (
@@ -26,9 +23,17 @@ export const ScreenRecorderCore = () => {
           <div className="flex items-center space-x-2">
             <Video className="w-5 h-5" />
             <div>
-              <CardTitle>Screen Recorder</CardTitle>
+              <CardTitle className="flex items-center space-x-2">
+                <span>Screen Recorder</span>
+                {recordingSettings.autoTranscribe && (
+                  <Badge variant="outline" className="ml-2">
+                    <Zap className="w-3 h-3 mr-1" />
+                    Auto-transcribe
+                  </Badge>
+                )}
+              </CardTitle>
               <CardDescription>
-                Record your screen with enhanced device control and auto-transcription
+                Record your screen with audio and automatically transcribe
               </CardDescription>
             </div>
           </div>
@@ -36,7 +41,7 @@ export const ScreenRecorderCore = () => {
         </div>
       </CardHeader>
 
-      <CardContent className="space-y-6">
+      <CardContent className="space-y-4">
         
         {/* Error Display */}
         {localError && (
@@ -76,34 +81,8 @@ export const ScreenRecorderCore = () => {
         {/* Device Selection */}
         <ScreenRecorderDevices />
 
-        <Separator />
-
-        {/* Recording Settings */}
-        <ScreenRecorderSettings />
-
-        <Separator />
-
         {/* Recording Controls */}
         <ScreenRecorderControls />
-
-        {/* Debug Panel Toggle */}
-        <div className="flex justify-center">
-          <Button 
-            variant="ghost" 
-            size="sm" 
-            onClick={toggleDebugMode}
-          >
-            {debugMode ? 'Hide Debug Panel' : 'Show Debug Panel'}
-          </Button>
-        </div>
-
-        {/* Debug Panel */}
-        {debugMode && (
-          <>
-            <Separator />
-            <ScreenRecorderDebug />
-          </>
-        )}
 
       </CardContent>
     </Card>

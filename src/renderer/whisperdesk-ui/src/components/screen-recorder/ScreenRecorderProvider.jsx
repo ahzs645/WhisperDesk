@@ -133,6 +133,12 @@ export const ScreenRecorderProvider = ({ children }) => {
           ...options
         };
 
+        // Map recordingDirectory to outputPath for backend compatibility
+        if (recordingOptions.recordingDirectory) {
+          recordingOptions.outputPath = recordingOptions.recordingDirectory;
+          delete recordingOptions.recordingDirectory;
+        }
+
         // Validate required fields
         if (!recordingOptions.screenId) {
           throw new Error('Please select a screen to record');

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Upload, FileAudio, FileUp, Sparkles } from 'lucide-react'
@@ -131,9 +132,19 @@ export function FileUploadSection({ selectedFile, onFileSelect, onFileChange }) 
 
   return (
     <>
-      {/* Full Window Glass Overlay */}
-      {windowDragOver && (
-        <div className="fixed inset-0 z-[9999] pointer-events-none">
+      {/* Full Window Glass Overlay - Rendered as Portal */}
+      {windowDragOver && createPortal(
+        <div 
+          className="fixed inset-0 pointer-events-none" 
+          style={{ 
+            position: 'fixed', 
+            top: 0, 
+            left: 0, 
+            width: '100vw', 
+            height: '100vh',
+            zIndex: 999999
+          }}
+        >
           {/* Glass backdrop */}
           <div className="absolute inset-0 bg-black/20 backdrop-blur-md animate-in fade-in duration-300">
             {/* Animated glow border */}
@@ -171,7 +182,8 @@ export function FileUploadSection({ selectedFile, onFileSelect, onFileChange }) 
               <div className="absolute bottom-0 right-0 w-32 h-32 bg-cyan-400/30 rounded-full blur-3xl animate-pulse delay-500" />
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Original File Upload Card */}
