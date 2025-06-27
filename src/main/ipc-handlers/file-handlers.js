@@ -1,5 +1,5 @@
 // src/main/ipc-handlers/file-handlers.js
-const { ipcMain, dialog } = require('electron');
+const { ipcMain, dialog, shell } = require('electron');
 const fs = require('fs').promises;
 const path = require('path');
 const os = require('os');
@@ -195,6 +195,17 @@ class FileHandlers {
       }
     });
 
+    // Add handler for showing item in folder
+    ipcMain.handle('file:showItemInFolder', async (event, filePath) => {
+      try {
+        shell.showItemInFolder(filePath);
+        return { success: true };
+      } catch (error) {
+        console.error('❌ Failed to show item in folder:', error);
+        return { success: false, error: error.message };
+      }
+    });
+
     console.log('✅ File IPC handlers set up');
   }
 
@@ -214,6 +225,7 @@ class FileHandlers {
       'file:showErrorBox',
       'file:saveRecordingFile',
       'file:getDefaultRecordingsDirectory',
+      'file:showItemInFolder',
       'file:exists',
       'file:writeFile',
       'file:readFile'

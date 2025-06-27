@@ -48,6 +48,29 @@ export const ScreenRecorderProvider = ({ children }) => {
 
   const [service] = useState(() => new ScreenRecorderServiceRenderer()); // ✅ Use renderer service
 
+  // Load recording settings from backend
+  useEffect(() => {
+    const loadRecordingSettings = async () => {
+      try {
+        if (window.electronAPI?.settings?.getRecordingSettings) {
+          const savedSettings = await window.electronAPI.settings.getRecordingSettings();
+          setState(prev => ({
+            ...prev,
+            recordingSettings: {
+              ...prev.recordingSettings,
+              ...savedSettings
+            }
+          }));
+          console.log('✅ Recording settings loaded from backend:', savedSettings);
+        }
+      } catch (error) {
+        console.error('❌ Failed to load recording settings:', error);
+      }
+    };
+
+    loadRecordingSettings();
+  }, []);
+
   // ✅ ADDED: Track recording state to prevent conflicts
   const isRecordingRef = useRef(false);
 
@@ -234,11 +257,22 @@ export const ScreenRecorderProvider = ({ children }) => {
       }
     }, [service, updateState, addToEventLog]),
 
-    updateSettings: useCallback((newSettings) => {
+    updateSettings: useCallback(async (newSettings) => {
       updateState({ 
         recordingSettings: { ...state.recordingSettings, ...newSettings } 
       });
       addToEventLog(`Settings updated: ${Object.keys(newSettings).join(', ')}`);
+      
+      // Save to backend
+      try {
+        if (window.electronAPI?.settings?.setRecordingSettings) {
+          const updatedSettings = { ...state.recordingSettings, ...newSettings };
+          await window.electronAPI.settings.setRecordingSettings(updatedSettings);
+          console.log('✅ Recording settings saved to backend');
+        }
+      } catch (error) {
+        console.error('❌ Failed to save recording settings to backend:', error);
+      }
     }, [state.recordingSettings, updateState, addToEventLog]),
 
     selectScreen: useCallback((screenId) => {

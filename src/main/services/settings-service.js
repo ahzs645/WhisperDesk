@@ -12,9 +12,17 @@ class SettingsService {
         language: 'en',
         autoUpdate: true,
         
+        // Recording settings
+        recordingDirectory: '', // Will be set to default on first use
+        includeMicrophone: true,
+        includeSystemAudio: false,
+        autoTranscribeRecordings: true,
+        videoQuality: 'medium', // 'low', 'medium', 'high', 'ultra'
+        audioQuality: 'medium', // 'low', 'medium', 'high'
+        recordingQuality: 'medium', // Legacy compatibility
+        
         // Audio settings
         audioDevice: 'default',
-        audioQuality: 'high',
         noiseReduction: true,
         autoGainControl: true,
         
@@ -25,6 +33,7 @@ class SettingsService {
         enableTimestamps: true,
         enableSpeakerDiarization: true,
         maxSpeakers: 10,
+        autoDetectLanguage: true,
         
         // Deepgram settings
         deepgramApiKey: '',
@@ -34,8 +43,10 @@ class SettingsService {
         // Export settings
         defaultExportFormat: 'txt',
         includeTimestamps: false,
+        includeTimestampsInExport: false, // More specific name
         includeSpeakerLabels: true,
         exportPath: path.join(os.homedir(), 'Documents', 'WhisperDesk'),
+        exportDirectory: '', // New field for consistency
         
         // UI settings
         showWaveform: true,
@@ -48,6 +59,7 @@ class SettingsService {
         modelCacheSize: '5GB',
         logLevel: 'info',
         enableTelemetry: false,
+        enableAutoUpdates: true,
         
         // Keyboard shortcuts
         shortcuts: {
@@ -62,13 +74,29 @@ class SettingsService {
   }
 
   async initialize() {
-    // Ensure export directory exists
+    // Ensure directories exist
     const exportPath = this.get('exportPath');
+    const recordingDirectory = this.get('recordingDirectory');
+    
     const fs = require('fs').promises;
+    const path = require('path');
+    const os = require('os');
+    
     try {
       await fs.mkdir(exportPath, { recursive: true });
     } catch (error) {
       console.warn('Could not create export directory:', error.message);
+    }
+    
+    // Set default recording directory if not set
+    if (!recordingDirectory) {
+      const defaultRecordingDir = path.join(os.homedir(), 'Documents', 'WhisperDesk Recordings');
+      this.set('recordingDirectory', defaultRecordingDir);
+      try {
+        await fs.mkdir(defaultRecordingDir, { recursive: true });
+      } catch (error) {
+        console.warn('Could not create default recording directory:', error.message);
+      }
     }
     
     console.log('Settings service initialized');
@@ -128,12 +156,30 @@ class SettingsService {
     };
   }
 
+  getRecordingSettings() {
+    return {
+      recordingDirectory: this.get('recordingDirectory'),
+      includeMicrophone: this.get('includeMicrophone'),
+      includeSystemAudio: this.get('includeSystemAudio'),
+      videoQuality: this.get('videoQuality'),
+      audioQuality: this.get('audioQuality'),
+      autoTranscribeRecordings: this.get('autoTranscribeRecordings')
+    };
+  }
+
+  setRecordingSettings(settings) {
+    for (const [key, value] of Object.entries(settings)) {
+      this.set(key, value);
+    }
+  }
+
   getExportSettings() {
     return {
       defaultFormat: this.get('defaultExportFormat'),
-      includeTimestamps: this.get('includeTimestamps'),
+      includeTimestamps: this.get('includeTimestampsInExport'),
       includeSpeakerLabels: this.get('includeSpeakerLabels'),
-      exportPath: this.get('exportPath')
+      exportPath: this.get('exportPath'),
+      exportDirectory: this.get('exportDirectory')
     };
   }
 

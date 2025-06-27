@@ -62,6 +62,39 @@ class SettingsHandlers {
       }
     });
 
+    ipcMain.handle('settings:getRecordingSettings', () => {
+      try {
+        const service = this.getSettingsService();
+        return service?.getRecordingSettings() || {};
+      } catch (error) {
+        console.error('❌ Failed to get recording settings:', error);
+        return {};
+      }
+    });
+
+    ipcMain.handle('settings:setRecordingSettings', (event, settings) => {
+      try {
+        const service = this.getSettingsService();
+        if (service?.setRecordingSettings) {
+          return service.setRecordingSettings(settings);
+        }
+        return false;
+      } catch (error) {
+        console.error('❌ Failed to set recording settings:', error);
+        return false;
+      }
+    });
+
+    ipcMain.handle('settings:getExportSettings', () => {
+      try {
+        const service = this.getSettingsService();
+        return service?.getExportSettings() || {};
+      } catch (error) {
+        console.error('❌ Failed to get export settings:', error);
+        return {};
+      }
+    });
+
     console.log('✅ Settings IPC handlers set up');
   }
 

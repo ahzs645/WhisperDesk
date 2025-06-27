@@ -269,6 +269,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     set: createSafeIPC('settings:set'),
     getAll: createSafeIPC('settings:getAll'),
     
+    // Specific setting groups
+    getTranscriptionSettings: createSafeIPC('settings:getTranscriptionSettings'),
+    setTranscriptionSettings: createSafeIPC('settings:setTranscriptionSettings'),
+    getRecordingSettings: createSafeIPC('settings:getRecordingSettings'),
+    setRecordingSettings: createSafeIPC('settings:setRecordingSettings'),
+    getExportSettings: createSafeIPC('settings:getExportSettings'),
+    
     // Settings events
     onChange: createEventListener('settings:changed')
   },
@@ -353,11 +360,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     /**
      * Get default recordings directory
      */
-    getDefaultRecordingsDirectory() {
-      const path = require('path');
-      const os = require('os');
-      return path.join(os.homedir(), 'Documents', 'WhisperDesk Recordings');
-    },
+    getDefaultRecordingsDirectory: createSafeIPC('file:getDefaultRecordingsDirectory'),
+
+    /**
+     * Show item in folder (reveal in file manager)
+     */
+    showItemInFolder: createSafeIPC('file:showItemInFolder'),
 
     /**
      * Legacy method for backward compatibility

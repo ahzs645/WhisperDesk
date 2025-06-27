@@ -10,6 +10,7 @@ import { ModelMarketplace } from './components/ModelMarketplace-WebCompatible'
 import { AnalyticsTab } from './components/analytics/AnalyticsTab'
 import { EnhancedTranscriptionTab } from './components/transcription/EnhancedTranscriptionTab'
 import { EnhancedSettingsTab } from './components/EnhancedSettingsTab'
+import { ScreenRecorderProvider } from './components/screen-recorder/ScreenRecorderProvider'
 import { UnifiedWindowControls } from './components/UnifiedWindowControls'
 import { Toaster } from './components/ui/sonner'
 import { appInitializer } from './utils/AppInitializer'
@@ -395,7 +396,9 @@ const App = () => {
   return (
     <InitializationProvider>
       <AppStateProvider>
-        <AppContent />
+        <ScreenRecorderProvider>
+          <AppContent />
+        </ScreenRecorderProvider>
       </AppStateProvider>
     </InitializationProvider>
   )
