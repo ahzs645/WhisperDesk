@@ -157,14 +157,23 @@ export function EnhancedTranscriptionTab() {
       console.log('🤖 Auto-transcription triggered:', event.detail)
       
       if (event.detail?.file) {
-        // Set the file and start transcription
-        updateAppState({ selectedFile: event.detail.file })
+        console.log('📁 Setting file for auto-transcription:', event.detail.file);
         
-        // FIXED: Don't auto-scroll to recorder when auto-transcribing
-        // Just start the transcription process
+        // Set the file first
+        updateAppState({ selectedFile: event.detail.file });
+        
+        // Create a helper function that has the file info
+        const startAutoTranscription = (fileInfo) => {
+          console.log('⚡ Starting auto-transcription with file:', fileInfo);
+          
+          // Directly call the transcription start with the file info
+          handleStartTranscriptionWithFile(fileInfo, true);
+        };
+        
+        // Start transcription after a short delay
         setTimeout(() => {
-          handleStartTranscription(true) // Pass flag to indicate auto-transcription
-        }, 500)
+          startAutoTranscription(event.detail.file);
+        }, 500);
       }
     }
 
@@ -176,18 +185,42 @@ export function EnhancedTranscriptionTab() {
   }
 
   const handleStartTranscription = async (isAutoTranscribe = false) => {
+    console.log('🚀 handleStartTranscription called with isAutoTranscribe:', isAutoTranscribe);
+    console.log('📁 Current selectedFile:', appState.selectedFile);
+    
     if (!appState.selectedFile) {
+      console.error('❌ No file selected for transcription');
+      toast.error('Please select an audio file first')
+      return
+    }
+
+    return await handleStartTranscriptionWithFile(appState.selectedFile, isAutoTranscribe);
+  }
+
+  const handleStartTranscriptionWithFile = async (fileInfo, isAutoTranscribe = false) => {
+    console.log('🚀 handleStartTranscriptionWithFile called with:', { fileInfo, isAutoTranscribe });
+    
+    if (!fileInfo) {
+      console.error('❌ No file provided for transcription');
       toast.error('Please select an audio file first')
       return
     }
 
     if (!window.electronAPI?.transcription?.processFile) {
+      console.error('❌ Transcription API not available');
       toast.error('Transcription API not available')
       return
     }
 
     try {
       setIsLoading(true)
+      console.log('⚡ Starting transcription process...');
+      
+      // Ensure the file is set in app state
+      if (appState.selectedFile?.path !== fileInfo.path) {
+        console.log('📝 Updating app state with file info');
+        updateAppState({ selectedFile: fileInfo });
+      }
       
       // Reset transcription state but keep file
       updateAppState({
@@ -214,18 +247,22 @@ export function EnhancedTranscriptionTab() {
         })
       }
 
-      console.log('Starting enhanced transcription with options:', options)
-      console.log('File path:', appState.selectedFile.path)
+      console.log('🔧 Starting enhanced transcription with options:', options)
+      console.log('📂 File path:', fileInfo.path)
+      console.log('🔍 File exists check will happen in backend...');
 
       if (isAutoTranscribe) {
+        console.log('🤖 This is an auto-transcription from recording');
         toast.info('🤖 Auto-transcription started from recording')
       }
 
       // Process the file
-      await window.electronAPI.transcription.processFile(appState.selectedFile.path, options)
+      console.log('📡 Calling backend transcription API...');
+      await window.electronAPI.transcription.processFile(fileInfo.path, options)
+      console.log('✅ Backend transcription API call completed');
 
     } catch (error) {
-      console.error('Enhanced transcription failed:', error)
+      console.error('❌ Enhanced transcription failed:', error)
       
       // Dismiss any loading toast
       if (lastToastRef.current) {

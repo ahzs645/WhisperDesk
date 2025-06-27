@@ -488,7 +488,7 @@ class AppInitializer {
         console.log('📹 [CENTRAL] Recording started:', data);
         this.notifyStateChange({
           isRecording: true,
-          recordingValidated: false,
+          recordingValidated: true, // ✅ FIXED: Set to true immediately since CapRecorder only emits when actually started
           recordingDuration: 0,
           isPaused: false,
           screenRecorderError: null

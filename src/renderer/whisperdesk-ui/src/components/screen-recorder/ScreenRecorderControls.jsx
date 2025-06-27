@@ -87,13 +87,19 @@ export const ScreenRecorderControls = () => {
 
       {/* Timer display */}
       {isRecording && (
-        <div className="flex items-center justify-center space-x-2 p-4 bg-muted/50 rounded-lg">
+        <div className="flex items-center justify-center space-x-2 p-4 bg-muted/50 rounded-lg border">
           <Clock className="w-5 h-5 text-muted-foreground" />
           <div className="text-center">
-            <div className="text-2xl font-mono font-bold">
+            <div className="text-2xl font-mono font-bold text-foreground">
               {formatDuration(recordingDuration)}
             </div>
-            <div className="text-xs text-muted-foreground">
+            <div className={`text-sm font-medium px-2 py-1 rounded-md ${
+              !recordingValidated 
+                ? 'text-blue-700 bg-blue-100 dark:text-blue-300 dark:bg-blue-900/30' 
+                : isPaused 
+                  ? 'text-amber-700 bg-amber-100 dark:text-amber-300 dark:bg-amber-900/30'
+                  : 'text-red-700 bg-red-100 dark:text-red-300 dark:bg-red-900/30 animate-pulse'
+            }`}>
               {!recordingValidated ? 'Starting...' : 
                isPaused ? 'Paused' : 'Recording...'}
             </div>

@@ -2,10 +2,13 @@ import { ThumbsUp, ThumbsDown, Meh } from 'lucide-react'
 
 // Enhanced format helpers
 export const formatTime = (seconds) => {
-  if (!seconds || seconds === 0) return '0:00'
+  if (seconds === undefined || seconds === null || isNaN(seconds)) return '0:00'
+  
+  // Handle zero duration specifically
+  if (seconds === 0) return '0:00'
   
   // Round to avoid floating point precision issues
-  const totalSeconds = Math.round(seconds)
+  const totalSeconds = Math.round(Math.abs(seconds))
   const hrs = Math.floor(totalSeconds / 3600)
   const mins = Math.floor((totalSeconds % 3600) / 60)
   const secs = totalSeconds % 60

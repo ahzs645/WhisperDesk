@@ -52,16 +52,27 @@ export const ScreenRecorderProvider = ({ children }) => {
   useEffect(() => {
     const loadRecordingSettings = async () => {
       try {
-        if (window.electronAPI?.settings?.getRecordingSettings) {
-          const savedSettings = await window.electronAPI.settings.getRecordingSettings();
+        if (window.electronAPI?.settings?.getAll) {
+          const allSettings = await window.electronAPI.settings.getAll();
+          
+          // Extract recording-related settings
+          const recordingSettings = {
+            includeMicrophone: allSettings.includeMicrophone ?? true,
+            includeSystemAudio: allSettings.includeSystemAudio ?? false,
+            videoQuality: allSettings.videoQuality ?? 'medium',
+            audioQuality: allSettings.audioQuality ?? 'medium',
+            recordingDirectory: allSettings.recordingDirectory ?? null,
+            autoTranscribe: allSettings.autoTranscribeRecordings ?? false
+          };
+          
           setState(prev => ({
             ...prev,
             recordingSettings: {
               ...prev.recordingSettings,
-              ...savedSettings
+              ...recordingSettings
             }
           }));
-          console.log('✅ Recording settings loaded from backend:', savedSettings);
+          console.log('✅ Recording settings loaded from backend:', recordingSettings);
         }
       } catch (error) {
         console.error('❌ Failed to load recording settings:', error);
@@ -193,6 +204,61 @@ export const ScreenRecorderProvider = ({ children }) => {
           // If we have a path, show where it was saved
           if (result.outputPath) {
             addToEventLog(`Recording saved to: ${result.outputPath}`);
+            
+            // Check if auto-transcription is enabled
+            console.log('🔍 Checking auto-transcription setting:', state.recordingSettings.autoTranscribe);
+            console.log('🔍 Full recording settings:', state.recordingSettings);
+            if (state.recordingSettings.autoTranscribe) {
+              console.log('🤖 Auto-transcription enabled, triggering transcription...');
+              
+              // For CapRecorder format, look for the audio file in the segments folder
+              const recordingPath = result.outputPath;
+              
+              // Try multiple possible audio file locations/formats
+              const possibleAudioPaths = [
+                `${recordingPath}/content/segments/segment-0/system_audio.ogg`,
+                `${recordingPath}/content/segments/segment-0/system_audio.wav`,
+                `${recordingPath}/content/segments/segment-0/audio.ogg`,
+                `${recordingPath}/content/segments/segment-0/audio.wav`,
+                `${recordingPath}/content/segments/segment-0/display.mp4`, // Video file as fallback
+                `${recordingPath}/display.mp4`, // Alternative structure
+                result.outputPath // Ultimate fallback to recording folder
+              ];
+              
+              console.log('🔍 Searching for audio files in:', recordingPath);
+              console.log('📁 Will try these paths in order:', possibleAudioPaths);
+              
+              // Prefer audio file over video file for transcription
+              // Audio files are more efficient and purpose-built for transcription
+              const videoPath = `${recordingPath}/content/segments/segment-0/display.mp4`;
+              const audioPath = `${recordingPath}/content/segments/segment-0/system_audio.ogg`;
+              
+              // Create file info object for transcription
+              // Use audio file as the primary source for transcription
+              const fileInfo = {
+                path: audioPath, // Use actual audio file for transcription
+                name: `Recording Audio (${new Date().toLocaleTimeString()})`,
+                size: 0,
+                originalAudioPath: audioPath, // Keep reference to audio file
+                note: 'Using audio file for transcription (OGG converted to WAV if needed)'
+              };
+              
+              console.log('📁 Video file info for auto-transcription:', fileInfo);
+              console.log('� Using video file at:', videoPath);
+              console.log('🎵 Audio file available at:', audioPath);
+              
+              // Trigger auto-transcription event after a short delay
+              setTimeout(() => {
+                const event = new CustomEvent('autoTranscribe', { 
+                  detail: { file: fileInfo } 
+                });
+                window.dispatchEvent(event);
+                console.log('🚀 Auto-transcription event dispatched with audio file');
+                toast.info('🤖 Starting auto-transcription from audio...');
+              }, 1000);
+            } else {
+              console.log('ℹ️ Auto-transcription disabled in settings');
+            }
           }
         } else {
           // Even if there's an issue, the recording was stopped
@@ -225,7 +291,7 @@ export const ScreenRecorderProvider = ({ children }) => {
           localError: null 
         });
       }
-    }, [service, updateState, addToEventLog]),
+    }, [service, updateState, addToEventLog, state.recordingSettings]),
 
     pauseResume: useCallback(async () => {
       try {
@@ -263,11 +329,22 @@ export const ScreenRecorderProvider = ({ children }) => {
       });
       addToEventLog(`Settings updated: ${Object.keys(newSettings).join(', ')}`);
       
-      // Save to backend
+      // Save to backend using individual setting keys
       try {
-        if (window.electronAPI?.settings?.setRecordingSettings) {
-          const updatedSettings = { ...state.recordingSettings, ...newSettings };
-          await window.electronAPI.settings.setRecordingSettings(updatedSettings);
+        if (window.electronAPI?.settings?.set) {
+          const settingsMap = {
+            includeMicrophone: 'includeMicrophone',
+            includeSystemAudio: 'includeSystemAudio',
+            videoQuality: 'videoQuality',
+            audioQuality: 'audioQuality',
+            recordingDirectory: 'recordingDirectory',
+            autoTranscribe: 'autoTranscribeRecordings'
+          };
+          
+          for (const [key, value] of Object.entries(newSettings)) {
+            const settingKey = settingsMap[key] || key;
+            await window.electronAPI.settings.set(settingKey, value);
+          }
           console.log('✅ Recording settings saved to backend');
         }
       } catch (error) {

@@ -70,9 +70,9 @@ export function TranscriptSegment({
           </div>
 
           {/* Duration indicator */}
-          {segment.end && segment.start && (
+          {segment.end != null && segment.start != null && (
             <div className="text-xs text-muted-foreground mt-1">
-              Duration: {formatTime(segment.end - segment.start)}
+              Duration: {formatTime(Number(segment.end) - Number(segment.start))}
             </div>
           )}
         </div>

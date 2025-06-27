@@ -2,10 +2,10 @@
 // ENHANCED: Complete multi-speaker diarization integration
 
 const { EventEmitter } = require('events');
+const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs').promises;
 const os = require('os');
-const { spawn } = require('child_process');
 
 class EnhancedNativeWhisperProvider extends EventEmitter {
   constructor(modelManager, binaryManager) {
@@ -458,6 +458,9 @@ class EnhancedNativeWhisperProvider extends EventEmitter {
     console.log('   - maxSpeakers:', options.maxSpeakers || 10);
 
     try {
+      // Initialize variable for cleanup tracking
+      let processedAudioPath = filePath;
+      
       // Get binary and model paths
       const binaryPath = this.binaryManager.getWhisperBinaryPath();
       const modelPath = await this.modelManager.getCompatibleModelPath(options.model || 'tiny');
@@ -494,10 +497,19 @@ class EnhancedNativeWhisperProvider extends EventEmitter {
         }
       }
 
-      // Step 2: Build arguments for whisper-cli (NO diarization flags)
+      // Step 2: Preprocess audio to ensure whisper-cli compatibility
+      this.emit('progress', { 
+        transcriptionId, 
+        progress: enableDiarization ? 25 : 5,
+        message: 'Preparing audio for transcription...'
+      });
+      
+      processedAudioPath = await this.preprocessAudio(filePath, transcriptionId);
+      
+      // Step 3: Build arguments for whisper-cli (using processed audio path)
       const args = this.buildWhisperArgs({
         modelPath,
-        filePath,
+        filePath: processedAudioPath,
         language: options.language || 'auto',
         task: options.task,
         enableTimestamps: options.enableTimestamps !== false,
@@ -505,10 +517,10 @@ class EnhancedNativeWhisperProvider extends EventEmitter {
         bestOf: options.bestOf || 1
       });
 
-      // Step 3: Execute whisper-cli for transcription
+      // Step 4: Execute whisper-cli for transcription
       this.emit('progress', { 
         transcriptionId, 
-        progress: enableDiarization ? 30 : 0,
+        progress: enableDiarization ? 30 : 10,
         message: 'Transcribing audio...'
       });
       
@@ -594,12 +606,44 @@ class EnhancedNativeWhisperProvider extends EventEmitter {
       // Emit completion
       this.emit('complete', { transcriptionId, result: transcriptionResult });
       console.log(`✅ Enhanced transcription completed successfully with ${this.buildType} whisper-cli`);
+      
+      // Cleanup temporary converted audio file if it was created
+      try {
+        if (processedAudioPath && processedAudioPath !== filePath) {
+          await fs.unlink(processedAudioPath);
+          console.log(`🧹 Cleaned up temporary audio file: ${processedAudioPath}`);
+        }
+      } catch (cleanupError) {
+        console.warn(`⚠️ Failed to cleanup temporary audio file: ${cleanupError.message}`);
+      }
+      
       return transcriptionResult;
 
     } catch (error) {
       console.error(`❌ Enhanced transcription failed: ${error.message}`);
-      this.emit('error', { transcriptionId, error: error.message });
-      throw error;
+      
+      // Cleanup temporary converted audio file if it was created
+      try {
+        if (processedAudioPath && processedAudioPath !== filePath) {
+          await fs.unlink(processedAudioPath);
+          console.log(`🧹 Cleaned up temporary audio file after error: ${processedAudioPath}`);
+        }
+      } catch (cleanupError) {
+        console.warn(`⚠️ Failed to cleanup temporary audio file after error: ${cleanupError.message}`);
+      }
+      
+      // Provide user-friendly error messages
+      let userFriendlyError = error.message;
+      if (error.message.includes('contains no audio streams')) {
+        userFriendlyError = `Cannot transcribe: ${path.basename(filePath)} is a video file with no audio track. Please select an audio file or a video file that contains audio.`;
+      } else if (error.message.includes('Audio conversion failed')) {
+        userFriendlyError = `Audio format conversion failed. Please try converting the file to WAV, MP3, or FLAC format first.`;
+      } else if (error.message.includes('FFmpeg not found')) {
+        userFriendlyError = `FFmpeg is required to process this audio format. Please install FFmpeg and try again.`;
+      }
+      
+      this.emit('error', { transcriptionId, error: userFriendlyError });
+      throw new Error(userFriendlyError);
     }
   }
 
@@ -678,7 +722,13 @@ class EnhancedNativeWhisperProvider extends EventEmitter {
       speakerDiarization: this.diarizationAvailable,
       languageDetection: true,
       wordTimestamps: true,
-      supportedFormats: ['wav', 'mp3', 'flac', 'm4a', 'ogg', 'opus', 'mp4', 'avi', 'mov'],
+      supportedFormats: ['wav', 'mp3', 'flac', 'm4a', 'ogg', 'opus', 'mp4*', 'avi*', 'mov*'],
+      formatNotes: {
+        'mp4*': 'Video files with audio tracks only',
+        'avi*': 'Video files with audio tracks only', 
+        'mov*': 'Video files with audio tracks only',
+        note: 'Video files must contain audio streams to be transcribed'
+      },
       supportedLanguages: this.supportedLanguages,
       maxFileSize: '2GB',
       offline: true,
@@ -732,7 +782,8 @@ class EnhancedNativeWhisperProvider extends EventEmitter {
       capabilities: {
         languages: 'auto-detect + 100+ languages',
         maxFileSize: '2GB',
-        formats: ['mp3', 'wav', 'mp4', 'avi', 'mov', 'm4a', 'flac', 'ogg', 'opus'],
+        formats: ['mp3', 'wav', 'mp4*', 'avi*', 'mov*', 'm4a', 'flac', 'ogg', 'opus'],
+        formatNotes: '* Video files must contain audio tracks',
         realtime: false,
         offline: true,
         musicTranscription: true,
@@ -754,6 +805,148 @@ class EnhancedNativeWhisperProvider extends EventEmitter {
         }
       }
     };
+  }
+
+  // NEW: Audio preprocessing method to handle different audio formats
+  async preprocessAudio(inputPath, transcriptionId) {
+    const fs = require('fs').promises;
+    const path = require('path');
+    const { spawn } = require('child_process');
+    
+    try {
+      // Check if the input file exists
+      await fs.access(inputPath);
+      
+      // Get file extension
+      const ext = path.extname(inputPath).toLowerCase();
+      
+      // If it's already a supported format, return as-is
+      if (['.wav', '.mp3', '.flac'].includes(ext)) {
+        console.log(`📁 Audio file ${ext} is already in supported format`);
+        return inputPath;
+      }
+      
+      // First, probe the file to check if it has audio streams
+      console.log(`🔍 Probing file ${ext} to check for audio streams...`);
+      const hasAudio = await this.checkForAudioStreams(inputPath);
+      
+      if (!hasAudio) {
+        throw new Error(`File ${path.basename(inputPath)} contains no audio streams. Cannot transcribe video-only files.`);
+      }
+      
+      // For OGG and other formats, convert to WAV
+      console.log(`🔄 Converting ${ext} audio to WAV format for whisper-cli compatibility...`);
+      
+      // Create temp directory if it doesn't exist
+      const tempDir = path.join(os.tmpdir(), 'whisperdesk-audio-conversion');
+      await fs.mkdir(tempDir, { recursive: true });
+      
+      // Generate output path
+      const outputPath = path.join(tempDir, `converted_${transcriptionId}.wav`);
+      
+      // Convert using ffmpeg - resample to 16kHz mono as whisper expects
+      // Add audio stream mapping to handle cases where video might have audio
+      const ffmpegArgs = [
+        '-i', inputPath,
+        '-vn',             // No video (audio only)
+        '-ar', '16000',    // Sample rate 16kHz
+        '-ac', '1',        // Mono channel
+        '-f', 'wav',       // WAV format
+        '-y',              // Overwrite output
+        outputPath
+      ];
+      
+      console.log(`🎵 Running ffmpeg conversion: ffmpeg ${ffmpegArgs.join(' ')}`);
+      
+      return new Promise((resolve, reject) => {
+        const ffmpegProcess = spawn('ffmpeg', ffmpegArgs, {
+          stdio: ['pipe', 'pipe', 'pipe']
+        });
+        
+        let stderr = '';
+        
+        ffmpegProcess.stderr.on('data', (data) => {
+          stderr += data.toString();
+        });
+        
+        ffmpegProcess.on('close', async (code) => {
+          if (code === 0) {
+            console.log(`✅ Audio conversion successful: ${inputPath} -> ${outputPath}`);
+            
+            // Verify the output file exists and has content
+            try {
+              const stats = await fs.stat(outputPath);
+              if (stats.size > 0) {
+                resolve(outputPath);
+              } else {
+                reject(new Error('Converted audio file is empty'));
+              }
+            } catch (statError) {
+              reject(new Error(`Converted audio file not found: ${statError.message}`));
+            }
+          } else {
+            console.error(`❌ FFmpeg conversion failed with code ${code}`);
+            console.error(`❌ FFmpeg stderr: ${stderr}`);
+            reject(new Error(`Audio conversion failed: ${stderr || 'Unknown ffmpeg error'}`));
+          }
+        });
+        
+        ffmpegProcess.on('error', (error) => {
+          console.error(`❌ Failed to start ffmpeg process: ${error.message}`);
+          
+          if (error.code === 'ENOENT') {
+            reject(new Error('FFmpeg not found. Please install FFmpeg to handle OGG/Opus audio files.'));
+          } else {
+            reject(new Error(`Audio conversion failed: ${error.message}`));
+          }
+        });
+      });
+      
+    } catch (error) {
+      console.error(`❌ Audio preprocessing failed: ${error.message}`);
+      throw new Error(`Audio preprocessing failed: ${error.message}`);
+    }
+  }
+
+  // Helper method to check if file contains audio streams
+  async checkForAudioStreams(inputPath) {
+    const { spawn } = require('child_process');
+    
+    return new Promise((resolve) => {
+      // Use ffprobe to check for audio streams
+      const ffprobeArgs = [
+        '-v', 'quiet',           // Quiet output
+        '-select_streams', 'a',  // Select audio streams only
+        '-show_entries', 'stream=codec_type',
+        '-of', 'csv=p=0',        // Output format
+        inputPath
+      ];
+      
+      console.log(`🔍 Running ffprobe: ffprobe ${ffprobeArgs.join(' ')}`);
+      
+      const ffprobeProcess = spawn('ffprobe', ffprobeArgs, {
+        stdio: ['pipe', 'pipe', 'pipe']
+      });
+      
+      let stdout = '';
+      
+      ffprobeProcess.stdout.on('data', (data) => {
+        stdout += data.toString();
+      });
+      
+      ffprobeProcess.on('close', (code) => {
+        // If ffprobe finds audio streams, stdout will contain "audio"
+        const hasAudio = stdout.trim().includes('audio');
+        console.log(`🔍 Audio stream check result: ${hasAudio ? 'Found audio streams' : 'No audio streams found'}`);
+        console.log(`🔍 FFprobe output: "${stdout.trim()}"`);
+        resolve(hasAudio);
+      });
+      
+      ffprobeProcess.on('error', (error) => {
+        console.warn(`⚠️ FFprobe failed: ${error.message}, assuming file has audio`);
+        resolve(true); // Assume it has audio if we can't check
+      });
+    });
   }
 
   // Rest of the methods remain the same but with enhanced logging...
@@ -954,8 +1147,8 @@ class EnhancedNativeWhisperProvider extends EventEmitter {
       
       segments.push({
         id: segmentIndex,
-        start: segmentIndex * segmentLength,
-        end: (segmentIndex + 1) * segmentLength,
+        start: Number(segmentIndex * segmentLength) || 0,
+        end: Number((segmentIndex + 1) * segmentLength) || 0,
         text: segmentWords.join(' '),
         confidence: 0.9,
         words: []
@@ -983,8 +1176,8 @@ class EnhancedNativeWhisperProvider extends EventEmitter {
         if (segmentText) {
           segments.push({
             id: segments.length,
-            start,
-            end,
+            start: Number(start) || 0,
+            end: Number(end) || 0,
             text: segmentText,
             confidence: 0.9,
             words: []
