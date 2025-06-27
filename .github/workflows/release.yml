@@ -1,3 +1,5 @@
+# 🔴 NOTE: This workflow handles OFFICIAL releases only
+# Dev releases are automatically created by build.yml on main branch pushes
 name: Release WhisperDesk
 
 on:
@@ -58,12 +60,20 @@ jobs:
             
           else
             echo "❌ Release workflow triggered without tag or release_tag input"
+            echo "ℹ️ For dev releases, push to main branch (handled by build.yml)"
+            exit 1
+          fi
+          
+          # 🔴 ADDED: Prevent conflicts with dev releases
+          if [ "$TAG_NAME" = "dev" ]; then
+            echo "❌ Cannot create official release with 'dev' tag"
+            echo "ℹ️ Dev releases are automatically created by build.yml"
             exit 1
           fi
           
           # Determine if this is a prerelease
           IS_PRERELEASE="false"
-          if [[ "$VERSION" =~ (alpha|beta|rc|dev) ]]; then
+          if [[ "$VERSION" =~ (alpha|beta|rc) ]]; then
             IS_PRERELEASE="true"
             echo "🚧 Prerelease detected"
           fi
@@ -244,6 +254,8 @@ jobs:
             - Whisper Binary: whisper-cli (official, replaces deprecated main.exe)
             - Diarization: PyAnnote 3.0 ONNX models with cross-platform C++ engine
             - Build: CMake + electron-builder + official whisper.cpp + enhanced diarization
+            
+            📖 For development builds, see the [dev release](https://github.com/${{ github.repository }}/releases/tag/dev)
             
             Auto-generated release notes below ⬇️
         env:

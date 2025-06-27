@@ -18,7 +18,7 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: read
+  contents: write  # 🔴 CHANGED: Added write permissions for dev releases
   actions: read
   checks: write
   pull-requests: write
@@ -142,4 +142,110 @@ jobs:
           fi
           
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "📦 Artifacts are available for download if builds succeeded." >> $GITHUB_STEP_SUMMARY
+          if [ "${{ github.event_name }}" = "push" ] && [ "${{ contains(fromJson('[\"main\", \"master\", \"release\"]'), github.ref_name) }}" = "true" ]; then
+            echo "🚀 **Auto Dev Release**: Will be created after successful builds" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "📦 **Artifacts**: Available for download if builds succeeded" >> $GITHUB_STEP_SUMMARY
+          fi
+
+  # 🔴 NEW: Auto-create dev releases on main branch pushes
+  create-dev-release:
+    if: github.event_name == 'push' && contains(fromJson('["main", "master", "release"]'), github.ref_name)
+    needs: [determine-version, build-windows, build-macos, build-linux]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Organize release files
+        run: |
+          echo "🔧 Organizing dev release files..."
+          mkdir -p release-files
+          
+          find artifacts/ -type f \( -name "*.exe" -o -name "*.zip" -o -name "*.app" -o -name "*.AppImage" -o -name "*.deb" -o -name "*.rpm" -o -name "*.tar.gz" \) -exec cp {} release-files/ \;
+          
+          echo "📋 Dev release files:"
+          ls -la release-files/
+
+      - name: Delete existing dev release
+        continue-on-error: true
+        run: |
+          echo "🗑️ Cleaning up existing dev release..."
+          gh release delete dev --yes || echo "No existing dev release to delete"
+          git tag -d dev || echo "No existing dev tag to delete"
+          git push origin :refs/tags/dev || echo "No remote dev tag to delete"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create Dev Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: release-files/*
+          draft: false
+          prerelease: true
+          generate_release_notes: true
+          name: "WhisperDesk Dev Build"
+          tag_name: "dev"
+          body: |
+            ## 🚧 WhisperDesk Development Build
+            
+            **⚠️ This is an automatic development build from the latest code.**
+            
+            ### 📦 Download Options:
+            
+            **🖥️ Windows (64-bit)**:
+            - `WhisperDesk-Setup-dev-win-x64.exe` - Installer (recommended)
+            - `WhisperDesk-Portable-dev-win-x64.zip` - **True Portable** (extract and run)
+            
+            **🍎 macOS**:
+            - `WhisperDesk-Portable-dev-mac-x64.zip` - Intel Mac portable
+            - `WhisperDesk-Portable-dev-mac-arm64.zip` - Apple Silicon portable
+            
+            **🐧 Linux (64-bit)**:
+            - `WhisperDesk-dev-linux-x64.AppImage` - Portable (recommended)
+            - `WhisperDesk-dev-linux-x64.deb` - Debian/Ubuntu package
+            - `WhisperDesk-dev-linux-x64.rpm` - Red Hat/Fedora package
+            - `WhisperDesk-dev-linux-x64.tar.gz` - Generic archive
+            
+            ### 🚨 Development Build Warning
+            - **Not for production use** - may contain bugs or incomplete features
+            - **Automatic updates** - this release is recreated on every push to main
+            - **Use official releases** for stable versions
+            
+            ### ✨ Latest Features (may be unstable):
+            - 🎭 **Enhanced Multi-Speaker Diarization** - Built-in PyAnnote 3.0 ONNX models
+            - 👥 **Multi-Speaker Detection** - Automatic speaker identification and labeling  
+            - 🎚️ **Configurable Sensitivity** - Adjust speaker detection threshold
+            - 📊 **Speaker Statistics** - Detailed analytics per speaker
+            - 🌍 **Cross-Platform ONNX** - Consistent results across platforms
+            
+            ### 🔧 Core Features:
+            - 🎵 Native whisper.cpp integration with **whisper-cli** binary
+            - 📱 Cross-platform support (Windows, macOS, Linux)
+            - 🔄 Real-time progress tracking  
+            - 💾 Persistent state management
+            - 🎯 Multiple model support (Tiny, Base, Small, Medium, Large)
+            - 📁 Drag & drop file upload
+            - 🎨 Modern, responsive UI
+            
+            ---
+            
+            **Build Info:**
+            - Version: ${{ needs.determine-version.outputs.version }}
+            - Branch: ${{ github.ref_name }}
+            - Commit: ${{ github.sha }}
+            - Built: ${{ github.run_number }}
+            
+            For stable releases, visit: https://github.com/${{ github.repository }}/releases
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
