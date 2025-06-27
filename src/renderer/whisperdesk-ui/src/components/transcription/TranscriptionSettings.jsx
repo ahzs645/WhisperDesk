@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
-import { Settings, RefreshCw } from 'lucide-react'
+import { Settings, RefreshCw, Users, List } from 'lucide-react'
 import { Switch } from '@/components/ui/switch'
 import { Slider } from '@/components/ui/slider'
 
@@ -177,6 +177,32 @@ export function TranscriptionSettings({
                     onValueChange={([value]) => updateSetting('speakerThreshold', value)}
                     className="w-32"
                   />
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="transcript-view-mode">Transcript View Mode</Label>
+                  <Select 
+                    value={settings.transcriptViewMode || "grouped"} 
+                    onValueChange={(value) => updateSetting('transcriptViewMode', value)}
+                  >
+                    <SelectTrigger className="w-32">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="grouped">
+                        <div className="flex items-center gap-2">
+                          <Users className="w-4 h-4" />
+                          Grouped
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="individual">
+                        <div className="flex items-center gap-2">
+                          <List className="w-4 h-4" />
+                          Individual
+                        </div>
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
               </>
             )}

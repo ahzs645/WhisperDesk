@@ -5,9 +5,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { User, Mic, Clock, Copy } from 'lucide-react'
+import { User, Mic, Clock, Copy, Users, List } from 'lucide-react'
 import { TranscriptSearch, highlightSearchText } from './TranscriptSearch'
 import { EnhancedTranscriptSegment } from './EnhancedTranscriptSegment'
+import { GroupedSpeakerTranscript } from './GroupedSpeakerTranscript'
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 
 export function TranscriptDisplay({ 
   transcriptionResult, 
@@ -15,9 +17,12 @@ export function TranscriptDisplay({
   progress = 0,
   progressMessage = '',
   onCopy,
+  onTranscriptionUpdate, // Add callback for transcription updates
+  settings, // Add settings prop to get persistent view mode
   className = "" 
 }) {
   const [autoScroll, setAutoScroll] = useState(true)
+  const [viewMode, setViewMode] = useState(settings?.transcriptViewMode || 'grouped') // Use settings or default to 'grouped'
   const [searchState, setSearchState] = useState({
     isSearching: false,
     searchQuery: '',
@@ -30,12 +35,58 @@ export function TranscriptDisplay({
   const bottomRef = useRef(null)
   const currentMatchRef = useRef(null)
 
-  // Auto-scroll to bottom when new content arrives (only if not searching)
+  // Auto-scroll to bottom when new content arrives (only if actively transcribing and not searching)
   useEffect(() => {
-    if (autoScroll && bottomRef.current && transcriptionResult?.segments?.length > 0 && !searchState.isSearching) {
+    if (autoScroll && bottomRef.current && transcriptionResult?.segments?.length > 0 && !searchState.isSearching && isTranscribing) {
       bottomRef.current.scrollIntoView({ behavior: 'smooth' })
     }
-  }, [transcriptionResult?.segments?.length, autoScroll, searchState.isSearching])
+  }, [transcriptionResult?.segments?.length, autoScroll, searchState.isSearching, isTranscribing])
+
+  // Sync local viewMode state with settings
+  useEffect(() => {
+    if (settings?.transcriptViewMode && settings.transcriptViewMode !== viewMode) {
+      setViewMode(settings.transcriptViewMode)
+    }
+  }, [settings?.transcriptViewMode, viewMode])
+
+  // Add useEffect to listen for speaker label updates
+  useEffect(() => {
+    // Check if we're in an Electron environment
+    if (typeof window !== 'undefined' && window.electronAPI && window.electronAPI.speaker) {
+      // Listen for speaker label updates
+      const handleSpeakerLabelUpdate = (data) => {
+        const { speakerId, label } = data;
+        console.log('[TranscriptDisplay] Speaker label updated:', { speakerId, label });
+        
+        // Update the transcript data with new speaker labels
+        if (onTranscriptionUpdate && transcriptionResult?.segments) {
+          const updatedTranscript = {
+            ...transcriptionResult,
+            segments: transcriptionResult.segments.map(segment => {
+              if ((segment.speakerId || segment.speaker) === speakerId) {
+                return {
+                  ...segment,
+                  speakerLabel: label
+                };
+              }
+              return segment;
+            })
+          };
+          onTranscriptionUpdate(updatedTranscript);
+          console.log('[TranscriptDisplay] Transcript updated successfully');
+        } else {
+          console.warn('[TranscriptDisplay] Cannot update transcript - missing callback or segments');
+        }
+      };
+      
+      const cleanup = window.electronAPI.speaker.onSpeakerLabelUpdated(handleSpeakerLabelUpdate);
+      
+      // Cleanup
+      return cleanup;
+    } else {
+      console.warn('[TranscriptDisplay] Speaker API not available');
+    }
+  }, [onTranscriptionUpdate, transcriptionResult])
 
   // Handle search state changes with useCallback to prevent infinite updates
   const handleSearchStateChange = useCallback((newSearchState) => {
@@ -123,8 +174,72 @@ export function TranscriptDisplay({
     }
   }, [onCopy])
 
+  // Add this function to handle speaker renaming (integrate with your speaker service)
+  const handleSpeakerRename = useCallback(async (speakerId, newLabel) => {
+    console.log('TranscriptDisplay: Starting speaker rename:', { speakerId, newLabel });
+    
+    try {
+      // Check if we're in an Electron environment
+      if (typeof window !== 'undefined' && window.electronAPI && window.electronAPI.speaker) {
+        const result = await window.electronAPI.speaker.setSpeakerLabel({
+          speakerId,
+          label: newLabel
+        });
+        
+        if (result.success) {
+          console.log('[TranscriptDisplay] Speaker renamed successfully');
+          // The speaker service will emit an event that will update the UI automatically
+        } else {
+          console.warn('[TranscriptDisplay] Speaker service returned error:', result);
+        }
+      } else {
+        console.warn('[TranscriptDisplay] Speaker API not available - using fallback');
+        // Fallback: update locally
+        if (onTranscriptionUpdate && transcriptionResult?.segments) {
+          const updatedTranscript = {
+            ...transcriptionResult,
+            segments: transcriptionResult.segments.map(segment => {
+              if ((segment.speakerId || segment.speaker) === speakerId) {
+                return {
+                  ...segment,
+                  speakerLabel: newLabel
+                };
+              }
+              return segment;
+            })
+          };
+          onTranscriptionUpdate(updatedTranscript);
+          console.log('[TranscriptDisplay] Local update completed');
+        }
+      }
+    } catch (error) {
+      console.error('[TranscriptDisplay] Failed to rename speaker:', error);
+      // Fallback: update locally even if remote update fails
+      if (onTranscriptionUpdate && transcriptionResult?.segments) {
+        const updatedTranscript = {
+          ...transcriptionResult,
+          segments: transcriptionResult.segments.map(segment => {
+            if ((segment.speakerId || segment.speaker) === speakerId) {
+              return {
+                ...segment,
+                speakerLabel: newLabel
+              };
+            }
+            return segment;
+          })
+        };
+        onTranscriptionUpdate(updatedTranscript);
+        console.log('[TranscriptDisplay] Error fallback completed');
+      }
+      throw error;
+    }
+  }, [onTranscriptionUpdate, transcriptionResult])
+
   // Memoize segments and content checks
-  const segments = useMemo(() => transcriptionResult?.segments || [], [transcriptionResult?.segments])
+  const segments = useMemo(() => {
+    return transcriptionResult?.segments || [];
+  }, [transcriptionResult?.segments])
+  
   const hasContent = useMemo(() => segments.length > 0 || transcriptionResult?.text, [segments.length, transcriptionResult?.text])
 
   // Determine current match segment index
@@ -137,7 +252,7 @@ export function TranscriptDisplay({
     <Card className={`w-full flex flex-col ${className}`}>
       <CardHeader className="pb-3 flex-shrink-0">
         <div className="flex items-center justify-between">
-          <div>
+          <div className="flex items-center gap-2">
             <CardTitle className="flex items-center gap-2">
               <User className="w-5 h-5" />
               Live Transcript
@@ -148,14 +263,23 @@ export function TranscriptDisplay({
                 </Badge>
               )}
             </CardTitle>
-            <CardDescription>
-              {segments.length > 0 
-                ? `${segments.length} segments • ${transcriptionResult?.metadata?.duration ? formatTime(transcriptionResult.metadata.duration) : 'Processing...'}`
-                : isTranscribing 
-                  ? progressMessage || 'Waiting for transcription...'
-                  : 'Ready to transcribe'
-              }
-            </CardDescription>
+            
+            {/* Add View Mode Toggle */}
+            {segments.length > 0 && (
+              <ToggleGroup 
+                type="single" 
+                value={viewMode} 
+                onValueChange={setViewMode}
+                className="ml-4"
+              >
+                <ToggleGroupItem value="grouped" aria-label="Grouped by speaker" size="sm">
+                  <Users className="h-4 w-4" />
+                </ToggleGroupItem>
+                <ToggleGroupItem value="individual" aria-label="Individual segments" size="sm">
+                  <List className="h-4 w-4" />
+                </ToggleGroupItem>
+              </ToggleGroup>
+            )}
           </div>
           <div className="flex items-center gap-2">
             <Button 
@@ -178,6 +302,15 @@ export function TranscriptDisplay({
             </Button>
           </div>
         </div>
+        
+        <CardDescription>
+          {segments.length > 0 
+            ? `${segments.length} segments • ${transcriptionResult?.metadata?.duration ? formatTime(transcriptionResult.metadata.duration) : 'Processing...'}`
+            : isTranscribing 
+              ? progressMessage || 'Waiting for transcription...'
+              : 'Ready to transcribe'
+          }
+        </CardDescription>
 
         {/* Search Component */}
         <TranscriptSearch
@@ -204,26 +337,38 @@ export function TranscriptDisplay({
                 <div className="space-y-4">
                   {/* Show segments if available, otherwise show plain text */}
                   {segments.length > 0 ? (
-                    segments.map((segment, index) => {
-                      const isCurrentMatchSegment = currentMatchSegmentIndex === index
-                      
-                      return (
-                        <EnhancedTranscriptSegment 
-                          key={segment.id || index}
-                          ref={isCurrentMatchSegment ? currentMatchRef : null}
-                          segment={segment}
-                          segmentIndex={index}
-                          speakerColor={speakerUtils.getSpeakerColor(segment.speakerId || segment.speaker)}
-                          speakerInitials={speakerUtils.getSpeakerInitials(segment.speakerId || segment.speaker, segment.speakerLabel)}
-                          speakerName={speakerUtils.getSpeakerName(segment.speakerId || segment.speaker, segment.speakerLabel)}
-                          formatTime={formatTime}
-                          isLast={index === segments.length - 1}
-                          isTranscribing={isTranscribing}
-                          searchState={searchState}
-                          isCurrentMatch={isCurrentMatchSegment}
-                        />
-                      )
-                    })
+                    viewMode === 'grouped' ? (
+                      <GroupedSpeakerTranscript
+                        segments={segments}
+                        speakerUtils={speakerUtils}
+                        formatTime={formatTime}
+                        onSpeakerRename={handleSpeakerRename}
+                        searchState={searchState}
+                        isTranscribing={isTranscribing}
+                      />
+                    ) : (
+                      // Your existing individual segment rendering
+                      segments.map((segment, index) => {
+                        const isCurrentMatchSegment = currentMatchSegmentIndex === index
+                        
+                        return (
+                          <EnhancedTranscriptSegment 
+                            key={segment.id || index}
+                            ref={isCurrentMatchSegment ? currentMatchRef : null}
+                            segment={segment}
+                            segmentIndex={index}
+                            speakerColor={speakerUtils.getSpeakerColor(segment.speakerId || segment.speaker)}
+                            speakerInitials={speakerUtils.getSpeakerInitials(segment.speakerId || segment.speaker, segment.speakerLabel)}
+                            speakerName={speakerUtils.getSpeakerName(segment.speakerId || segment.speaker, segment.speakerLabel)}
+                            formatTime={formatTime}
+                            isLast={index === segments.length - 1}
+                            isTranscribing={isTranscribing}
+                            searchState={searchState}
+                            isCurrentMatch={isCurrentMatchSegment}
+                          />
+                        )
+                      })
+                    )
                   ) : transcriptionResult?.text ? (
                     <div className="p-4 bg-muted/50 rounded-lg">
                       <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">

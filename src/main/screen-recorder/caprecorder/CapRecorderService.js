@@ -6,7 +6,39 @@
 const { EventEmitter } = require('events');
 const path = require('path');
 const fs = require('fs').promises;
-const { CapRecorder, listAvailableScreens, listAvailableWindows, hasScreenCapturePermission } = require('@firstform/caprecorder');
+
+// Safely import CapRecorder with fallback for CI environments
+let CapRecorder, listAvailableScreens, listAvailableWindows, hasScreenCapturePermission;
+let capRecorderAvailable = false;
+
+try {
+  const capRecorderModule = require('@firstform/caprecorder');
+  CapRecorder = capRecorderModule.CapRecorder;
+  listAvailableScreens = capRecorderModule.listAvailableScreens;
+  listAvailableWindows = capRecorderModule.listAvailableWindows;
+  hasScreenCapturePermission = capRecorderModule.hasScreenCapturePermission;
+  capRecorderAvailable = true;
+  console.log('✅ CapRecorder native module loaded successfully');
+} catch (error) {
+  console.warn('⚠️ CapRecorder native module not available:', error.message);
+  console.log('🔧 Using fallback implementation for CI/testing environments');
+  capRecorderAvailable = false;
+  
+  // Provide mock implementations for CI environments
+  CapRecorder = class MockCapRecorder {
+    constructor() {
+      this.isRecording = false;
+    }
+    async start() { throw new Error('CapRecorder not available in this environment'); }
+    async stop() { throw new Error('CapRecorder not available in this environment'); }
+    async pause() { throw new Error('CapRecorder not available in this environment'); }
+    async resume() { throw new Error('CapRecorder not available in this environment'); }
+  };
+  
+  listAvailableScreens = async () => [];
+  listAvailableWindows = async () => [];
+  hasScreenCapturePermission = async () => false;
+}
 
 /**
  * CapRecorder-based screen recording service
@@ -46,6 +78,14 @@ class CapRecorderService extends EventEmitter {
 
     try {
       console.log('🔧 Initializing CapRecorder Service...');
+      
+      // Check if CapRecorder is available
+      if (!capRecorderAvailable) {
+        console.warn('⚠️ CapRecorder native module not available');
+        console.log('🔧 Service will operate in limited mode for CI/testing environments');
+        this.isInitialized = true;
+        return true;
+      }
       
       // Check permissions
       if (this.config.enablePermissionChecks) {
@@ -98,6 +138,14 @@ class CapRecorderService extends EventEmitter {
         success: false,
         error: 'CapRecorder service not initialized',
         type: 'SERVICE_UNAVAILABLE'
+      };
+    }
+
+    if (!capRecorderAvailable) {
+      return {
+        success: false,
+        error: 'CapRecorder native module not available in this environment',
+        type: 'CAPRECORDER_UNAVAILABLE'
       };
     }
 
@@ -445,12 +493,13 @@ class CapRecorderService extends EventEmitter {
       currentOutputPath: this.currentOutputPath,
       platform: process.platform,
       method: 'caprecorder',
+      capRecorderAvailable: capRecorderAvailable,
       capabilities: {
-        screenCapture: true,
-        windowCapture: true,
-        systemAudio: true,
-        pauseResume: true,
-        crossPlatform: true
+        screenCapture: capRecorderAvailable,
+        windowCapture: capRecorderAvailable,
+        systemAudio: capRecorderAvailable,
+        pauseResume: capRecorderAvailable,
+        crossPlatform: capRecorderAvailable
       }
     };
   }
@@ -460,6 +509,11 @@ class CapRecorderService extends EventEmitter {
    * @returns {Array} List of available screens
    */
   getAvailableScreens() {
+    if (!capRecorderAvailable) {
+      console.warn('⚠️ CapRecorder not available - returning empty screen list');
+      return [];
+    }
+    
     try {
       return listAvailableScreens();
     } catch (error) {
@@ -473,6 +527,11 @@ class CapRecorderService extends EventEmitter {
    * @returns {Array} List of available windows
    */
   getAvailableWindows() {
+    if (!capRecorderAvailable) {
+      console.warn('⚠️ CapRecorder not available - returning empty window list');
+      return [];
+    }
+    
     try {
       return listAvailableWindows();
     } catch (error) {

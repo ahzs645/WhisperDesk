@@ -489,6 +489,10 @@ export function EnhancedTranscriptionTab() {
         progress={appState.progress}
         progressMessage={appState.progressMessage}
         onCopy={handleCopyText}
+        onTranscriptionUpdate={(updatedResult) => {
+          console.log('[EnhancedTranscriptionTab] Updating transcript with speaker changes');
+          updateAppState({ lastTranscriptionResult: updatedResult });
+        }}
       />
     </div>
   )

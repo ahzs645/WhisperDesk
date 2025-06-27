@@ -9,6 +9,7 @@ const SettingsHandlers = require('../ipc-handlers/settings-handlers');
 const FileHandlers = require('../ipc-handlers/file-handlers');
 const ExportHandlers = require('../ipc-handlers/export-handlers');
 const AppHandlers = require('../ipc-handlers/app-handlers');
+const SpeakerHandlers = require('../ipc-handlers/speaker-handlers');
 
 class IpcManager {
   constructor(serviceManager) {
@@ -30,6 +31,7 @@ class IpcManager {
       this.handlers.file = new FileHandlers(this.serviceManager);
       this.handlers.export = new ExportHandlers(this.serviceManager);
       this.handlers.app = new AppHandlers(this.serviceManager);
+      this.handlers.speaker = new SpeakerHandlers(this.serviceManager);
 
       // Setup all handlers
       Object.values(this.handlers).forEach(handler => {

@@ -299,8 +299,10 @@ class SpeakerRecognitionService extends EventEmitter {
   }
 
   async setSpeakerLabel(speakerId, label) {
+    // If speaker doesn't exist, create a basic profile
     if (!this.speakers.has(speakerId)) {
-      throw new Error(`Speaker ${speakerId} not found`);
+      console.log(`Creating new speaker profile for ${speakerId}`);
+      await this.createSpeakerProfile(speakerId, `Speaker ${speakerId.slice(-4)}`);
     }
 
     this.speakerLabels.set(speakerId, label);

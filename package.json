@@ -68,7 +68,10 @@
     "_comment_dev_server_scripts": "=== DEVELOPMENT SERVERS ===",
     "web": "concurrently \"npm run server\" \"cd src/renderer/whisperdesk-ui && pnpm run dev\"",
     "_comment_utility_scripts": "=== UTILITY SCRIPTS ===",
-    "lint": "eslint src/",
+    "lint": "eslint src/ scripts/ tools/",
+    "lint:fix": "eslint src/ scripts/ tools/ --fix",
+    "format": "prettier --write \"src/**/*.js\" \"scripts/**/*.js\" \"tools/**/*.js\" \"*.js\" \"*.json\" \"*.md\"",
+    "format:check": "prettier --check \"src/**/*.js\" \"scripts/**/*.js\" \"tools/**/*.js\" \"*.js\" \"*.json\" \"*.md\"",
     "clean": "rimraf dist build node_modules/.cache temp",
     "clean:all": "npm run clean && rimraf binaries models",
     "clean:binary": "rimraf binaries",
@@ -94,11 +97,18 @@
     "cross-env": "^7.0.3",
     "electron": "^27.1.3",
     "electron-builder": "^24.13.3",
+    "eslint": "^9.28.0",
     "nodemon": "^3.1.10",
+    "prettier": "^3.3.3",
     "rimraf": "^5.0.5",
     "wait-on": "^7.2.0"
   },
   "optionalDependencies": {
+    "@firstform/caprecorder-win32-x64-msvc": "^1.0.0",
+    "@firstform/caprecorder-darwin-x64": "^1.0.0",
+    "@firstform/caprecorder-darwin-arm64": "^1.0.0",
+    "@firstform/caprecorder-linux-x64-gnu": "^1.0.0",
+    "@firstform/caprecorder-linux-arm64-gnu": "^1.0.0"
   },
   "whisperdesk": {
     "binaryManagement": {

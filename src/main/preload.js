@@ -397,6 +397,27 @@ contextBridge.exposeInMainWorld('electronAPI', {
     onDownloadModels: createEventListener('menu-download-models')
   },
 
+  // Speaker recognition service
+  speaker: {
+    setSpeakerLabel: createSafeIPC('speaker-service:setSpeakerLabel'),
+    getSpeakerLabel: createSafeIPC('speaker-service:getSpeakerLabel'),
+    getAllSpeakers: createSafeIPC('speaker-service:getAllSpeakers'),
+    deleteSpeaker: createSafeIPC('speaker-service:deleteSpeaker'),
+    processDiarization: createSafeIPC('speaker-service:processDiarization'),
+    
+    // Speaker events
+    onSpeakerLabelUpdated: createEventListener('speaker-label-updated'),
+    onSpeakerCreated: createEventListener('speaker-created')
+  },
+
+  // Raw IPC access for custom event handling
+  ipcRenderer: {
+    invoke: (channel, ...args) => ipcRenderer.invoke(channel, ...args),
+    on: (channel, listener) => ipcRenderer.on(channel, listener),
+    removeListener: (channel, listener) => ipcRenderer.removeListener(channel, listener),
+    removeAllListeners: (channel) => ipcRenderer.removeAllListeners(channel)
+  },
+
   // 🔴 ENHANCED: Debug utilities with model event testing
   debug: {
     log: (message, data) => console.log('[Renderer]', message, data),

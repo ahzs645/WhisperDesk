@@ -21,6 +21,7 @@ class ServiceManager extends EventEmitter {
       await this.initializeExportService();
       await this.initializeEnhancedDeviceManager();
       await this.initializePlatformAwareScreenRecorder();
+      await this.initializeSpeakerRecognitionService();
       
       console.log('✅ Services initialization completed');
       return true;
@@ -80,6 +81,19 @@ class ServiceManager extends EventEmitter {
     } catch (error) {
       console.error('❌ Export Service failed:', error);
       this.services.exportService = this.createFallbackExportService();
+    }
+  }
+
+  async initializeSpeakerRecognitionService() {
+    try {
+      console.log('🔧 Initializing Speaker Recognition Service...');
+      const SpeakerRecognitionService = require('../services/speaker-recognition-service');
+      this.services.speakerRecognitionService = new SpeakerRecognitionService();
+      await this.services.speakerRecognitionService.initialize();
+      console.log('✅ Speaker Recognition Service initialized');
+    } catch (error) {
+      console.error('❌ Speaker Recognition Service failed:', error);
+      this.services.speakerRecognitionService = null;
     }
   }
 
@@ -159,6 +173,10 @@ class ServiceManager extends EventEmitter {
     
     if (this.services.screenRecorder) {
       this.setupEnhancedScreenRecorderEvents(); // Updated for v7
+    }
+    
+    if (this.services.speakerRecognitionService) {
+      this.setupSpeakerRecognitionEvents();
     }
   }
 
@@ -276,6 +294,37 @@ class ServiceManager extends EventEmitter {
       console.log('✅ CapRecorder events set up');
     } catch (error) {
       console.error('❌ Failed to set up CapRecorder events:', error);
+    }
+  }
+
+  setupSpeakerRecognitionEvents() {
+    if (!this.services.speakerRecognitionService || !this.mainWindow) {
+      console.warn('⚠️ Speaker recognition service or main window not available for event forwarding');
+      return;
+    }
+
+    console.log('🔧 Setting up speaker recognition event forwarding...');
+    
+    try {
+      // Listen for speaker label updates and broadcast to all windows
+      this.services.speakerRecognitionService.on('speakerLabelUpdated', ({ speakerId, label }) => {
+        console.log(`🗣️ [MAIN] Speaker label updated: ${speakerId} -> ${label}`);
+        if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+          this.mainWindow.webContents.send('speaker-label-updated', { speakerId, label });
+        }
+      });
+
+      // Listen for speaker creation events
+      this.services.speakerRecognitionService.on('speakerCreated', ({ speakerId, profile }) => {
+        console.log(`🗣️ [MAIN] Speaker created: ${speakerId}`);
+        if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+          this.mainWindow.webContents.send('speaker-created', { speakerId, profile });
+        }
+      });
+
+      console.log('✅ Speaker recognition event forwarding set up successfully');
+    } catch (error) {
+      console.error('❌ Failed to set up speaker recognition events:', error);
     }
   }
 
