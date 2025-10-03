@@ -1,0 +1,75 @@
+{
+	"$schema": "./src-tauri/gen/schemas/desktop-schema.json",
+	"productName": "WhisperDesk",
+	"version": "1.0.0",
+	"identifier": "com.whisperdesk.app",
+	"app": {
+		"windows": [
+			{
+				"title": "WhisperDesk",
+				"width": 1200,
+				"height": 800,
+				"resizable": true,
+				"minimizable": true,
+				"maximizable": true
+			}
+		],
+		"withGlobalTauri": true,
+		"security": {
+			"assetProtocol": {
+				"scope": {
+					"allow": [
+						"**"
+					],
+					"deny": [],
+					"requireLiteralLeadingDot": false
+				},
+				"enable": true
+			},
+			"csp": null
+		}
+	},
+	"build": {
+		"beforeDevCommand": "cd src/renderer/whisperdesk-ui && npm run dev",
+		"beforeBuildCommand": "cd src/renderer/whisperdesk-ui && npm run build",
+		"frontendDist": "src/renderer/whisperdesk-ui/dist",
+		"devUrl": "http://localhost:5173"
+	},
+	"bundle": {
+		"active": true,
+		"targets": [
+			"nsis",
+			"deb",
+			"rpm",
+			"dmg",
+			"app"
+		],
+		"createUpdaterArtifacts": true,
+		"icon": [
+			"src-tauri/icons/32x32.png",
+			"src-tauri/icons/128x128.png",
+			"src-tauri/icons/128x128@2x.png",
+			"src-tauri/icons/icon.icns",
+			"src-tauri/icons/icon.ico"
+		],
+		"resources": {
+			"locales": "src-tauri/locales"
+		}
+	},
+	"plugins": {
+		"updater": {
+			"pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEZFNTJENkIxNTM4NTQxODgKUldTSVFZVlRzZFpTL21VWTBzak1IMTA1ZjdNVHA0MXQ3Y20wa2F2U24zVGl6WUUvTGVoQi8wN1kK",
+			"endpoints": [
+				"https://github.com/yourusername/whisperdesk/releases/latest/download/latest.json"
+			]
+		},
+		"deep-link": {
+			"mobile": [],
+			"desktop": {
+				"schemes": [
+					"whisperdesk"
+				]
+			}
+		}
+	}
+}

@@ -6,36 +6,140 @@ export const UnifiedWindowControls = () => {
   const [platform, setPlatform] = useState('unknown');
 
   useEffect(() => {
-    // Get platform info
-    window.electronAPI?.window?.getPlatform?.().then(platformInfo => {
-      setPlatform(platformInfo.platform);
-    });
-
-    // Check current maximize state
-    window.electronAPI?.window?.isMaximized?.().then(maximized => {
-      setIsMaximized(maximized);
-    });
-
-    // Set up event listeners
-    const unsubscribeMaximize = window.electronAPI?.window?.onMaximize?.(() => {
-      setIsMaximized(true);
-    });
-    
-    const unsubscribeUnmaximize = window.electronAPI?.window?.onUnmaximize?.(() => {
-      setIsMaximized(false);
-    });
-
-    return () => {
-      unsubscribeMaximize?.();
-      unsubscribeUnmaximize?.();
+    const initializeControls = async () => {
+      // Check if Tauri is available
+      if (typeof window !== 'undefined' && window.__TAURI__) {
+        try {
+          const { getCurrentWindow } = window.__TAURI__.window;
+          const { platform } = window.__TAURI__.os;
+          
+          // Get platform info
+          const platformName = await platform();
+          console.log('Detected platform:', platformName);
+          setPlatform(platformName);
+          
+          // Get current window
+          const appWindow = getCurrentWindow();
+          
+          // Check current maximize state
+          const maximized = await appWindow.isMaximized();
+          setIsMaximized(maximized);
+          
+          // Don't set up automatic event listeners to prevent freeze issues
+          // We'll manually track state in the button handlers instead
+          console.log('🔄 Window controls initialized, no automatic state tracking');
+          
+          // Set up manual dragging for header area
+          const setupDragging = () => {
+            const headerContent = document.querySelector('.unified-header-content');
+            if (headerContent) {
+              console.log('🔄 Setting up drag listener on header');
+              
+              const handleMouseDown = async (e) => {
+                console.log('🔄 Mouse down event:', {
+                  button: e.button,
+                  buttons: e.buttons,
+                  target: e.target.tagName,
+                  closest_button: !!e.target.closest('button'),
+                  detail: e.detail
+                });
+                
+                // Only drag with left mouse button and avoid buttons
+                if (e.button === 0 && !e.target.closest('button') && !e.target.closest('.windows-controls')) {
+                  console.log('🔄 Valid drag conditions met');
+                  
+                  if (e.detail === 2) {
+                    // Double click to maximize/restore
+                    console.log('🔄 Double click detected - toggling maximize');
+                    e.preventDefault();
+                    handleMaximize();
+                  } else {
+                    // Single click to start dragging
+                    console.log('🔄 Starting window drag...');
+                    try {
+                      await appWindow.startDragging();
+                      console.log('✅ Window dragging started');
+                    } catch (error) {
+                      console.error('❌ Failed to start dragging:', error);
+                    }
+                  }
+                }
+              };
+              
+              headerContent.addEventListener('mousedown', handleMouseDown);
+              console.log('✅ Manual dragging listener added to header');
+            } else {
+              console.error('❌ Header content not found for dragging');
+            }
+          };
+          
+          // Add small delay to ensure DOM is ready
+          setTimeout(setupDragging, 100);
+        } catch (error) {
+          console.error('Error initializing Tauri window controls:', error);
+        }
+      }
     };
+
+    initializeControls();
   }, []);
 
-  const handleMinimize = () => window.electronAPI?.window?.minimize?.();
-  const handleMaximize = () => window.electronAPI?.window?.maximize?.();
-  const handleClose = () => window.electronAPI?.window?.close?.();
+  const handleMinimize = async () => {
+    console.log('🔹 Minimize button clicked');
+    try {
+      if (window.__TAURI__) {
+        console.log('🔹 Tauri API available, attempting to minimize...');
+        const { getCurrentWindow } = window.__TAURI__.window;
+        const appWindow = getCurrentWindow();
+        await appWindow.minimize();
+        console.log('✅ Window minimized successfully');
+      } else {
+        console.error('❌ Tauri API not available');
+      }
+    } catch (error) {
+      console.error('❌ Failed to minimize window:', error);
+    }
+  };
 
-  const isMacOS = platform === 'darwin';
+  const handleMaximize = async () => {
+    console.log('🔸 Maximize button clicked, current state:', isMaximized);
+    try {
+      if (window.__TAURI__) {
+        console.log('🔸 Tauri API available, attempting to maximize/restore...');
+        const { getCurrentWindow } = window.__TAURI__.window;
+        const appWindow = getCurrentWindow();
+        
+        // Simply toggle state immediately to prevent UI freeze
+        const newState = !isMaximized;
+        setIsMaximized(newState);
+        
+        if (isMaximized) {
+          await appWindow.unmaximize();
+          console.log('✅ Window unmaximized successfully');
+        } else {
+          await appWindow.maximize();
+          console.log('✅ Window maximized successfully');
+        }
+      } else {
+        console.error('❌ Tauri API not available');
+      }
+    } catch (error) {
+      console.error('❌ Failed to maximize/unmaximize window:', error);
+      // Revert state if operation failed
+      setIsMaximized(!isMaximized);
+    }
+  };
+
+  const handleClose = async () => {
+    if (window.__TAURI__) {
+      const { getCurrentWindow } = window.__TAURI__.window;
+      const appWindow = getCurrentWindow();
+      await appWindow.close();
+    }
+  };
+
+  const isMacOS = false; // Force Windows-style square controls as requested
+  console.log('Using square controls, Platform:', platform);
 
   if (isMacOS) {
     // macOS-style traffic light controls

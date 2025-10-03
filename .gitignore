@@ -120,6 +120,17 @@ venv.bak/
 app/
 release/
 
+# Tauri
+src-tauri/target/
+src-tauri/gen/
+*.app
+*.dmg
+*.deb
+*.rpm
+*.msi
+*.exe
+
 binaries/
 temp/
 native/whisperdesk-screencapturekit/target/
+vibe-main

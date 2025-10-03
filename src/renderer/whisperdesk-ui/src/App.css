@@ -274,6 +274,7 @@ main {
   position: relative;
   z-index: 1;
   flex: 1;
+  padding-top: var(--header-height); /* Add top padding for fixed header */
   padding-left: var(--header-margin);
   padding-right: var(--header-margin);
   padding-bottom: var(--header-margin);
@@ -293,6 +294,43 @@ main {
   z-index: 1;
 }
 
+/* Prevent window dragging when scrolling past page limits */
+html, body {
+  overflow-anchor: none;
+  overscroll-behavior: none; /* Prevents rubber band scrolling on macOS */
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Lock scroll behavior to prevent unwanted window dragging */
+body {
+  overscroll-behavior-y: contain; /* Prevent scroll chaining */
+  overscroll-behavior-x: none;    /* Prevent horizontal scroll effects */
+}
+
+/* Specifically lock the main content area */
+main {
+  overscroll-behavior: contain;
+  scroll-behavior: smooth;
+}
+
+/* Header content area - no special cursor needed */
+.unified-header-content {
+  user-select: none;
+  height: 100%;
+  display: flex;
+  align-items: center;
+}
+
+/* Keep interactive elements with normal cursor */
+.unified-header-content button,
+.unified-header-content input,
+.unified-header-content select,
+.unified-header-content a,
+.windows-controls,
+.windows-controls * {
+  cursor: pointer !important;
+}
+
 /* FIXED GLASS HEADER STYLES - CROSS-PLATFORM COMPATIBLE */
 .unified-header {
   position: fixed !important;
@@ -303,8 +341,8 @@ main {
   width: 100% !important;
   z-index: 50 !important;
   
-  /* Make entire header draggable */
-  -webkit-app-region: drag !important;
+  /* Remove webkit app region since we'll use manual dragging */
+  /* -webkit-app-region: drag !important; */
   
   /* Prevent text selection and highlighting */
   user-select: none !important;
@@ -408,7 +446,7 @@ main {
   }
 }
 
-/* Header content - keep draggable */
+/* Header content - manual dragging via Tauri API */
 .unified-header-content {
   display: grid;
   grid-template-columns: auto 1fr auto;
@@ -416,7 +454,7 @@ main {
   height: 100%;
   padding: 0 16px;
   max-width: 100%;
-  -webkit-app-region: drag !important;
+  /* Removed -webkit-app-region in favor of manual dragging */
 }
 
 /* Header sections - keep draggable by default */

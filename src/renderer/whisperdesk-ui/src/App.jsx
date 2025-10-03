@@ -14,6 +14,7 @@ import { ScreenRecorderProvider } from './components/screen-recorder/ScreenRecor
 import { UnifiedWindowControls } from './components/UnifiedWindowControls'
 import { Toaster } from './components/ui/sonner'
 import { appInitializer } from './utils/AppInitializer'
+import tauriBridge from './utils/TauriBridge'
 import './App.css'
 
 // Create contexts for app-wide state and initialization
@@ -299,7 +300,7 @@ function AppContent() {
       />
       
       <header className="unified-header">
-        <div className="unified-header-content">
+        <div className="unified-header-content" data-tauri-drag-region>
           {/* macOS: Controls on the left */}
           {isMacOS && appState.isElectron && (
             <div className="header-section header-left">
