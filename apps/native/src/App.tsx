@@ -6,11 +6,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@repo/ui/components/ui
 import { Progress } from '@repo/ui/components/ui/progress'
 import { Mic, Package, Clock, Settings, Video, BarChart3 } from 'lucide-react'
 import CustomMicIcon from '@repo/ui/components/icons/CustomMicIcon'
-import { ModelMarketplace } from '@repo/ui/components/ModelMarketplace-WebCompatible'
 import { AnalyticsTab } from '@repo/ui/components/analytics/AnalyticsTab'
-import { EnhancedTranscriptionTab } from '@repo/ui/components/transcription/EnhancedTranscriptionTab'
+import { TranscriptionTab } from './components/TranscriptionTab'
+import { ScreenRecorderTab } from './components/ScreenRecorderTab'
+import { ModelsTab } from './components/ModelsTab'
 import { SettingsTab } from '@repo/ui/components/settings'
-import { ScreenRecorderProvider } from '@repo/ui/components/screen-recorder/ScreenRecorderProvider'
 import { UnifiedWindowControls } from '@repo/ui/components/UnifiedWindowControls.tauri'
 import { Toaster } from 'sonner'
 import { appInitializer } from './utils/AppInitializer'
@@ -379,11 +379,15 @@ function AppContent() {
       {/* Main content */}
       <main className="flex-1 container mx-auto py-6 pt-[calc(var(--header-height)+24px)]">
         <Tabs defaultValue="transcribe" className="w-full">
-          <TabsList className="grid w-full grid-cols-5">
+          <TabsList className="grid w-full grid-cols-6">
             <TabsTrigger value="transcribe" className="flex items-center space-x-2">
               <Mic className="w-4 h-4" />
               <span>Transcribe</span>
               <FileIndicator />
+            </TabsTrigger>
+            <TabsTrigger value="recorder" className="flex items-center space-x-2">
+              <Video className="w-4 h-4" />
+              <span>Recorder</span>
             </TabsTrigger>
             <TabsTrigger value="analytics" className="flex items-center space-x-2">
               <BarChart3 className="w-4 h-4" />
@@ -405,7 +409,11 @@ function AppContent() {
 
           {/* Tab Contents */}
           <TabsContent value="transcribe" className="space-y-6">
-            <EnhancedTranscriptionTab />
+            <TranscriptionTab />
+          </TabsContent>
+
+          <TabsContent value="recorder" className="space-y-6">
+            <ScreenRecorderTab />
           </TabsContent>
 
           <TabsContent value="analytics" className="space-y-6">
@@ -413,7 +421,7 @@ function AppContent() {
           </TabsContent>
 
           <TabsContent value="models" className="space-y-6">
-            <ModelMarketplace />
+            <ModelsTab />
           </TabsContent>
 
           <TabsContent value="history" className="space-y-6">
@@ -434,9 +442,7 @@ const App = () => {
   return (
     <InitializationProvider>
       <AppStateProvider>
-        <ScreenRecorderProvider>
-          <AppContent />
-        </ScreenRecorderProvider>
+        <AppContent />
       </AppStateProvider>
     </InitializationProvider>
   )

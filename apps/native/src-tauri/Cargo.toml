@@ -20,6 +20,31 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+eyre = { workspace = true }
+
+# Vibe core for transcription
+vibe_core = { path = "../../../packages/vibe-core", features = ["coreml", "metal"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+cocoa = "0.26.0"
+screencapturekit = { version = "0.2.8", features = ["ci"] }
+screencapturekit-sys = "0.2.8"
+objc_id = "0.1"
+core-graphics-helmer-fork = "0.24.0"
+
+# Additional plugins
+tauri-plugin-store = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"
+tauri-plugin-shell = "2"
+
+# Utilities
+dirs = "5.0"
+tracing = "0.1"
+cpal = "0.15.3"
+hound = "3.5.1"
+rand = "0.8.5"
 

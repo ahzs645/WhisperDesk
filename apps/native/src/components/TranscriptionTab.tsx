@@ -1,56 +1,157 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Button } from '@repo/ui/components/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@repo/ui/components/card'
 import { Textarea } from '@repo/ui/components/textarea'
 import { Progress } from '@repo/ui/components/progress'
-import { Mic, FileAudio, Upload } from 'lucide-react'
+import { Mic, FileAudio, Upload, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
-import { invoke } from '@repo/ui/lib/mock-tauri-api'
+import {
+  selectAudioFile,
+  saveTranscription,
+  transcribe,
+  onTranscriptionProgress,
+  onTranscriptionSegment,
+  type TranscriptionSegment,
+} from '../lib/tauri-bindings'
 
 export function TranscriptionTab() {
   const [isTranscribing, setIsTranscribing] = useState(false)
   const [transcription, setTranscription] = useState('')
   const [progress, setProgress] = useState(0)
+  const [segments, setSegments] = useState<TranscriptionSegment[]>([])
+  const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null)
 
-  const handleTranscribe = async () => {
+  useEffect(() => {
+    // Setup transcription event listeners
+    const setupListeners = async () => {
+      await onTranscriptionProgress((prog) => {
+        setProgress(prog)
+      })
+
+      await onTranscriptionSegment((segment) => {
+        setSegments((prev) => [...prev, segment])
+      })
+    }
+
+    setupListeners()
+
+    // Listen for transcription requests from recording
+    const handleTranscriptionRequest = (event: Event) => {
+      const customEvent = event as CustomEvent<{ path: string }>
+      if (customEvent.detail?.path) {
+        handleTranscribe(customEvent.detail.path)
+      }
+    }
+
+    window.addEventListener('requestTranscription', handleTranscriptionRequest)
+
+    // Check for pending transcription on mount
+    const pendingPath = sessionStorage.getItem('pendingTranscriptionPath')
+    if (pendingPath) {
+      sessionStorage.removeItem('pendingTranscriptionPath')
+      toast.info('Starting transcription of recorded audio...')
+      handleTranscribe(pendingPath)
+    }
+
+    return () => {
+      window.removeEventListener('requestTranscription', handleTranscriptionRequest)
+    }
+  }, [])
+
+  // Update transcription text from segments
+  useEffect(() => {
+    if (segments.length > 0) {
+      const text = segments.map(s => s.text).join(' ')
+      setTranscription(text)
+    }
+  }, [segments])
+
+  const handleTranscribe = async (audioPath: string) => {
+    if (!audioPath) {
+      toast.error('No audio file selected')
+      return
+    }
+
     setIsTranscribing(true)
     setProgress(0)
+    setSegments([])
+    setTranscription('')
     toast.info('Starting transcription...')
 
     try {
-      // Simulate progress
-      const progressInterval = setInterval(() => {
-        setProgress(prev => Math.min(prev + 10, 90))
-      }, 300)
-
-      const result = await invoke('start_transcription', {
-        options: {
-          model: 'tiny',
-          language: 'en',
-          task: 'transcribe'
-        }
+      const result = await transcribe({
+        audio_path: audioPath,
+        language: 'en',
+        word_timestamps: true,
       })
 
-      clearInterval(progressInterval)
       setProgress(100)
-
-      setTranscription(result.text)
       toast.success('Transcription complete!')
     } catch (error) {
+      console.error('Transcription error:', error)
       toast.error('Transcription failed: ' + String(error))
     } finally {
       setIsTranscribing(false)
-      setTimeout(() => setProgress(0), 1000)
+      setTimeout(() => setProgress(0), 2000)
     }
   }
 
   const handleFileSelect = async () => {
     try {
-      const filePath = await invoke('open_file')
-      toast.success(`Selected file: ${filePath}`)
-      await handleTranscribe()
+      const filePath = await selectAudioFile()
+      if (filePath) {
+        setSelectedFilePath(filePath)
+        toast.success(`Selected: ${filePath.split('/').pop()}`)
+        await handleTranscribe(filePath)
+      }
     } catch (error) {
+      console.error('File selection error:', error)
       toast.error('Failed to select file')
+    }
+  }
+
+  const handleSave = async () => {
+    if (!transcription) {
+      toast.error('No transcription to save')
+      return
+    }
+
+    try {
+      const savedPath = await saveTranscription(transcription, 'transcription.txt')
+      if (savedPath) {
+        toast.success('Transcription saved!')
+      }
+    } catch (error) {
+      console.error('Save error:', error)
+      toast.error('Failed to save transcription')
+    }
+  }
+
+  const handleExport = async () => {
+    if (!transcription) {
+      toast.error('No transcription to export')
+      return
+    }
+
+    try {
+      // Export as JSON with segments
+      const exportData = {
+        text: transcription,
+        segments: segments,
+        timestamp: new Date().toISOString(),
+        audioFile: selectedFilePath,
+      }
+
+      const savedPath = await saveTranscription(
+        JSON.stringify(exportData, null, 2),
+        'transcription.json'
+      )
+      if (savedPath) {
+        toast.success('Transcription exported!')
+      }
+    } catch (error) {
+      console.error('Export error:', error)
+      toast.error('Failed to export transcription')
     }
   }
 
@@ -70,14 +171,14 @@ export function TranscriptionTab() {
           </CardHeader>
         </Card>
 
-        <Card className="cursor-pointer hover:bg-accent transition-colors" onClick={handleTranscribe}>
+        <Card className="cursor-pointer hover:bg-accent transition-colors">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Mic className="h-5 w-5" />
               Record Audio
             </CardTitle>
             <CardDescription>
-              Record from your microphone
+              Go to Screen Recorder tab to record
             </CardDescription>
           </CardHeader>
         </Card>
@@ -127,15 +228,26 @@ export function TranscriptionTab() {
 
           {transcription && (
             <div className="flex gap-2">
-              <Button onClick={() => toast.success('Saved!')}>
+              <Button onClick={handleSave}>
                 Save
               </Button>
-              <Button variant="outline" onClick={() => toast.success('Exported!')}>
-                Export
+              <Button variant="outline" onClick={handleExport}>
+                Export as JSON
               </Button>
-              <Button variant="outline" onClick={() => setTranscription('')}>
+              <Button variant="outline" onClick={() => {
+                setTranscription('')
+                setSegments([])
+                setSelectedFilePath(null)
+              }}>
                 Clear
               </Button>
+            </div>
+          )}
+
+          {isTranscribing && (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              <span>Transcribing... {segments.length} segments processed</span>
             </div>
           )}
         </CardContent>

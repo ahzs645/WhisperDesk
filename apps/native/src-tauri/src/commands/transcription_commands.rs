@@ -1,77 +1,150 @@
+use eyre::Result;
 use serde::{Deserialize, Serialize};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use tauri::{Emitter, Listener, Manager, State};
+use vibe_core::config::TranscribeOptions;
+use vibe_core::transcript::Segment;
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct TranscriptionOptions {
-    pub model: String,
+use super::model_commands::ModelState;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TranscriptionRequest {
+    pub audio_path: String,
     pub language: Option<String>,
-    pub task: Option<String>,
+    pub translate: Option<bool>,
+    pub word_timestamps: Option<bool>,
+    pub max_sentence_len: Option<i32>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct TranscriptionResult {
-    pub text: String,
-    pub segments: Vec<TranscriptionSegment>,
-    pub duration: f64,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TranscriptionSegment {
-    pub id: u32,
-    pub start: f64,
-    pub end: f64,
+    pub start: i64,
+    pub stop: i64,
     pub text: String,
+    pub speaker: Option<String>,
 }
 
-/// Start a transcription
-/// Maps to: transcription:start from Electron
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TranscriptionResult {
+    pub segments: Vec<TranscriptionSegment>,
+    pub processing_time_sec: u64,
+}
+
+impl From<Segment> for TranscriptionSegment {
+    fn from(segment: Segment) -> Self {
+        Self {
+            start: segment.start,
+            stop: segment.stop,
+            text: segment.text,
+            speaker: segment.speaker,
+        }
+    }
+}
+
+/// Transcribe audio file
 #[tauri::command]
-pub async fn start_transcription(
-    options: TranscriptionOptions,
+pub async fn transcribe(
+    app_handle: tauri::AppHandle,
+    model_state: State<'_, ModelState>,
+    request: TranscriptionRequest,
 ) -> Result<TranscriptionResult, String> {
-    // TODO: Implement actual transcription logic
-    // This will call the whisper-cli binary or use a Rust whisper library
+    // Get the model context
+    let context_guard = model_state
+        .context
+        .lock()
+        .map_err(|e| format!("Failed to acquire model lock: {}", e))?;
 
-    println!("Starting transcription with model: {}", options.model);
+    let context = context_guard
+        .as_ref()
+        .ok_or_else(|| "No model loaded. Please load a model first.".to_string())?;
 
-    // Placeholder response
-    Ok(TranscriptionResult {
-        text: "This is a placeholder transcription".to_string(),
-        segments: vec![TranscriptionSegment {
-            id: 0,
-            start: 0.0,
-            end: 2.5,
-            text: "This is a placeholder transcription".to_string(),
-        }],
-        duration: 2.5,
-    })
-}
+    // Prepare transcription options
+    let options = TranscribeOptions {
+        path: request.audio_path.clone(),
+        lang: request.language.clone(),
+        translate: request.translate,
+        word_timestamps: request.word_timestamps,
+        max_sentence_len: request.max_sentence_len,
+        n_threads: Some(4),
+        temperature: None,
+        init_prompt: None,
+        max_text_ctx: None,
+        sampling_bestof_or_beam_size: None,
+        sampling_strategy: None,
+        verbose: Some(false),
+    };
 
-/// Stop a transcription
-/// Maps to: transcription:stop from Electron
-#[tauri::command]
-pub async fn stop_transcription() -> Result<(), String> {
-    // TODO: Implement stop logic
-    println!("Stopping transcription");
-    Ok(())
+    // Create abort flag
+    let abort_flag = Arc::new(AtomicBool::new(false));
+    let abort_flag_clone = abort_flag.clone();
+
+    // Listen for abort event
+    let app_handle_abort = app_handle.clone();
+    app_handle.listen("abort_transcription", move |_event| {
+        tracing::info!("Abort transcription requested");
+        abort_flag_clone.store(true, Ordering::Relaxed);
+    });
+
+    // Progress callback
+    let app_handle_progress = app_handle.clone();
+    let progress_callback = Box::new(move |progress: i32| {
+        if let Some(window) = app_handle_progress.get_webview_window("main") {
+            let _ = window.emit("transcription_progress", progress);
+        }
+    });
+
+    // New segment callback
+    let app_handle_segment = app_handle.clone();
+    let new_segment_callback = Box::new(move |segment: Segment| {
+        if let Some(window) = app_handle_segment.get_webview_window("main") {
+            let segment: TranscriptionSegment = segment.into();
+            let _ = window.emit("transcription_segment", segment);
+        }
+    });
+
+    // Abort callback
+    let abort_callback = Box::new(move || abort_flag.load(Ordering::Relaxed));
+
+    // Run transcription
+    let transcript = vibe_core::transcribe::transcribe(
+        context,
+        &options,
+        Some(progress_callback),
+        Some(new_segment_callback),
+        Some(abort_callback),
+        None, // No diarization for now
+        None, // No additional ffmpeg args
+    )
+    .map_err(|e| format!("Transcription failed: {:?}", e))?;
+
+    // Convert to result format
+    let result = TranscriptionResult {
+        segments: transcript
+            .segments
+            .into_iter()
+            .map(|s| s.into())
+            .collect(),
+        processing_time_sec: transcript.processing_time_sec,
+    };
+
+    Ok(result)
 }
 
 /// Get transcription status
-/// Maps to: transcription:getStatus from Electron
 #[tauri::command]
 pub async fn get_transcription_status() -> Result<String, String> {
-    // TODO: Implement status check
+    // TODO: Track actual transcription state
     Ok("idle".to_string())
 }
 
-/// List available models
-/// Maps to: models:list from Electron
+/// Stop ongoing transcription
 #[tauri::command]
-pub async fn list_models() -> Result<Vec<String>, String> {
-    // TODO: Read from models directory
-    Ok(vec![
-        "tiny".to_string(),
-        "base".to_string(),
-        "small".to_string(),
-        "medium".to_string(),
-    ])
+pub async fn stop_transcription(app_handle: tauri::AppHandle) -> Result<(), String> {
+    // Emit abort event
+    app_handle
+        .emit("abort_transcription", ())
+        .map_err(|e| format!("Failed to emit abort event: {}", e))?;
+
+    Ok(())
 }
