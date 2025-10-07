@@ -32,7 +32,6 @@ export const UnifiedWindowControls = () => {
         const { getCurrentWindow } = await import('@tauri-apps/api/window');
         const appWindow = getCurrentWindow();
 
-        console.log('Tauri detected! Window:', appWindow);
         setIsTauri(true);
         setTauriWindow(appWindow);
 
@@ -55,7 +54,7 @@ export const UnifiedWindowControls = () => {
           setIsMaximized(maximized);
         });
       } catch (e) {
-        console.log('Not running in Tauri, falling back to Electron:', e);
+        // Not running in Tauri, try Electron
         setIsTauri(false);
 
         // Electron API
@@ -93,7 +92,6 @@ export const UnifiedWindowControls = () => {
 
   const handleMinimize = async (e) => {
     e.stopPropagation();
-    console.log('Minimize clicked - isTauri:', isTauri, 'window:', tauriWindow);
     if (isTauri && tauriWindow) {
       await tauriWindow.minimize();
     } else {
@@ -103,7 +101,6 @@ export const UnifiedWindowControls = () => {
 
   const handleMaximize = async (e) => {
     e.stopPropagation();
-    console.log('Maximize clicked - isTauri:', isTauri, 'window:', tauriWindow);
     if (isTauri && tauriWindow) {
       await tauriWindow.toggleMaximize();
     } else {
@@ -113,7 +110,6 @@ export const UnifiedWindowControls = () => {
 
   const handleClose = async (e) => {
     e.stopPropagation();
-    console.log('Close clicked - isTauri:', isTauri, 'window:', tauriWindow);
     if (isTauri && tauriWindow) {
       await tauriWindow.close();
     } else {

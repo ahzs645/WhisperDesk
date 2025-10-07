@@ -254,39 +254,51 @@ function AppContent() {
   const { appState } = useAppState()
   const { isInitializing, isInitialized, progress, step, error } = useInitialization()
   const [platform, setPlatform] = useState('unknown')
-
-  // Check if running in Tauri
-  const isTauri = typeof window !== 'undefined' && !!(window as any).__TAURI__
-  const isDesktopApp = appState.isElectron || isTauri
-
-  // Debug logging
-  console.log('Debug - isTauri:', isTauri)
-  console.log('Debug - appState.isElectron:', appState.isElectron)
-  console.log('Debug - isDesktopApp:', isDesktopApp)
-  console.log('Debug - platform:', platform)
-  console.log('Debug - isMacOS:', platform === 'darwin')
+  const [isTauri, setIsTauri] = useState(false)
 
   useEffect(() => {
-    // Detect platform - works with both Electron and Tauri
-    const electronAPI = (window as any).electronAPI
-    const isTauri = typeof window !== 'undefined' && !!(window as any).__TAURI__
+    const detectPlatform = async () => {
+      try {
+        // Try Tauri API first - this will succeed if we're in Tauri
+        const { getCurrentWindow } = await import('@tauri-apps/api/window');
+        getCurrentWindow(); // This will throw if not in Tauri
 
-    if (isTauri) {
-      // Tauri platform detection
-      if (navigator.platform.toLowerCase().includes('mac')) {
-        setPlatform('darwin')
-      } else if (navigator.platform.toLowerCase().includes('win')) {
-        setPlatform('win32')
-      } else {
-        setPlatform('linux')
+        setIsTauri(true);
+
+        // Use navigator.platform for platform detection (works everywhere)
+        if (navigator.platform.toLowerCase().includes('mac')) {
+          setPlatform('darwin');
+        } else if (navigator.platform.toLowerCase().includes('win')) {
+          setPlatform('win32');
+        } else {
+          setPlatform('linux');
+        }
+      } catch (e) {
+        setIsTauri(false);
+
+        // Check for Electron
+        const electronAPI = (window as any).electronAPI;
+        if (electronAPI?.window?.getPlatform) {
+          electronAPI.window.getPlatform().then((platformInfo: string) => {
+            setPlatform(platformInfo);
+          });
+        } else {
+          // Fallback to navigator.platform
+          if (navigator.platform.toLowerCase().includes('mac')) {
+            setPlatform('darwin');
+          } else if (navigator.platform.toLowerCase().includes('win')) {
+            setPlatform('win32');
+          } else {
+            setPlatform('linux');
+          }
+        }
       }
-    } else if (electronAPI?.window?.getPlatform) {
-      electronAPI.window.getPlatform().then((platformInfo: string) => {
-        setPlatform(platformInfo)
-      })
-    }
+    };
+
+    detectPlatform();
   }, [])
 
+  const isDesktopApp = appState.isElectron || isTauri
   const isMacOS = platform === 'darwin'
 
   // Show loading state while initializing
@@ -327,7 +339,7 @@ function AppContent() {
       <header className="unified-header">
         <div className="unified-header-content">
           {/* macOS: Controls on the left */}
-          {(isMacOS && isDesktopApp) || true && (
+          {isMacOS && isDesktopApp && (
             <div className="header-section header-left">
               <UnifiedWindowControls />
             </div>
