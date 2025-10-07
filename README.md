@@ -1,342 +1,177 @@
-<img src="https://github.com/ahzs645/WhisperDesk/blob/main/resources/icons/icon.png" alt="Icon" width="250"/>
+# WhisperDesk Tauri Migration
 
-# WhisperDesk - Enhanced Native Implementation
+This directory contains the **Tauri v2 + Next.js** migration of WhisperDesk from Electron.
 
-A powerful desktop transcription application powered by native whisper.cpp with real-time progress feedback, multi-speaker detection, and advanced analytics.
+## 🏗️ Monorepo Structure
 
-## 📦 Download & Install
+```
+tauri-app/
+├── apps/
+│   ├── web/          # Next.js web app (API backend + web frontend)
+│   └── native/       # Tauri desktop app (macOS, Windows, Linux)
+├── packages/
+│   ├── ui/           # Shared UI components (React + Tailwind + shadcn)
+│   └── typescript-config/  # Shared TypeScript configurations
+├── package.json
+├── pnpm-workspace.yaml
+└── turbo.json
+```
 
-Download the latest version for your platform:
+## 📋 Migration Status
 
-**[📥 Download Latest Release](https://github.com/ahzs645/WhisperDesk/releases/latest)**
+### ✅ Completed
+- [x] Monorepo setup with Turbo Repo
+- [x] Next.js web app initialized
+- [x] Tauri v2 native app initialized
+- [x] Shared UI package with Tailwind CSS
+- [x] pnpm workspace configuration
+- [x] Rust toolchain installed
 
-**[🚧 Download Development Build](https://github.com/ahzs645/WhisperDesk/releases/tag/dev)** *(Latest features, may be unstable)*
+### 🚧 In Progress
+- [ ] Migrate Electron IPC handlers to Tauri commands
+- [ ] Port native modules (CapRecorder, Whisper) to Rust
+- [ ] Migrate UI components from existing app
+- [ ] Configure build and packaging
 
-| Platform | Release Download | Notes |
-|----------|-----------------|-------|
-| 🪟 **Windows** | `WhisperDesk-Setup-X.X.X-win-x64.exe` | Installer for 64-bit Windows |
-| 🪟 **Windows Portable** | `WhisperDesk-Portable-X.X.X-win-x64.exe` | Portable version, no installation needed |
-| 🍎 **macOS Intel** | `WhisperDesk-X.X.X-mac-x64.zip` | For Intel-based Macs |
-| 🍎 **macOS Apple Silicon** | `WhisperDesk-X.X.X-mac-arm64.zip` | For M1/M2/M3/M4 Macs |
-| 🐧 **Linux** | `WhisperDesk-X.X.X-linux-x64.AppImage` | Portable, no installation needed |
-| 🐧 **Linux (Debian/Ubuntu)** | `WhisperDesk-X.X.X-linux-x64.deb` | For Debian-based systems |
-| 🐧 **Linux (RPM)** | `WhisperDesk-X.X.X-linux-x64.rpm` | For Red Hat-based systems |
+## 🔄 Electron vs Tauri Comparison
 
-### Installation and First Run
-1. **Download** the appropriate file for your operating system from the links above.
-2. **Install** using your platform's standard method:
-   - **Windows**: 
-     - **Installer**: Run the `Setup` `.exe` file and follow the installation wizard.
-     - **Portable**: Download the `Portable` `.exe` file and run it directly (no installation required).
-   - **macOS**: Extract the `.zip` file and drag the WhisperDesk.app to your Applications folder. Right-click → Open if blocked by Gatekeeper.
-   - **Linux**:
-     - For `.AppImage`: Make it executable (`chmod +x WhisperDesk-*.AppImage`) then run it.
-     - For `.deb`/`.rpm`: Install using your system's package manager (e.g., `sudo dpkg -i file.deb` or `sudo rpm -i file.rpm`).
-3. **Launch** WhisperDesk.
-4. Upon first launch, or by navigating to the "Models" tab, **download a model** (e.g., "Whisper Tiny" - 39MB is a good start).
-5. Go to the "Transcribe" tab, select your audio file, and **start transcribing**!
+| Feature | Electron | Tauri |
+|---------|----------|-------|
+| **Backend** | Node.js (main process) | Rust |
+| **IPC** | `ipcMain.handle()` / `ipcRenderer.invoke()` | `#[tauri::command]` / `invoke()` |
+| **Window** | BrowserWindow | WebviewWindow |
+| **Store** | electron-store | tauri-plugin-store |
+| **Bundle Size** | ~150MB (includes Chromium) | ~15MB (uses system webview) |
+| **Performance** | Heavy | Lightweight |
 
-## 🛠️ Build from Source
-
-If you prefer to build from source or want to contribute to development:
+## 🚀 Getting Started
 
 ### Prerequisites
-- **Node.js** 20.x or later
-- **npm** 10.x or later
-- **PNPM** (for UI dependencies)
-- **Git**
-- Platform-specific build tools:
-  - **Windows**: Visual Studio Build Tools or Visual Studio Community
-  - **macOS**: Xcode Command Line Tools
-  - **Linux**: GCC, CMake, build-essential
+- Node.js 20+
+- Rust (installed automatically)
+- pnpm 10+ (installed automatically)
 
-### 🚀 Streamlined Setup
+### Installation
 
-**Super Quick (2 commands):**
 ```bash
-git clone https://github.com/ahzs645/WhisperDesk.git && cd WhisperDesk
-npm install && npm run setup:dev
+# From the tauri-app directory
+/Users/ahmadjalil/Library/pnpm/pnpm install
 ```
 
-This will:
-- Install all dependencies (Node.js + UI)
-- Build the whisper-cli binary
-- Download the tiny model for testing
-- Start the development environment
+### Development
 
-**Alternative Setup Methods:**
-
-*   **Automated Scripts:**
-    - **Linux/macOS:** `scripts/setup.sh`
-    - **Windows:** `scripts\setup.ps1`
-
-*   **Manual Setup:**
-    ```bash
-    git clone https://github.com/ahzs645/WhisperDesk.git
-    cd WhisperDesk
-    npm run install:all        # Install deps + build binary
-    npm run download:model:tiny # Get starter model
-    npm run dev                 # Start development
-    ```
-
-### Running (After Building from Source)
-
-**Electron App (Recommended)**
 ```bash
-npm run dev
-```
-*Features:* Full native integration, model downloads, persistent state, real-time progress
+# Run Next.js web app
+/Users/ahmadjalil/Library/pnpm/pnpm --filter web dev
 
-**Web Interface with Native Backend**
+# Run Tauri desktop app
+/Users/ahmadjalil/Library/pnpm/pnpm --filter native tauri dev
+```
+
+### Build
+
 ```bash
-npm run web
-# Opens http://localhost:3000 with live transcription
-```
-*Features:* Web-based UI with native whisper.cpp backend
+# Build Next.js web app
+/Users/ahmadjalil/Library/pnpm/pnpm --filter web build
 
-**API Server Only**
-```bash
-npm run server
-# Server runs on http://localhost:3001
+# Build Tauri desktop app
+/Users/ahmadjalil/Library/pnpm/pnpm --filter native tauri build
 ```
 
-## ✨ Key Features
+## 📝 Migration Guide
 
-### Core Functionality
-- **Native Performance**: Built on whisper.cpp for fast, efficient local transcription
-- **Cross-Platform**: Optimized builds for Windows, macOS (Intel & Apple Silicon), and Linux
-- **Multiple Audio/Video Formats**: Support for MP3, WAV, MP4, AVI, MOV, and more
-- **Real-time Progress**: Live feedback during transcription with progress bars
-- **Offline Operation**: No internet required after initial setup
+### 1. IPC Handler Migration
 
-### Enhanced Transcription
-- **Multi-Speaker Detection**: Identify and label different speakers in conversations
-- **Speaker Analytics**: Detailed statistics including speaking time, turn-taking, and dominance
-- **Adaptive Speaker Sensitivity**: Configurable thresholds for optimal speaker detection
-- **Timestamp Support**: Precise timing information for all segments
-- **Confidence Scoring**: Quality metrics for transcription accuracy
-
-### Smart Interface
-- **Persistent State**: Work survives application restarts and tab switches
-- **Live Search**: Find specific words or speakers in transcriptions instantly
-- **Auto-transcription**: Record screen and automatically transcribe the audio
-- **Dual Mode**: Choose between Electron desktop app or web interface
-- **Smart Notifications**: Clean, non-intrusive progress updates
-
-### Advanced Analytics
-- **Speaker Analysis**: Speaking time distribution, turn patterns, conversation flow
-- **Sentiment Analysis**: Emotional tone tracking throughout conversations
-- **Speech Patterns**: Filler detection, pause analysis, speech rate metrics
-- **Quality Metrics**: Confidence distribution, accuracy indicators
-- **Topic Detection**: Automatic identification of discussion themes
-
-### Export Options
-- **Multiple Formats**: TXT, JSON, SRT, VTT, CSV, XML
-- **Speaker-aware Export**: Include or exclude speaker labels
-- **Timestamp Options**: Flexible timestamp formatting
-- **Analytics Reports**: Export detailed analytics and insights
-- **Clipboard Integration**: Quick copy/paste functionality
-
-### Screen Recording
-- **CapRecorder Integration**: High-performance screen capture powered by Rust/NAPI
-- **Cross-Platform Unified**: Single solution for macOS, Windows, and Linux
-- **System Audio Support**: Built-in system audio recording capabilities
-- **Auto-transcription**: Seamless recording-to-text workflow
-- **Modern Architecture**: Simplified, maintainable recording system
-
-## 📋 Available Scripts
-
-### Core Application
-- `npm run dev` - Start Electron app in development mode
-- `npm run web` - Start web interface with API server
-- `npm run server` - Start transcription API server only
-- `npm run build` - Build for production
-
-### Build & Setup
-- `npm run build:whisper` - Build whisper-cli binary from source
-- `npm run setup:complete` - Complete setup including models
-- `npm run install:all` - Install all dependencies and build binary
-
-### Model Management
-- `npm run download:model:tiny` - Download tiny model (39MB)
-
-### Testing & Development
-- `npm run test:transcription` - Test with audio file
-- `npm run test:binary` - Test binary status
-- `npm run lint` - Code linting
-
-### Distribution
-- `npm run dist` - Build distributable packages
-- `npm run dist:win` - Windows build
-- `npm run dist:mac` - macOS build  
-- `npm run dist:linux` - Linux build
-
-## 🎮 User Guide
-
-### Getting Started
-1. **Launch WhisperDesk**
-2. **Download a Model**: Go to "Models" tab and download "Whisper Tiny" (39MB) for quick setup
-3. **Transcribe Audio**:
-   - Navigate to "Transcribe" tab
-   - Drag and drop your file or click "Select Audio File"
-   - Configure speaker detection if needed
-   - Click "Start Transcription"
-4. **View Results**: Results appear in real-time with speaker labels and timestamps
-
-### Screen Recording
-1. **Go to Recording Section**: Find the Enhanced Screen Recorder
-2. **Select Devices**: Choose your screen and audio input
-3. **Configure Settings**: Enable auto-transcription for automatic processing
-4. **Start Recording**: Click record and capture your session
-5. **Auto-Process**: Recording automatically transcribes when complete
-
-### Speaker Detection
-- **Enable in Settings**: Turn on "Speaker Diarization" for multi-speaker audio
-- **Adjust Sensitivity**: Use "very_high" for 4+ speakers, "normal" for 2-3 speakers
-- **Review Results**: Check speaker analytics for accuracy verification
-- **Export by Speaker**: Filter and export individual speaker contributions
-
-### Analytics & Insights
-- **Speaker Analysis**: View speaking time, turn patterns, and conversation dynamics
-- **Search Transcript**: Use Ctrl+F to search for specific words or phrases
-- **Export Reports**: Generate detailed analytics reports in multiple formats
-- **Quality Metrics**: Review confidence scores and transcription accuracy
-
-## 💻 System Requirements
-
-### Minimum Requirements
-- **Windows**: Windows 10 (64-bit) or later
-- **macOS**: macOS 10.15 (Catalina) or later
-- **Linux**: Modern 64-bit distribution (Ubuntu 18.04+, CentOS 7+, etc.)
-- **RAM**: 4GB minimum, 8GB recommended
-- **Storage**: 1GB for application + space for models (39MB - 3GB per model)
-- **Internet**: Required for initial model downloads only
-
-### What's Included in Releases
-- ✅ **Whisper.cpp Binary**: Pre-compiled and optimized for each platform
-- ✅ **Complete Desktop App**: Full Electron application with all dependencies
-- ✅ **Native Libraries**: All required system libraries bundled
-- ✅ **Auto-updater**: Automatic notification system for new versions
-- ✅ **Platform Integration**: Proper file associations and system integration
-
-## 🐛 Troubleshooting
-
-### Common Issues
-
-**App won't start on Windows:**
-- Try the portable version if the installer fails
-- Right-click installer and "Run as Administrator"
-- Check Windows Defender/antivirus isn't blocking the app
-- Ensure you downloaded the correct architecture (x64)
-
-**App won't start on macOS:**
-- Extract .zip and drag to Applications folder
-- Right-click app and select "Open" to bypass Gatekeeper
-- For damaged app error, run: `sudo xattr -rd com.apple.quarantine /Applications/WhisperDesk.app`
-- Check System Preferences → Privacy & Security → Screen Recording
-
-**App won't start on Linux:**
-- Make AppImage executable: `chmod +x WhisperDesk-*.AppImage`
-- Install dependencies: `sudo apt install fuse libfuse2` (Ubuntu/Debian)
-- Try .deb or .rpm packages for older systems
-
-**Model download fails:**
-- Check internet connection and available disk space
-- Try downloading a smaller model first (Tiny model)
-- Verify firewall isn't blocking downloads
-
-**Transcription fails:**
-- Check if whisper binary exists: `npm run test:binary`
-- Rebuild binary: `npm run build:whisper`
-- Verify model is downloaded and compatible
-- Check file format is supported
-
-**Recording permission issues (macOS):**
-- Open System Preferences → Security & Privacy → Privacy
-- Add WhisperDesk to Screen Recording and Microphone sections
-- Restart application after granting permissions
-
-### Build Issues
-
-**Binary setup issues:**
-- Ensure build tools are installed for your platform
-- Check that CMAKE and compiler are available
-- Run setup script: `scripts/setup.sh` or `scripts\setup.ps1`
-
-**Electron app won't start:**
-- Build the renderer: `cd src/renderer/whisperdesk-ui && pnpm run build`
-- Verify dist folder exists and contains built files
-
-**Dependencies missing:**
-- Run complete setup: `npm run install:all`
-- Clear caches: `npm run clean && npm install`
-
-## 📁 Project Structure
-
-```
-WhisperDesk/
-├── src/
-│   ├── main/                     # Electron main process
-│   │   ├── managers/            # Service and state management
-│   │   ├── services/            # Core business logic
-│   │   ├── ipc-handlers/        # Inter-process communication
-│   │   └── utils/               # Utilities and helpers
-│   ├── renderer/                # Frontend application
-│   │   └── whisperdesk-ui/      # React-based UI
-│   │       ├── src/components/  # UI components
-│   │       └── src/hooks/       # Custom React hooks
-│   └── shared/                  # Shared code between processes
-├── binaries/                    # Native binaries (whisper-cli, etc.)
-├── models/                      # Downloaded AI models
-├── scripts/                     # Setup and build scripts
-├── tools/                       # Development tools
-└── resources/                   # App icons and assets
+**Electron:**
+```javascript
+// src/main/ipc-handlers/transcription-handlers.js
+ipcMain.handle('transcription:start', async (event, options) => {
+  // Handle transcription
+  return result;
+});
 ```
 
-## 🚀 Use Cases
+**Tauri:**
+```rust
+// apps/native/src-tauri/src/main.rs
+#[tauri::command]
+async fn start_transcription(options: TranscriptionOptions) -> Result<String, String> {
+  // Handle transcription
+  Ok(result)
+}
 
-WhisperDesk excels in:
+fn main() {
+  tauri::Builder::default()
+    .invoke_handler(tauri::generate_handler![start_transcription])
+    .run(tauri::generate_context!())
+    .expect("error while running tauri application");
+}
+```
 
-- **Content Creation**: Transcribe podcasts, videos, and audio content with speaker identification
-- **Business Meetings**: Convert recordings to searchable transcripts with speaker analytics
-- **Academic Research**: Process interviews with detailed conversation analysis
-- **Accessibility**: Create captions and transcripts for media content
-- **Personal Use**: Transcribe voice memos and personal recordings
-- **Live Recording**: Record screen sessions with automatic transcription
+**Frontend (React):**
+```tsx
+// Before (Electron)
+const result = await window.electron.ipcRenderer.invoke('transcription:start', options);
 
-## 🔒 Privacy & Security
+// After (Tauri)
+import { invoke } from '@tauri-apps/api/core';
+const result = await invoke('start_transcription', { options });
+```
 
-- **Local Processing**: All transcription happens on your machine
-- **No Cloud Dependencies**: Audio never leaves your device
-- **Open Source**: Full transparency in code and functionality
-- **Offline Capable**: Works without internet after initial setup
-- **Data Control**: You own and control all your transcriptions
+### 2. File System Operations
 
-## 🌟 Advanced Features
+**Electron:**
+```javascript
+const fs = require('fs');
+const path = require('path');
+```
 
-### Multi-Speaker Detection
-- Supports up to 20 speakers in a single recording
-- Adaptive sensitivity settings for optimal detection
-- Speaker transition smoothing for natural conversation flow
-- Detailed speaker statistics and analytics
+**Tauri:**
+```rust
+use tauri::api::path;
+use std::fs;
+```
 
-### Real-time Processing
-- Live progress updates during transcription
-- Streaming results as they're processed
-- Cancellable operations with proper cleanup
+### 3. Screen Recording
 
-### Enhanced Analytics
-- Speaking time distribution and turn analysis
-- Sentiment analysis and emotional tone detection
-- Speech pattern analysis including filler detection
-- Quality metrics and confidence scoring
+**Electron (CapRecorder):**
+```javascript
+const { CapRecorder } = require('@firstform/caprecorder');
+```
 
-### Professional Export
-- Multiple export formats with speaker-aware options
-- Customizable timestamp formatting
-- Analytics reports for detailed insights
-- Clipboard integration for quick sharing
+**Tauri (Will use Rust crates):**
+```rust
+// To be implemented using:
+// - scap for screen capture on macOS
+// - windows-capture for Windows
+// - Custom solution for Linux
+```
 
----
+## 🎯 Next Steps
 
-**WhisperDesk** provides a comprehensive, privacy-focused transcription solution with advanced speaker detection and analytics. Whether you're a content creator, researcher, or business professional, WhisperDesk delivers professional-grade transcription with the convenience of local processing.
+1. **Map all Electron IPC handlers** to Tauri commands
+2. **Port native modules**:
+   - CapRecorder → Rust screen capture
+   - Whisper CLI integration
+   - Diarization service
+3. **Migrate React components** from `src/renderer/whisperdesk-ui` to `packages/ui`
+4. **Configure Tauri permissions** for file system, screen recording, microphone
+5. **Setup CI/CD** for multi-platform builds
+
+## 📚 Resources
+
+- [Tauri Documentation](https://tauri.app/)
+- [Tauri + Next.js Guide](https://tauri.app/guides/frontend/nextjs)
+- [Electron to Tauri Migration](https://tauri.app/guides/migrate/from-electron)
+- [Turbo Repo](https://turbo.build/repo)
+
+## 🤝 Key Decisions
+
+1. **Why monorepo?** Share components between web and desktop, easier maintenance
+2. **Why Next.js?** API routes for backend, server-side rendering, great DX
+3. **Why Tauri?** Smaller bundle size, better performance, modern architecture
+4. **Why pnpm?** Fast, efficient, workspace support
+
+## 📄 License
+
+MIT - Same as the original WhisperDesk project
