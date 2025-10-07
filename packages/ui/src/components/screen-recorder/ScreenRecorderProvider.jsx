@@ -127,21 +127,27 @@ export const ScreenRecorderProvider = ({ children }) => {
     const initializeService = async () => {
       try {
         addToEventLog('Initializing screen recorder service...');
-        
+
         // Check API availability first
         if (!window.electronAPI?.screenRecorder) {
-          throw new Error('Screen recorder API not available');
+          console.warn('Screen recorder API not available - running in mock mode');
+          updateState({
+            apiStatus: 'unavailable',
+            localError: 'Screen recorder API not available (mock mode)'
+          });
+          addToEventLog('Screen recorder API not available (mock mode)');
+          return;
         }
 
         await service.initialize(updateState, addToEventLog);
         updateState({ apiStatus: 'available' });
         addToEventLog('Service initialized successfully');
-        
+
       } catch (error) {
         console.error('Failed to initialize screen recorder service:', error);
-        updateState({ 
-          apiStatus: 'unavailable', 
-          localError: error.message 
+        updateState({
+          apiStatus: 'unavailable',
+          localError: error.message
         });
         addToEventLog(`Initialization failed: ${error.message}`);
       }

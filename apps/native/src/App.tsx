@@ -1,23 +1,23 @@
-// WhisperDesk Tauri App - Main Component
-import React, { useState, useEffect, createContext, useContext } from 'react'
-import { Button } from '@repo/ui/components/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@repo/ui/components/card'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@repo/ui/components/tabs'
-import { Progress } from '@repo/ui/components/progress'
-import { Mic, Package, BarChart3, Video, Settings as SettingsIcon } from 'lucide-react'
+// WhisperDesk Tauri App - Full Migration from Electron
+import React, { useState, useEffect, createContext, useContext, useCallback } from 'react'
+import { Button } from '@repo/ui/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@repo/ui/components/ui/card'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@repo/ui/components/ui/tabs'
+import { Progress } from '@repo/ui/components/ui/progress'
+import { Mic, Package, Clock, Settings, Video, BarChart3 } from 'lucide-react'
+import CustomMicIcon from '@repo/ui/components/icons/CustomMicIcon'
+import { ModelMarketplace } from '@repo/ui/components/ModelMarketplace-WebCompatible'
+import { AnalyticsTab } from '@repo/ui/components/analytics/AnalyticsTab'
+import { EnhancedTranscriptionTab } from '@repo/ui/components/transcription/EnhancedTranscriptionTab'
+import { SettingsTab } from '@repo/ui/components/settings'
+import { ScreenRecorderProvider } from '@repo/ui/components/screen-recorder/ScreenRecorderProvider'
+import { UnifiedWindowControls } from '@repo/ui/components/UnifiedWindowControls.tauri'
 import { Toaster } from 'sonner'
-import { invoke } from '@repo/ui/lib/mock-tauri-api'
-import './index.css'
+import { appInitializer } from './utils/AppInitializer'
 
-// Import tabs (we'll create simplified versions)
-import { TranscriptionTab } from './components/TranscriptionTab'
-import { ModelsTab } from './components/ModelsTab'
-import { AnalyticsTab } from './components/AnalyticsTab'
-import { ScreenRecorderTab } from './components/ScreenRecorderTab'
-import { SettingsTab } from './components/SettingsTab'
-
-// Create contexts for app-wide state
+// Create contexts for app-wide state and initialization
 const AppStateContext = createContext<any>(null)
+const InitializationContext = createContext<any>(null)
 
 export const useAppState = () => {
   const context = useContext(AppStateContext)
@@ -27,10 +27,18 @@ export const useAppState = () => {
   return context
 }
 
+export const useInitialization = () => {
+  const context = useContext(InitializationContext)
+  if (!context) {
+    throw new Error('useInitialization must be used within InitializationProvider')
+  }
+  return context
+}
+
 // Theme management
 const useThemeManager = () => {
   const [theme, setTheme] = useState(() => {
-    return localStorage.getItem('theme') || 'dark'
+    return localStorage.getItem('theme') || 'system'
   })
 
   const applyThemeToDOM = (themeValue: string) => {
@@ -52,72 +60,251 @@ const useThemeManager = () => {
     applyThemeToDOM(theme)
   }, [theme])
 
+  useEffect(() => {
+    if (theme !== 'system') return
+
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
+    const handleSystemThemeChange = () => {
+      if (theme === 'system') {
+        applyThemeToDOM('system')
+      }
+    }
+
+    mediaQuery.addEventListener('change', handleSystemThemeChange)
+    return () => mediaQuery.removeEventListener('change', handleSystemThemeChange)
+  }, [theme])
+
   const updateTheme = (newTheme: string) => {
     setTheme(newTheme)
     localStorage.setItem('theme', newTheme)
 
-    // Call Tauri backend to update theme
-    invoke('set_setting', { key: 'theme', value: newTheme }).catch(console.error)
+    // For Tauri, we'll use the mock API instead of electronAPI
+    if (typeof window !== 'undefined' && (window as any).electronAPI?.window?.setTheme) {
+      (window as any).electronAPI.window.setTheme(newTheme)
+    }
   }
 
   return { theme, updateTheme }
 }
 
-function AppStateProvider({ children }: { children: React.ReactNode }) {
-  const { theme, updateTheme } = useThemeManager()
-  const [appInfo, setAppInfo] = useState<any>(null)
-  const [isLoading, setIsLoading] = useState(true)
+function InitializationProvider({ children }: { children: React.ReactNode }) {
+  const [initializationState, setInitializationState] = useState({
+    isInitializing: false,
+    isInitialized: false,
+    progress: 0,
+    step: '',
+    error: null as string | null
+  })
 
-  // Initialize app state
-  useEffect(() => {
-    const init = async () => {
-      try {
-        const info = await invoke('get_app_info')
-        setAppInfo(info)
-
-        // Load saved theme
-        const savedTheme = await invoke('get_setting', { key: 'theme' })
-        if (savedTheme) {
-          updateTheme(savedTheme)
-        }
-      } catch (error) {
-        console.error('Failed to initialize app:', error)
-      } finally {
-        setIsLoading(false)
-      }
+  const initialize = async (updateAppState: any) => {
+    if (initializationState.isInitializing || initializationState.isInitialized) {
+      console.log('🔒 App already initialized/initializing, skipping...')
+      return
     }
 
-    init()
-  }, [])
+    setInitializationState(prev => ({ ...prev, isInitializing: true }))
 
-  const value = {
-    theme,
-    updateTheme,
-    appInfo,
-    isLoading,
+    try {
+      await appInitializer.initialize(
+        updateAppState,
+        (progress: any) => setInitializationState(prev => ({ ...prev, ...progress }))
+      )
+
+      setInitializationState(prev => ({
+        ...prev,
+        isInitializing: false,
+        isInitialized: true,
+        progress: 100,
+        step: 'Ready!'
+      }))
+    } catch (error: any) {
+      console.error('❌ App initialization failed:', error)
+      setInitializationState(prev => ({
+        ...prev,
+        isInitializing: false,
+        error: error.message
+      }))
+    }
+  }
+
+  const cleanup = () => {
+    appInitializer.cleanup()
+    setInitializationState({
+      isInitializing: false,
+      isInitialized: false,
+      progress: 0,
+      step: '',
+      error: null
+    })
   }
 
   return (
-    <AppStateContext.Provider value={value}>
+    <InitializationContext.Provider value={{
+      ...initializationState,
+      initialize,
+      cleanup
+    }}>
+      {children}
+    </InitializationContext.Provider>
+  )
+}
+
+function AppStateProvider({ children }: { children: React.ReactNode }) {
+  const { theme, updateTheme } = useThemeManager()
+  const { initialize } = useInitialization()
+
+  const [appState, setAppState] = useState({
+    selectedFile: null,
+    transcription: '',
+    isTranscribing: false,
+    progress: 0,
+    progressMessage: '',
+    activeTranscriptionId: null,
+    selectedProvider: 'whisper-native',
+    selectedModel: 'whisper-tiny',
+    isRecording: false,
+    recordingDuration: 0,
+    recordingValidated: false,
+    recordingSettings: {
+      includeMicrophone: true,
+      includeSystemAudio: true
+    },
+    lastTranscriptionResult: null,
+    isElectron: false,
+    theme: theme
+  })
+
+  useEffect(() => {
+    if (appState.theme !== theme) {
+      setAppState(prev => ({ ...prev, theme }))
+    }
+  }, [theme, appState.theme])
+
+  const updateAppState = useCallback((updates: any) => {
+    console.log('🔄 App state update:', updates)
+
+    if (typeof updates.theme !== 'undefined') {
+      updateTheme(updates.theme)
+      const { theme: _, ...otherUpdates } = updates
+      updates = otherUpdates
+    }
+
+    setAppState(prev => {
+      const newState = { ...prev, ...updates }
+      console.log('📊 New app state:', newState)
+      return newState
+    })
+  }, [updateTheme])
+
+  const resetTranscription = useCallback(() => {
+    updateAppState({
+      transcription: '',
+      isTranscribing: false,
+      progress: 0,
+      progressMessage: '',
+      lastTranscriptionResult: null,
+      activeTranscriptionId: null
+    })
+  }, [updateAppState])
+
+  const clearAll = useCallback(() => {
+    setAppState(prev => ({
+      ...prev,
+      selectedFile: null,
+      transcription: '',
+      isTranscribing: false,
+      progress: 0,
+      progressMessage: '',
+      lastTranscriptionResult: null,
+      activeTranscriptionId: null,
+      isRecording: false,
+      recordingDuration: 0,
+      recordingValidated: false
+    }))
+  }, [])
+
+  useEffect(() => {
+    const isElectron = typeof window !== 'undefined' && !!(window as any).electronAPI
+    const isTauri = typeof window !== 'undefined' && !!(window as any).__TAURI__
+    if (isElectron !== appState.isElectron) {
+      updateAppState({ isElectron: isElectron || isTauri })
+    }
+  }, [appState.isElectron, updateAppState])
+
+  // Initialize app when mounted
+  useEffect(() => {
+    initialize(updateAppState)
+  }, [])
+
+  return (
+    <AppStateContext.Provider value={{
+      appState,
+      updateAppState,
+      resetTranscription,
+      clearAll,
+      updateTheme
+    }}>
       {children}
     </AppStateContext.Provider>
   )
 }
 
-function App() {
-  const { isLoading, appInfo } = useAppState()
-  const [activeTab, setActiveTab] = useState('transcription')
+// App content component
+function AppContent() {
+  const { appState } = useAppState()
+  const { isInitializing, isInitialized, progress, step, error } = useInitialization()
+  const [platform, setPlatform] = useState('unknown')
 
-  if (isLoading) {
+  // Check if running in Tauri
+  const isTauri = typeof window !== 'undefined' && !!(window as any).__TAURI__
+  const isDesktopApp = appState.isElectron || isTauri
+
+  // Debug logging
+  console.log('Debug - isTauri:', isTauri)
+  console.log('Debug - appState.isElectron:', appState.isElectron)
+  console.log('Debug - isDesktopApp:', isDesktopApp)
+  console.log('Debug - platform:', platform)
+  console.log('Debug - isMacOS:', platform === 'darwin')
+
+  useEffect(() => {
+    // Detect platform - works with both Electron and Tauri
+    const electronAPI = (window as any).electronAPI
+    const isTauri = typeof window !== 'undefined' && !!(window as any).__TAURI__
+
+    if (isTauri) {
+      // Tauri platform detection
+      if (navigator.platform.toLowerCase().includes('mac')) {
+        setPlatform('darwin')
+      } else if (navigator.platform.toLowerCase().includes('win')) {
+        setPlatform('win32')
+      } else {
+        setPlatform('linux')
+      }
+    } else if (electronAPI?.window?.getPlatform) {
+      electronAPI.window.getPlatform().then((platformInfo: string) => {
+        setPlatform(platformInfo)
+      })
+    }
+  }, [])
+
+  const isMacOS = platform === 'darwin'
+
+  // Show loading state while initializing
+  if (isInitializing || !isInitialized) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
-        <Card className="w-96">
+        <Card className="w-[400px]">
           <CardHeader>
-            <CardTitle>Loading WhisperDesk...</CardTitle>
-            <CardDescription>Initializing application</CardDescription>
+            <CardTitle>Initializing WhisperDesk</CardTitle>
+            <CardDescription>{step}</CardDescription>
           </CardHeader>
           <CardContent>
-            <Progress value={65} className="w-full" />
+            <Progress value={progress} className="mb-4" />
+            {error && (
+              <div className="text-red-500 text-sm mt-2">
+                Error: {error}
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -125,86 +312,239 @@ function App() {
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="border-b">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Mic className="h-6 w-6" />
-              <h1 className="text-2xl font-bold">WhisperDesk</h1>
-              {appInfo && (
-                <span className="text-sm text-muted-foreground">
-                  v{appInfo.version} • {appInfo.platform}
-                </span>
-              )}
+    <div className="min-h-screen bg-background flex flex-col">
+      <Toaster
+        position="bottom-right"
+        expand={false}
+        richColors={true}
+        closeButton={true}
+        duration={4000}
+        visibleToasts={4}
+        gap={12}
+        offset={16}
+      />
+
+      <header className="unified-header">
+        <div className="unified-header-content">
+          {/* macOS: Controls on the left */}
+          {(isMacOS && isDesktopApp) || true && (
+            <div className="header-section header-left">
+              <UnifiedWindowControls />
             </div>
-            <div className="text-sm text-muted-foreground">
-              Running with Tauri + Mock API
+          )}
+
+          {/* Center content - draggable */}
+          <div className={`header-section header-center ${isMacOS ? 'macos-center' : ''}`} data-tauri-drag-region>
+            <div className="flex items-center space-x-3" data-tauri-drag-region>
+              <div className="frosted-glass p-2 rounded-lg shadow-lg" data-tauri-drag-region>
+                <CustomMicIcon className="w-6 h-6 text-primary" />
+              </div>
+              <div data-tauri-drag-region>
+                <h1 className="text-xl font-bold tracking-tight" data-tauri-drag-region>WhisperDesk Enhanced</h1>
+                  <span className="text-xs px-2 py-0.5 rounded inline-block mt-1
+                  bg-gray-200 text-gray-800
+                  dark:bg-gray-700 dark:text-gray-100" data-tauri-drag-region>
+                    by first form
+                  </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Right side: Status indicator and controls */}
+          <div className="header-section header-right">
+            <div className="flex items-center space-x-3">
+              <AppStateIndicator />
+
+              {/* Windows/Linux: Controls on the right */}
+              {!isMacOS && isDesktopApp && (
+                <UnifiedWindowControls />
+              )}
             </div>
           </div>
         </div>
       </header>
 
-      {/* Main Content */}
-      <main className="container mx-auto px-4 py-6">
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+      {/* Main content */}
+      <main className="flex-1 container mx-auto py-6 pt-[calc(var(--header-height)+24px)]">
+        <Tabs defaultValue="transcribe" className="w-full">
           <TabsList className="grid w-full grid-cols-5">
-            <TabsTrigger value="transcription" className="flex items-center gap-2">
-              <Mic className="h-4 w-4" />
-              Transcribe
+            <TabsTrigger value="transcribe" className="flex items-center space-x-2">
+              <Mic className="w-4 h-4" />
+              <span>Transcribe</span>
+              <FileIndicator />
             </TabsTrigger>
-            <TabsTrigger value="models" className="flex items-center gap-2">
-              <Package className="h-4 w-4" />
-              Models
+            <TabsTrigger value="analytics" className="flex items-center space-x-2">
+              <BarChart3 className="w-4 h-4" />
+              <span>Analytics</span>
             </TabsTrigger>
-            <TabsTrigger value="analytics" className="flex items-center gap-2">
-              <BarChart3 className="h-4 w-4" />
-              Analytics
+            <TabsTrigger value="models" className="flex items-center space-x-2">
+              <Package className="w-4 h-4" />
+              <span>Models</span>
             </TabsTrigger>
-            <TabsTrigger value="recorder" className="flex items-center gap-2">
-              <Video className="h-4 w-4" />
-              Recorder
+            <TabsTrigger value="history" className="flex items-center space-x-2">
+              <Clock className="w-4 h-4" />
+              <span>History</span>
             </TabsTrigger>
-            <TabsTrigger value="settings" className="flex items-center gap-2">
-              <SettingsIcon className="h-4 w-4" />
-              Settings
+            <TabsTrigger value="settings" className="flex items-center space-x-2">
+              <Settings className="w-4 h-4" />
+              <span>Settings</span>
             </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="transcription" className="mt-6">
-            <TranscriptionTab />
+          {/* Tab Contents */}
+          <TabsContent value="transcribe" className="space-y-6">
+            <EnhancedTranscriptionTab />
           </TabsContent>
 
-          <TabsContent value="models" className="mt-6">
-            <ModelsTab />
-          </TabsContent>
-
-          <TabsContent value="analytics" className="mt-6">
+          <TabsContent value="analytics" className="space-y-6">
             <AnalyticsTab />
           </TabsContent>
 
-          <TabsContent value="recorder" className="mt-6">
-            <ScreenRecorderTab />
+          <TabsContent value="models" className="space-y-6">
+            <ModelMarketplace />
           </TabsContent>
 
-          <TabsContent value="settings" className="mt-6">
+          <TabsContent value="history" className="space-y-6">
+            <HistoryTab />
+          </TabsContent>
+
+          <TabsContent value="settings" className="space-y-6">
             <SettingsTab />
           </TabsContent>
         </Tabs>
       </main>
-
-      {/* Toast notifications */}
-      <Toaster />
     </div>
   )
 }
 
-// Wrap App with providers
-export default function WrappedApp() {
+// Main App component
+const App = () => {
   return (
-    <AppStateProvider>
-      <App />
-    </AppStateProvider>
+    <InitializationProvider>
+      <AppStateProvider>
+        <ScreenRecorderProvider>
+          <AppContent />
+        </ScreenRecorderProvider>
+      </AppStateProvider>
+    </InitializationProvider>
+  )
+}
+
+export default App
+
+// Helper Components
+function FileIndicator() {
+  const { appState } = useAppState()
+
+  if (appState.selectedFile) {
+    return (
+      <span className="w-2 h-2 bg-primary rounded-full" title={`File selected: ${appState.selectedFile.name}`} />
+    )
+  }
+
+  return null
+}
+
+function AppStateIndicator() {
+  const { appState } = useAppState()
+
+  return (
+    <div className="flex items-center space-x-2 text-xs text-muted-foreground">
+      {/* Recording status - most important */}
+      {appState.isRecording && (
+        <span className="bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 px-2 py-1 rounded animate-pulse flex items-center">
+          <Video className="w-3 h-3 mr-1" />
+          {appState.recordingValidated ? 'Recording' : 'Starting...'}
+          {appState.recordingDuration > 0 && ` ${formatDuration(appState.recordingDuration)}`}
+        </span>
+      )}
+
+      {/* Selected file indicator */}
+      {appState.selectedFile && !appState.isRecording && (
+        <span className="bg-primary/10 text-primary px-2 py-1 rounded">
+          {appState.selectedFile.name}
+        </span>
+      )}
+
+      {/* Transcribing status */}
+      {appState.isTranscribing && (
+        <span className="bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400 px-2 py-1 rounded animate-pulse">
+          Transcribing...
+        </span>
+      )}
+
+      {/* Completion status */}
+      {appState.transcription && !appState.isTranscribing && !appState.isRecording && (
+        <span className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 px-2 py-1 rounded">
+          ✓ Complete
+        </span>
+      )}
+    </div>
+  )
+}
+
+function formatDuration(seconds: number) {
+  const mins = Math.floor(seconds / 60)
+  const secs = seconds % 60
+  return `${mins}:${secs.toString().padStart(2, '0')}`
+}
+
+function HistoryTab() {
+  const { appState, clearAll } = useAppState()
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Transcription History</CardTitle>
+        <CardDescription>
+          View your current session and past transcriptions
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {appState.selectedFile || appState.transcription ? (
+          <div className="space-y-4">
+            <h3 className="font-medium">Current Session</h3>
+
+            {appState.selectedFile && (
+              <div className="p-3 border rounded-lg">
+                <div className="font-medium">Selected File</div>
+                <div className="text-sm text-muted-foreground">{appState.selectedFile.name}</div>
+                {appState.selectedFile.size && (
+                  <div className="text-xs text-muted-foreground">
+                    {(appState.selectedFile.size / 1024 / 1024).toFixed(2)} MB
+                  </div>
+                )}
+              </div>
+            )}
+
+            {appState.transcription && (
+              <div className="p-3 border rounded-lg">
+                <div className="font-medium">Latest Transcription</div>
+                <div className="text-sm text-muted-foreground mt-1">
+                  {appState.transcription.substring(0, 100)}
+                  {appState.transcription.length > 100 ? '...' : ''}
+                </div>
+                <div className="text-xs text-muted-foreground mt-2">
+                  {appState.transcription.length} characters
+                </div>
+              </div>
+            )}
+
+            <Button onClick={clearAll} variant="outline" size="sm">
+              Clear Session
+            </Button>
+          </div>
+        ) : (
+          <p className="text-muted-foreground">No transcriptions yet in this session</p>
+        )}
+
+        <div className="pt-4 border-t">
+          <h3 className="font-medium mb-2">Saved History</h3>
+          <p className="text-sm text-muted-foreground">
+            Persistent history across sessions coming soon...
+          </p>
+        </div>
+      </CardContent>
+    </Card>
   )
 }

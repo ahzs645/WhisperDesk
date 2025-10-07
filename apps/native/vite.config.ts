@@ -12,7 +12,11 @@ export default defineConfig(async () => ({
   resolve: {
     alias: {
       "@repo/ui": path.resolve(__dirname, "../../packages/ui/src"),
-      "@": path.resolve(__dirname, "../../packages/ui/src"),
+      "@/components": path.resolve(__dirname, "../../packages/ui/src/components"),
+      "@/lib": path.resolve(__dirname, "../../packages/ui/src/lib"),
+      "@/utils": path.resolve(__dirname, "./src/utils"),
+      "@/App": path.resolve(__dirname, "./src/App.tsx"),
+      "@": path.resolve(__dirname, "./src"),
     },
   },
 

@@ -286,14 +286,21 @@ export function EnhancedTranscriptionTab() {
   const refreshProviders = async (showToast = true) => {
     try {
       setIsLoading(true)
+
+      // Check if API is available
+      if (!window.electronAPI?.transcription?.getProviders) {
+        console.warn('Transcription API not available, skipping provider refresh')
+        return
+      }
+
       const availableProviders = await window.electronAPI.transcription.getProviders()
       setProviders(availableProviders)
-      
+
       // Also update AppInitializer services cache
       if (appInitializer.services) {
         appInitializer.services.providers = availableProviders
       }
-      
+
       if (showToast) {
         toast.success('🔄 Providers refreshed')
       }
@@ -311,14 +318,21 @@ export function EnhancedTranscriptionTab() {
   const refreshModels = async (showToast = true) => {
     try {
       setIsLoading(true)
+
+      // Check if API is available
+      if (!window.electronAPI?.model?.getInstalled) {
+        console.warn('Model API not available, skipping model refresh')
+        return
+      }
+
       const installedModels = await window.electronAPI.model.getInstalled()
       setModels(installedModels)
-      
+
       // Also update AppInitializer services cache
       if (appInitializer.services) {
         appInitializer.services.models = installedModels
       }
-      
+
       if (showToast) {
         toast.success('🔄 Models refreshed')
       }
