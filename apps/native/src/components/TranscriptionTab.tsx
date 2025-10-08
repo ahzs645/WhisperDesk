@@ -95,11 +95,18 @@ export function TranscriptionTab() {
       const settingsStr = localStorage.getItem('whisperdesk_settings')
       const settings = settingsStr ? JSON.parse(settingsStr) : {}
 
+      // Configure transcription based on settings
+      const enableDiarization = settings.enableSpeakerDiarization ?? false
+      const enableTimestamps = settings.enableTimestamps ?? true
+
       const result = await transcribe({
         audio_path: audioPath,
         language: settings.autoDetectLanguage ? undefined : 'en',
-        word_timestamps: settings.enableTimestamps ?? true,
-        enable_diarization: settings.enableSpeakerDiarization ?? false,
+        // When diarization is enabled, disable word timestamps to get sentence-level segments
+        word_timestamps: enableDiarization ? false : enableTimestamps,
+        // When word timestamps are enabled without diarization, group words into sentences
+        max_sentence_len: (!enableDiarization && enableTimestamps) ? 24 : undefined,
+        enable_diarization: enableDiarization,
         max_speakers: settings.maxSpeakers ?? 10,
         diarization_threshold: 0.5,
       })

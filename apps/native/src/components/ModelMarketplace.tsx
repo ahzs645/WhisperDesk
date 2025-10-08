@@ -4,12 +4,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@repo
 import { Badge } from '@repo/ui/components/badge'
 import { Progress } from '@repo/ui/components/progress'
 import { ScrollArea } from '@repo/ui/components/scroll-area'
-import { Package, Download, Trash2, HardDrive, Gauge, Check, Loader2, X, RefreshCw } from 'lucide-react'
+import { Package, Download, Trash2, HardDrive, Gauge, Check, Loader2, X, RefreshCw, CheckCircle2 } from 'lucide-react'
 import { toast } from 'sonner'
 import {
   getModelsFolder,
   downloadModel,
   onDownloadProgress,
+  loadModel,
+  type LoadModelOptions,
 } from '../lib/tauri-bindings'
 import { invoke } from '@tauri-apps/api/core'
 
@@ -79,13 +81,24 @@ export function ModelMarketplace() {
   const [downloads, setDownloads] = useState<Map<string, DownloadState>>(new Map())
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
+  const [loadedModel, setLoadedModel] = useState<string | null>(null)
+  const [loadingModel, setLoadingModel] = useState<string | null>(null)
 
   const downloadingModels = useRef(new Set<string>())
 
   useEffect(() => {
     loadModelsData()
     setupProgressListener()
+    loadCurrentModel()
   }, [])
+
+  const loadCurrentModel = () => {
+    // Load from localStorage which model is currently loaded
+    const savedModel = localStorage.getItem('whisperdesk_loaded_model')
+    if (savedModel) {
+      setLoadedModel(savedModel)
+    }
+  }
 
   const setupProgressListener = async () => {
     await onDownloadProgress((current, total) => {
@@ -223,6 +236,34 @@ export function ModelMarketplace() {
     }
   }
 
+  const handleLoadModel = async (model: typeof WHISPER_MODELS[0]) => {
+    setLoadingModel(model.id)
+    toast.info('Loading model...')
+
+    try {
+      const modelPath = `${modelsFolder}/${model.expectedFilename}`
+
+      const options: LoadModelOptions = {
+        model_path: modelPath,
+        use_gpu: false, // CoreML is used automatically on macOS
+      }
+
+      await loadModel(options)
+
+      // Save to localStorage and state
+      localStorage.setItem('whisperdesk_loaded_model', model.id)
+      setLoadedModel(model.id)
+
+      toast.success('Model loaded successfully!')
+      console.log('Model loaded:', model.id)
+    } catch (error) {
+      console.error('Model loading error:', error)
+      toast.error('Failed to load model: ' + String(error))
+    } finally {
+      setLoadingModel(null)
+    }
+  }
+
   const handleDeleteModel = async (model: typeof WHISPER_MODELS[0]) => {
     try {
       console.log('🗑️ Deleting model:', model.id)
@@ -235,6 +276,12 @@ export function ModelMarketplace() {
         next.delete(model.id)
         return next
       })
+
+      // If deleting the loaded model, clear it
+      if (loadedModel === model.id) {
+        localStorage.removeItem('whisperdesk_loaded_model')
+        setLoadedModel(null)
+      }
 
       toast.success('🗑️ Model deleted successfully')
     } catch (error) {
@@ -361,6 +408,8 @@ export function ModelMarketplace() {
                 const isInstalled = installedModels.has(model.id)
                 const download = downloads.get(model.id)
                 const isDownloading = !!download
+                const isLoaded = loadedModel === model.id
+                const isLoadingThisModel = loadingModel === model.id
 
                 return (
                   <Card key={model.id} className="relative overflow-hidden p-3">
@@ -370,7 +419,12 @@ export function ModelMarketplace() {
                           <h3 className="font-medium truncate">{model.name}</h3>
                           <p className="text-xs text-muted-foreground line-clamp-2 mt-0.5">{model.description}</p>
                         </div>
-                        {isInstalled && (
+                        {isLoaded ? (
+                          <Badge variant="secondary" className="bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 shrink-0">
+                            <CheckCircle2 className="w-3 h-3 mr-1" />
+                            Loaded
+                          </Badge>
+                        ) : isInstalled && (
                           <Badge variant="secondary" className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 shrink-0">
                             <Check className="w-3 h-3" />
                           </Badge>
@@ -427,12 +481,38 @@ export function ModelMarketplace() {
                             </Button>
                           </div>
                         ) : isInstalled ? (
-                          <div className="flex justify-end w-full">
+                          <div className="flex justify-between w-full gap-1">
+                            {isLoaded ? (
+                              <Badge variant="outline" className="text-xs flex-1 justify-center">
+                                Active Model
+                              </Badge>
+                            ) : (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleLoadModel(model)}
+                                disabled={isLoadingThisModel}
+                                className="h-6 text-xs px-2 flex-1"
+                              >
+                                {isLoadingThisModel ? (
+                                  <>
+                                    <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                                    Loading...
+                                  </>
+                                ) : (
+                                  <>
+                                    <Package className="w-3 h-3 mr-1" />
+                                    Load
+                                  </>
+                                )}
+                              </Button>
+                            )}
                             <Button
                               variant="ghost"
                               size="icon"
                               onClick={() => handleDeleteModel(model)}
                               className="h-6 w-6 text-destructive hover:text-destructive/90"
+                              disabled={isLoaded}
                             >
                               <Trash2 className="w-3 h-3" />
                             </Button>

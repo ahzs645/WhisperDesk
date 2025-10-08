@@ -13,6 +13,10 @@ export function SettingsTab() {
   const { theme, updateTheme, appInfo } = useAppState()
   const [autoSave, setAutoSave] = useState(true)
   const [language, setLanguage] = useState('en')
+  const [autoDetectLanguage, setAutoDetectLanguage] = useState(true)
+  const [enableTimestamps, setEnableTimestamps] = useState(true)
+  const [enableSpeakerDiarization, setEnableSpeakerDiarization] = useState(false)
+  const [maxSpeakers, setMaxSpeakers] = useState(10)
 
   useEffect(() => {
     loadSettings()
@@ -20,12 +24,30 @@ export function SettingsTab() {
 
   const loadSettings = async () => {
     try {
-      const settings = await invoke('get_all_settings')
-      if (settings.autoSave !== undefined) setAutoSave(settings.autoSave)
-      if (settings.language) setLanguage(settings.language)
+      // Load from localStorage for transcription settings
+      const settingsStr = localStorage.getItem('whisperdesk_settings')
+      if (settingsStr) {
+        const settings = JSON.parse(settingsStr)
+        if (settings.autoDetectLanguage !== undefined) setAutoDetectLanguage(settings.autoDetectLanguage)
+        if (settings.enableTimestamps !== undefined) setEnableTimestamps(settings.enableTimestamps)
+        if (settings.enableSpeakerDiarization !== undefined) setEnableSpeakerDiarization(settings.enableSpeakerDiarization)
+        if (settings.maxSpeakers !== undefined) setMaxSpeakers(settings.maxSpeakers)
+      }
+
+      // Load app settings from Tauri
+      const appSettings = await invoke('get_all_settings')
+      if (appSettings.autoSave !== undefined) setAutoSave(appSettings.autoSave)
+      if (appSettings.language) setLanguage(appSettings.language)
     } catch (error) {
       console.error('Failed to load settings:', error)
     }
+  }
+
+  const saveTranscriptionSetting = (key: string, value: any) => {
+    const settingsStr = localStorage.getItem('whisperdesk_settings')
+    const settings = settingsStr ? JSON.parse(settingsStr) : {}
+    settings[key] = value
+    localStorage.setItem('whisperdesk_settings', JSON.stringify(settings))
   }
 
   const handleThemeChange = (newTheme: string) => {
@@ -142,6 +164,97 @@ export function SettingsTab() {
               </SelectContent>
             </Select>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Transcription */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg">Transcription</CardTitle>
+          <CardDescription>
+            Configure transcription behavior
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label>Auto-detect Language</Label>
+              <p className="text-sm text-muted-foreground">
+                Automatically identify the spoken language
+              </p>
+            </div>
+            <Switch
+              checked={autoDetectLanguage}
+              onCheckedChange={(checked) => {
+                setAutoDetectLanguage(checked)
+                saveTranscriptionSetting('autoDetectLanguage', checked)
+                toast.success(`Auto-detect language ${checked ? 'enabled' : 'disabled'}`)
+              }}
+            />
+          </div>
+
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label>Enable Timestamps</Label>
+              <p className="text-sm text-muted-foreground">
+                Include timing information in transcripts
+              </p>
+            </div>
+            <Switch
+              checked={enableTimestamps}
+              onCheckedChange={(checked) => {
+                setEnableTimestamps(checked)
+                saveTranscriptionSetting('enableTimestamps', checked)
+                toast.success(`Timestamps ${checked ? 'enabled' : 'disabled'}`)
+              }}
+            />
+          </div>
+
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label>Enable Speaker Diarization</Label>
+              <p className="text-sm text-muted-foreground">
+                Automatically identify different speakers
+              </p>
+            </div>
+            <Switch
+              checked={enableSpeakerDiarization}
+              onCheckedChange={(checked) => {
+                setEnableSpeakerDiarization(checked)
+                saveTranscriptionSetting('enableSpeakerDiarization', checked)
+                toast.success(`Speaker diarization ${checked ? 'enabled' : 'disabled'}`)
+              }}
+            />
+          </div>
+
+          {enableSpeakerDiarization && (
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label>Maximum Speakers</Label>
+                <p className="text-sm text-muted-foreground">
+                  Expected number of speakers
+                </p>
+              </div>
+              <Select
+                value={String(maxSpeakers)}
+                onValueChange={(value) => {
+                  const num = parseInt(value)
+                  setMaxSpeakers(num)
+                  saveTranscriptionSetting('maxSpeakers', num)
+                  toast.success(`Max speakers set to ${num}`)
+                }}
+              >
+                <SelectTrigger className="w-32">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {[2, 3, 4, 5, 6, 8, 10].map(num => (
+                    <SelectItem key={num} value={String(num)}>{num}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
         </CardContent>
       </Card>
 
