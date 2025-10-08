@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react'
 import { Button } from '@repo/ui/components/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@repo/ui/components/card'
-import { Textarea } from '@repo/ui/components/textarea'
 import { Progress } from '@repo/ui/components/progress'
-import { Mic, FileAudio, Upload, Loader2 } from 'lucide-react'
+import { Mic, FileAudio, Upload } from 'lucide-react'
 import { toast } from 'sonner'
+import { TranscriptDisplay } from '@repo/ui/components/transcription/TranscriptDisplay'
 import {
   selectAudioFile,
   saveTranscription,
@@ -16,10 +16,10 @@ import {
 
 export function TranscriptionTab() {
   const [isTranscribing, setIsTranscribing] = useState(false)
-  const [transcription, setTranscription] = useState('')
   const [progress, setProgress] = useState(0)
   const [segments, setSegments] = useState<TranscriptionSegment[]>([])
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null)
+  const [transcriptionResult, setTranscriptionResult] = useState<any>(null)
 
   useEffect(() => {
     // Setup transcription event listeners
@@ -58,11 +58,23 @@ export function TranscriptionTab() {
     }
   }, [])
 
-  // Update transcription text from segments
+  // Update transcription result from segments
   useEffect(() => {
     if (segments.length > 0) {
-      const text = segments.map(s => s.text).join(' ')
-      setTranscription(text)
+      setTranscriptionResult({
+        segments: segments.map((s, index) => ({
+          ...s,
+          id: `segment-${index}`,
+          speakerId: s.speaker || null,
+          speakerLabel: s.speaker ? `Speaker ${s.speaker}` : null,
+          start_time: (s.start / 100).toFixed(2), // Convert centiseconds to seconds
+          end_time: (s.stop / 100).toFixed(2),
+        })),
+        text: segments.map(s => s.text).join(' '),
+        metadata: {
+          duration: segments.length > 0 ? (segments[segments.length - 1].stop / 100) : 0,
+        }
+      })
     }
   }, [segments])
 
@@ -75,14 +87,21 @@ export function TranscriptionTab() {
     setIsTranscribing(true)
     setProgress(0)
     setSegments([])
-    setTranscription('')
+    setTranscriptionResult(null)
     toast.info('Starting transcription...')
 
     try {
+      // Load settings from localStorage
+      const settingsStr = localStorage.getItem('whisperdesk_settings')
+      const settings = settingsStr ? JSON.parse(settingsStr) : {}
+
       const result = await transcribe({
         audio_path: audioPath,
-        language: 'en',
-        word_timestamps: true,
+        language: settings.autoDetectLanguage ? undefined : 'en',
+        word_timestamps: settings.enableTimestamps ?? true,
+        enable_diarization: settings.enableSpeakerDiarization ?? false,
+        max_speakers: settings.maxSpeakers ?? 10,
+        diarization_threshold: 0.5,
       })
 
       setProgress(100)
@@ -111,13 +130,13 @@ export function TranscriptionTab() {
   }
 
   const handleSave = async () => {
-    if (!transcription) {
+    if (!transcriptionResult?.text) {
       toast.error('No transcription to save')
       return
     }
 
     try {
-      const savedPath = await saveTranscription(transcription, 'transcription.txt')
+      const savedPath = await saveTranscription(transcriptionResult.text, 'transcription.txt')
       if (savedPath) {
         toast.success('Transcription saved!')
       }
@@ -128,7 +147,7 @@ export function TranscriptionTab() {
   }
 
   const handleExport = async () => {
-    if (!transcription) {
+    if (!transcriptionResult) {
       toast.error('No transcription to export')
       return
     }
@@ -136,8 +155,8 @@ export function TranscriptionTab() {
     try {
       // Export as JSON with segments
       const exportData = {
-        text: transcription,
-        segments: segments,
+        text: transcriptionResult.text,
+        segments: transcriptionResult.segments,
         timestamp: new Date().toISOString(),
         audioFile: selectedFilePath,
       }
@@ -210,48 +229,23 @@ export function TranscriptionTab() {
         </Card>
       )}
 
-      {/* Transcription Result */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Transcription</CardTitle>
-          <CardDescription>
-            {transcription ? 'Edit or export your transcription' : 'Your transcription will appear here'}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <Textarea
-            value={transcription}
-            onChange={(e) => setTranscription(e.target.value)}
-            placeholder="Start a transcription to see results here..."
-            className="min-h-[300px] font-mono text-sm"
-          />
-
-          {transcription && (
-            <div className="flex gap-2">
-              <Button onClick={handleSave}>
-                Save
-              </Button>
-              <Button variant="outline" onClick={handleExport}>
-                Export as JSON
-              </Button>
-              <Button variant="outline" onClick={() => {
-                setTranscription('')
-                setSegments([])
-                setSelectedFilePath(null)
-              }}>
-                Clear
-              </Button>
-            </div>
-          )}
-
-          {isTranscribing && (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              <span>Transcribing... {segments.length} segments processed</span>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      {/* Enhanced Transcript Display with Speaker Diarization */}
+      <TranscriptDisplay
+        transcriptionResult={transcriptionResult}
+        isTranscribing={isTranscribing}
+        progress={progress}
+        progressMessage={isTranscribing ? `Processing... ${segments.length} segments` : ''}
+        onCopy={() => {
+          const textToCopy = transcriptionResult?.text || ''
+          if (textToCopy) {
+            navigator.clipboard.writeText(textToCopy)
+            toast.success('📋 Text copied to clipboard')
+          }
+        }}
+        onTranscriptionUpdate={(updatedResult) => {
+          setTranscriptionResult(updatedResult)
+        }}
+      />
     </div>
   )
 }

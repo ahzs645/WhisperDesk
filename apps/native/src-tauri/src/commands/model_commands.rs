@@ -108,6 +108,19 @@ pub async fn get_models_folder() -> Result<String, String> {
         .ok_or_else(|| "Failed to convert path to string".to_string())
 }
 
+/// Check if a file exists
+#[tauri::command]
+pub async fn file_exists(path: String) -> Result<bool, String> {
+    Ok(std::path::Path::new(&path).exists())
+}
+
+/// Delete a file
+#[tauri::command]
+pub async fn delete_file(path: String) -> Result<(), String> {
+    std::fs::remove_file(&path)
+        .map_err(|e| format!("Failed to delete file: {}", e))
+}
+
 /// Download a model from a URL
 #[tauri::command]
 pub async fn download_model(app_handle: AppHandle, url: String, path: String) -> Result<String, String> {

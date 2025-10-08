@@ -105,24 +105,27 @@ export const useSettings = (screenRecorderContext) => {
   };
 
   const saveSettings = async () => {
-    if (!isElectron) return;
-    
     try {
       setSaving(true);
-      
-      // Filter and save all settings to backend
-      const backendSettings = filterSettingsForBackend(settings);
-      for (const [key, value] of Object.entries(backendSettings)) {
-        await window.electronAPI?.settings?.set?.(key, value);
+
+      // Save to localStorage for Tauri access
+      localStorage.setItem('whisperdesk_settings', JSON.stringify(settings));
+
+      // Also save to backend if Electron
+      if (isElectron) {
+        const backendSettings = filterSettingsForBackend(settings);
+        for (const [key, value] of Object.entries(backendSettings)) {
+          await window.electronAPI?.settings?.set?.(key, value);
+        }
       }
-      
+
       // Apply theme change immediately
       updateTheme(settings.theme);
-      
+
       console.log('✅ Settings saved successfully');
       toast.success('Settings saved successfully');
       setHasChanges(false);
-      
+
     } catch (error) {
       console.error('❌ Failed to save settings:', error);
       toast.error('Failed to save settings: ' + error.message);

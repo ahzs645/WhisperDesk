@@ -14,6 +14,7 @@ import { SettingsTab } from '@repo/ui/components/settings'
 import { UnifiedWindowControls } from '@repo/ui/components/UnifiedWindowControls.tauri'
 import { Toaster } from 'sonner'
 import { appInitializer } from './utils/AppInitializer'
+import { ScreenRecorderProvider } from '@repo/ui/components/screen-recorder/ScreenRecorderProvider'
 
 // Create contexts for app-wide state and initialization
 const AppStateContext = createContext<any>(null)
@@ -442,7 +443,9 @@ const App = () => {
   return (
     <InitializationProvider>
       <AppStateProvider>
-        <AppContent />
+        <ScreenRecorderProvider>
+          <AppContent />
+        </ScreenRecorderProvider>
       </AppStateProvider>
     </InitializationProvider>
   )

@@ -42,6 +42,8 @@ pub fn run() {
             list_models,
             get_models_folder,
             download_model,
+            file_exists,
+            delete_file,
             // Audio commands
             get_audio_devices,
             get_ffmpeg_path,

@@ -15,6 +15,9 @@ pub struct TranscriptionRequest {
     pub translate: Option<bool>,
     pub word_timestamps: Option<bool>,
     pub max_sentence_len: Option<i32>,
+    pub enable_diarization: Option<bool>,
+    pub max_speakers: Option<usize>,
+    pub diarization_threshold: Option<f32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -106,6 +109,41 @@ pub async fn transcribe(
     // Abort callback
     let abort_callback = Box::new(move || abort_flag.load(Ordering::Relaxed));
 
+    // Setup diarization if enabled
+    let diarize_options = if request.enable_diarization.unwrap_or(false) {
+        // Get models folder
+        let models_dir = dirs::data_dir()
+            .ok_or_else(|| "Failed to get data directory".to_string())?
+            .join("WhisperDesk")
+            .join("models");
+
+        let segment_model_path = models_dir.join("segmentation-3.0.onnx");
+        let embedding_model_path = models_dir.join("wespeaker_en_voxceleb_CAM++.onnx");
+
+        // Check if models exist
+        if !segment_model_path.exists() {
+            return Err(format!(
+                "Diarization segmentation model not found at: {}. Please download it first.",
+                segment_model_path.display()
+            ));
+        }
+        if !embedding_model_path.exists() {
+            return Err(format!(
+                "Diarization embedding model not found at: {}. Please download it first.",
+                embedding_model_path.display()
+            ));
+        }
+
+        Some(vibe_core::transcribe::DiarizeOptions {
+            segment_model_path: segment_model_path.to_string_lossy().to_string(),
+            embedding_model_path: embedding_model_path.to_string_lossy().to_string(),
+            threshold: request.diarization_threshold.unwrap_or(0.5),
+            max_speakers: request.max_speakers.unwrap_or(10),
+        })
+    } else {
+        None
+    };
+
     // Run transcription
     let transcript = vibe_core::transcribe::transcribe(
         context,
@@ -113,7 +151,7 @@ pub async fn transcribe(
         Some(progress_callback),
         Some(new_segment_callback),
         Some(abort_callback),
-        None, // No diarization for now
+        diarize_options,
         None, // No additional ffmpeg args
     )
     .map_err(|e| format!("Transcription failed: {:?}", e))?;

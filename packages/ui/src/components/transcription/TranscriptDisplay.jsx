@@ -52,12 +52,12 @@ export function TranscriptDisplay({
   // Add useEffect to listen for speaker label updates
   useEffect(() => {
     // Check if we're in an Electron environment
-    if (typeof window !== 'undefined' && window.electronAPI && window.electronAPI.speaker) {
+    if (typeof window !== 'undefined' && window.electronAPI?.speaker) {
       // Listen for speaker label updates
       const handleSpeakerLabelUpdate = (data) => {
         const { speakerId, label } = data;
         console.log('[TranscriptDisplay] Speaker label updated:', { speakerId, label });
-        
+
         // Update the transcript data with new speaker labels
         if (onTranscriptionUpdate && transcriptionResult?.segments) {
           const updatedTranscript = {
@@ -78,14 +78,13 @@ export function TranscriptDisplay({
           console.warn('[TranscriptDisplay] Cannot update transcript - missing callback or segments');
         }
       };
-      
+
       const cleanup = window.electronAPI.speaker.onSpeakerLabelUpdated(handleSpeakerLabelUpdate);
-      
+
       // Cleanup
       return cleanup;
-    } else {
-      console.warn('[TranscriptDisplay] Speaker API not available');
     }
+    // Tauri doesn't need speaker API - labels are handled in transcription
   }, [onTranscriptionUpdate, transcriptionResult])
 
   // Handle search state changes with useCallback to prevent infinite updates
@@ -177,40 +176,40 @@ export function TranscriptDisplay({
   // Add this function to handle speaker renaming (integrate with your speaker service)
   const handleSpeakerRename = useCallback(async (speakerId, newLabel) => {
     console.log('TranscriptDisplay: Starting speaker rename:', { speakerId, newLabel });
-    
+
     try {
       // Check if we're in an Electron environment
-      if (typeof window !== 'undefined' && window.electronAPI && window.electronAPI.speaker) {
+      if (typeof window !== 'undefined' && window.electronAPI?.speaker) {
         const result = await window.electronAPI.speaker.setSpeakerLabel({
           speakerId,
           label: newLabel
         });
-        
+
         if (result.success) {
           console.log('[TranscriptDisplay] Speaker renamed successfully');
           // The speaker service will emit an event that will update the UI automatically
+          return;
         } else {
           console.warn('[TranscriptDisplay] Speaker service returned error:', result);
         }
-      } else {
-        console.warn('[TranscriptDisplay] Speaker API not available - using fallback');
-        // Fallback: update locally
-        if (onTranscriptionUpdate && transcriptionResult?.segments) {
-          const updatedTranscript = {
-            ...transcriptionResult,
-            segments: transcriptionResult.segments.map(segment => {
-              if ((segment.speakerId || segment.speaker) === speakerId) {
-                return {
-                  ...segment,
-                  speakerLabel: newLabel
-                };
-              }
-              return segment;
-            })
-          };
-          onTranscriptionUpdate(updatedTranscript);
-          console.log('[TranscriptDisplay] Local update completed');
-        }
+      }
+
+      // Tauri/fallback: update locally
+      if (onTranscriptionUpdate && transcriptionResult?.segments) {
+        const updatedTranscript = {
+          ...transcriptionResult,
+          segments: transcriptionResult.segments.map(segment => {
+            if ((segment.speakerId || segment.speaker) === speakerId) {
+              return {
+                ...segment,
+                speakerLabel: newLabel
+              };
+            }
+            return segment;
+          })
+        };
+        onTranscriptionUpdate(updatedTranscript);
+        console.log('[TranscriptDisplay] Local update completed');
       }
     } catch (error) {
       console.error('[TranscriptDisplay] Failed to rename speaker:', error);
@@ -231,7 +230,6 @@ export function TranscriptDisplay({
         onTranscriptionUpdate(updatedTranscript);
         console.log('[TranscriptDisplay] Error fallback completed');
       }
-      throw error;
     }
   }, [onTranscriptionUpdate, transcriptionResult])
 
