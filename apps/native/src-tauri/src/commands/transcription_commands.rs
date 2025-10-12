@@ -52,15 +52,25 @@ pub async fn transcribe(
     model_state: State<'_, ModelState>,
     request: TranscriptionRequest,
 ) -> Result<TranscriptionResult, String> {
+    tracing::info!("Transcription request received: {:?}", request);
+
     // Get the model context
     let context_guard = model_state
         .context
         .lock()
-        .map_err(|e| format!("Failed to acquire model lock: {}", e))?;
+        .map_err(|e| {
+            tracing::error!("Failed to acquire model lock: {}", e);
+            format!("Failed to acquire model lock: {}", e)
+        })?;
 
     let context = context_guard
         .as_ref()
-        .ok_or_else(|| "No model loaded. Please load a model first.".to_string())?;
+        .ok_or_else(|| {
+            tracing::error!("No model loaded");
+            "No model loaded. Please load a model first.".to_string()
+        })?;
+
+    tracing::info!("Model context acquired successfully");
 
     // Prepare transcription options
     let options = TranscribeOptions {
@@ -111,28 +121,38 @@ pub async fn transcribe(
 
     // Setup diarization if enabled
     let diarize_options = if request.enable_diarization.unwrap_or(false) {
+        tracing::info!("Diarization enabled, checking for models...");
         // Get models folder
         let models_dir = dirs::data_dir()
-            .ok_or_else(|| "Failed to get data directory".to_string())?
+            .ok_or_else(|| {
+                tracing::error!("Failed to get data directory");
+                "Failed to get data directory".to_string()
+            })?
             .join("WhisperDesk")
             .join("models");
+
+        tracing::info!("Models directory: {:?}", models_dir);
 
         let segment_model_path = models_dir.join("segmentation-3.0.onnx");
         let embedding_model_path = models_dir.join("wespeaker_en_voxceleb_CAM++.onnx");
 
         // Check if models exist
         if !segment_model_path.exists() {
+            tracing::error!("Segmentation model not found at: {:?}", segment_model_path);
             return Err(format!(
                 "Diarization segmentation model not found at: {}. Please download it first.",
                 segment_model_path.display()
             ));
         }
         if !embedding_model_path.exists() {
+            tracing::error!("Embedding model not found at: {:?}", embedding_model_path);
             return Err(format!(
                 "Diarization embedding model not found at: {}. Please download it first.",
                 embedding_model_path.display()
             ));
         }
+
+        tracing::info!("Diarization models found, setting up options");
 
         Some(vibe_core::transcribe::DiarizeOptions {
             segment_model_path: segment_model_path.to_string_lossy().to_string(),
@@ -141,6 +161,7 @@ pub async fn transcribe(
             max_speakers: request.max_speakers.unwrap_or(10),
         })
     } else {
+        tracing::info!("Diarization disabled");
         None
     };
 

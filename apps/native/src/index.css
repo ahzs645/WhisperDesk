@@ -63,8 +63,20 @@
   * {
     @apply border-border;
   }
+  html,
+  body,
+  #root {
+    height: 100%;
+    overscroll-behavior: none;
+    overscroll-behavior-y: none;
+  }
   body {
     @apply bg-background text-foreground;
+    overflow: hidden;
+  }
+  #root {
+    display: flex;
+    flex-direction: column;
   }
 }
 

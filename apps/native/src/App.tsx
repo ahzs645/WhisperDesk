@@ -425,61 +425,63 @@ function AppContent() {
       </header>
 
       {/* Main content */}
-      <main className="flex-1 container mx-auto py-6 pt-[calc(var(--header-height)+24px)]">
-        <Tabs defaultValue="transcribe" className="w-full">
-          <TabsList className="grid w-full grid-cols-6">
-            <TabsTrigger value="transcribe" className="flex items-center space-x-2">
-              <Mic className="w-4 h-4" />
-              <span>Transcribe</span>
-              <FileIndicator />
-            </TabsTrigger>
-            <TabsTrigger value="recorder" className="flex items-center space-x-2">
-              <Video className="w-4 h-4" />
-              <span>Recorder</span>
-            </TabsTrigger>
-            <TabsTrigger value="analytics" className="flex items-center space-x-2">
-              <BarChart3 className="w-4 h-4" />
-              <span>Analytics</span>
-            </TabsTrigger>
-            <TabsTrigger value="models" className="flex items-center space-x-2">
-              <Package className="w-4 h-4" />
-              <span>Models</span>
-            </TabsTrigger>
-            <TabsTrigger value="history" className="flex items-center space-x-2">
-              <Clock className="w-4 h-4" />
-              <span>History</span>
-            </TabsTrigger>
-            <TabsTrigger value="settings" className="flex items-center space-x-2">
-              <Settings className="w-4 h-4" />
-              <span>Settings</span>
-            </TabsTrigger>
-          </TabsList>
+      <main className="flex-1 overflow-y-auto overscroll-y-none">
+        <div className="container mx-auto py-6 pt-[calc(var(--header-height)+24px)]">
+          <Tabs defaultValue="transcribe" className="w-full">
+            <TabsList className="grid w-full grid-cols-6">
+              <TabsTrigger value="transcribe" className="flex items-center space-x-2">
+                <Mic className="w-4 h-4" />
+                <span>Transcribe</span>
+                <FileIndicator />
+              </TabsTrigger>
+              <TabsTrigger value="recorder" className="flex items-center space-x-2">
+                <Video className="w-4 h-4" />
+                <span>Recorder</span>
+              </TabsTrigger>
+              <TabsTrigger value="analytics" className="flex items-center space-x-2">
+                <BarChart3 className="w-4 h-4" />
+                <span>Analytics</span>
+              </TabsTrigger>
+              <TabsTrigger value="models" className="flex items-center space-x-2">
+                <Package className="w-4 h-4" />
+                <span>Models</span>
+              </TabsTrigger>
+              <TabsTrigger value="history" className="flex items-center space-x-2">
+                <Clock className="w-4 h-4" />
+                <span>History</span>
+              </TabsTrigger>
+              <TabsTrigger value="settings" className="flex items-center space-x-2">
+                <Settings className="w-4 h-4" />
+                <span>Settings</span>
+              </TabsTrigger>
+            </TabsList>
 
-          {/* Tab Contents */}
-          <TabsContent value="transcribe" className="space-y-6">
-            <TranscriptionTab />
-          </TabsContent>
+            {/* Tab Contents */}
+            <TabsContent value="transcribe" className="space-y-6">
+              <TranscriptionTab />
+            </TabsContent>
 
-          <TabsContent value="recorder" className="space-y-6">
-            <ScreenRecorderTab />
-          </TabsContent>
+            <TabsContent value="recorder" className="space-y-6">
+              <ScreenRecorderTab />
+            </TabsContent>
 
-          <TabsContent value="analytics" className="space-y-6">
-            <AnalyticsTab />
-          </TabsContent>
+            <TabsContent value="analytics" className="space-y-6">
+              <AnalyticsTab />
+            </TabsContent>
 
-          <TabsContent value="models" className="space-y-6">
-            <ModelsTab />
-          </TabsContent>
+            <TabsContent value="models" className="space-y-6">
+              <ModelsTab />
+            </TabsContent>
 
-          <TabsContent value="history" className="space-y-6">
-            <HistoryTab />
-          </TabsContent>
+            <TabsContent value="history" className="space-y-6">
+              <HistoryTab />
+            </TabsContent>
 
-          <TabsContent value="settings" className="space-y-6">
-            <SettingsTab />
-          </TabsContent>
-        </Tabs>
+            <TabsContent value="settings" className="space-y-6">
+              <SettingsTab />
+            </TabsContent>
+          </Tabs>
+        </div>
       </main>
     </div>
   )

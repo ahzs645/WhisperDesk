@@ -91,6 +91,7 @@ export function TranscriptionTab() {
   }, [segments])
 
   const handleTranscribe = async (audioPath: string) => {
+    console.log('handleTranscribe called with:', audioPath)
     if (!audioPath) {
       toast.error('No audio file selected')
       return
@@ -106,10 +107,19 @@ export function TranscriptionTab() {
       // Load settings from localStorage
       const settingsStr = localStorage.getItem('whisperdesk_settings')
       const settings = settingsStr ? JSON.parse(settingsStr) : {}
+      console.log('Transcription settings:', settings)
 
       // Configure transcription based on settings
       const enableDiarization = settings.enableSpeakerDiarization ?? false
       const enableTimestamps = settings.enableTimestamps ?? true
+
+      console.log('Calling transcribe with options:', {
+        audio_path: audioPath,
+        language: settings.autoDetectLanguage ? undefined : 'en',
+        word_timestamps: false,
+        enable_diarization: enableDiarization,
+        max_speakers: settings.maxSpeakers ?? 10,
+      })
 
       const result = await transcribe({
         audio_path: audioPath,
@@ -123,6 +133,7 @@ export function TranscriptionTab() {
         diarization_threshold: 0.5,
       })
 
+      console.log('Transcription result:', result)
       setProgress(100)
       toast.success('Transcription complete!')
     } catch (error) {
@@ -136,15 +147,19 @@ export function TranscriptionTab() {
 
   const handleFileSelect = async () => {
     try {
+      console.log('Selecting audio file...')
       const filePath = await selectAudioFile()
+      console.log('Selected file path:', filePath)
       if (filePath) {
         setSelectedFilePath(filePath)
         toast.success(`Selected: ${filePath.split('/').pop()}`)
         await handleTranscribe(filePath)
+      } else {
+        console.log('No file selected (user cancelled)')
       }
     } catch (error) {
       console.error('File selection error:', error)
-      toast.error('Failed to select file')
+      toast.error('Failed to select file: ' + String(error))
     }
   }
 

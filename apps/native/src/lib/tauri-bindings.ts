@@ -18,6 +18,9 @@ export interface TranscriptionRequest {
   translate?: boolean;
   word_timestamps?: boolean;
   max_sentence_len?: number;
+  enable_diarization?: boolean;
+  max_speakers?: number;
+  diarization_threshold?: number;
 }
 
 export interface TranscriptionSegment {
