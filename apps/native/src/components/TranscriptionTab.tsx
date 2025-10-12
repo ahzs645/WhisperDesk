@@ -29,7 +29,17 @@ export function TranscriptionTab() {
       })
 
       await onTranscriptionSegment((segment) => {
-        setSegments((prev) => [...prev, segment])
+        setSegments((prev) => {
+          // Check if this segment already exists (by comparing start time and text)
+          const isDuplicate = prev.some(s =>
+            s.start === segment.start &&
+            s.text === segment.text
+          )
+          if (isDuplicate) {
+            return prev
+          }
+          return [...prev, segment]
+        })
       })
     }
 
@@ -67,7 +77,9 @@ export function TranscriptionTab() {
           id: `segment-${index}`,
           speakerId: s.speaker || null,
           speakerLabel: s.speaker ? `Speaker ${s.speaker}` : null,
-          start_time: (s.start / 100).toFixed(2), // Convert centiseconds to seconds
+          start: s.start / 100, // Convert centiseconds to seconds
+          stop: s.stop / 100,
+          start_time: (s.start / 100).toFixed(2),
           end_time: (s.stop / 100).toFixed(2),
         })),
         text: segments.map(s => s.text).join(' '),
@@ -102,10 +114,10 @@ export function TranscriptionTab() {
       const result = await transcribe({
         audio_path: audioPath,
         language: settings.autoDetectLanguage ? undefined : 'en',
-        // When diarization is enabled, disable word timestamps to get sentence-level segments
-        word_timestamps: enableDiarization ? false : enableTimestamps,
-        // When word timestamps are enabled without diarization, group words into sentences
-        max_sentence_len: (!enableDiarization && enableTimestamps) ? 24 : undefined,
+        // Disable word timestamps to get sentence-level segments for better readability
+        word_timestamps: false,
+        // Not used when word_timestamps is false, but set for consistency
+        max_sentence_len: undefined,
         enable_diarization: enableDiarization,
         max_speakers: settings.maxSpeakers ?? 10,
         diarization_threshold: 0.5,

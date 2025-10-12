@@ -87,18 +87,12 @@ export function ModelMarketplace() {
   const downloadingModels = useRef(new Set<string>())
 
   useEffect(() => {
-    loadModelsData()
-    setupProgressListener()
-    loadCurrentModel()
-  }, [])
-
-  const loadCurrentModel = () => {
-    // Load from localStorage which model is currently loaded
-    const savedModel = localStorage.getItem('whisperdesk_loaded_model')
-    if (savedModel) {
-      setLoadedModel(savedModel)
+    const init = async () => {
+      await setupProgressListener()
+      await loadModelsData()
     }
-  }
+    init()
+  }, [])
 
   const setupProgressListener = async () => {
     await onDownloadProgress((current, total) => {
@@ -141,6 +135,12 @@ export function ModelMarketplace() {
         }
       }
       setInstalledModels(installed)
+
+      // Load the saved model state (UI only) - actual model loading happens in App.tsx
+      const savedModel = localStorage.getItem('whisperdesk_loaded_model')
+      if (savedModel) {
+        setLoadedModel(savedModel)
+      }
     } catch (error) {
       console.error('Failed to load models:', error)
       toast.error('Failed to load models list')

@@ -77,9 +77,9 @@ export const EnhancedTranscriptSegment = React.memo(forwardRef(({
               {highlightedSpeakerName}
             </Badge>
             <span className="text-xs text-muted-foreground">
-              {formatTime(segment.start)}
-              {segment.end && segment.end !== segment.start && (
-                <> → {formatTime(segment.end)}</>
+              {formatTime(segment.start || segment.start_time)}
+              {(segment.stop || segment.end_time) && (segment.stop || segment.end_time) !== (segment.start || segment.start_time) && (
+                <> → {formatTime(segment.stop || segment.end_time)}</>
               )}
             </span>
             {segment.confidence && (
@@ -105,9 +105,9 @@ export const EnhancedTranscriptSegment = React.memo(forwardRef(({
           </div>
 
           {/* Duration indicator */}
-          {segment.end != null && segment.start != null && (
+          {((segment.stop || segment.end_time) != null && (segment.start || segment.start_time) != null) && (
             <div className="text-xs text-muted-foreground mt-1">
-              Duration: {formatTime(Number(segment.end) - Number(segment.start))}
+              Duration: {formatTime(Number(segment.stop || segment.end_time) - Number(segment.start || segment.start_time))}
             </div>
           )}
         </div>

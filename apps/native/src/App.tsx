@@ -234,8 +234,55 @@ function AppStateProvider({ children }: { children: React.ReactNode }) {
 
   // Initialize app when mounted
   useEffect(() => {
-    initialize(updateAppState)
+    const initApp = async () => {
+      await initialize(updateAppState)
+      // Auto-load the saved model after initialization
+      await loadSavedModel()
+    }
+    initApp()
   }, [])
+
+  const loadSavedModel = async () => {
+    try {
+      const savedModel = localStorage.getItem('whisperdesk_loaded_model')
+      if (savedModel) {
+        console.log('Auto-loading saved model:', savedModel)
+
+        // Import model configurations
+        const WHISPER_MODELS = [
+          { id: 'whisper-tiny', expectedFilename: 'ggml-tiny.bin' },
+          { id: 'whisper-small', expectedFilename: 'ggml-small.bin' },
+          { id: 'whisper-medium', expectedFilename: 'ggml-medium.bin' },
+          { id: 'whisper-large-v3-turbo', expectedFilename: 'ggml-large-v3-turbo.bin' }
+        ]
+
+        const model = WHISPER_MODELS.find(m => m.id === savedModel)
+        if (model) {
+          const { invoke } = await import('@tauri-apps/api/core')
+          const { getModelsFolder, loadModel } = await import('./lib/tauri-bindings')
+
+          const modelsFolder = await getModelsFolder()
+          const modelPath = `${modelsFolder}/${model.expectedFilename}`
+
+          // Check if file exists
+          const exists = await invoke<boolean>('file_exists', { path: modelPath })
+          if (exists) {
+            await loadModel({
+              model_path: modelPath,
+              use_gpu: false
+            })
+            console.log('✅ Auto-loaded model on startup:', savedModel)
+          } else {
+            console.warn('Saved model file not found, cleared from storage')
+            localStorage.removeItem('whisperdesk_loaded_model')
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Failed to auto-load model:', error)
+      localStorage.removeItem('whisperdesk_loaded_model')
+    }
+  }
 
   return (
     <AppStateContext.Provider value={{
