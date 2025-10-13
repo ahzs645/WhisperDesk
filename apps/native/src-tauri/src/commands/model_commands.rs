@@ -1,9 +1,10 @@
 use eyre::Result;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{AppHandle, Emitter, Listener, State};
+use tokio::sync::Mutex;
 use vibe_core::transcribe::WhisperContext;
 
 /// State to hold the loaded Whisper model context
@@ -45,10 +46,7 @@ pub async fn load_model(
     )
     .map_err(|e| format!("Failed to load model: {:?}", e))?;
 
-    let mut state_guard = model_state
-        .context
-        .lock()
-        .map_err(|e| format!("Failed to acquire lock: {}", e))?;
+    let mut state_guard = model_state.context.lock().await;
 
     *state_guard = Some(context);
 

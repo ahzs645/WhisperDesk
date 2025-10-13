@@ -6257,6 +6257,7 @@ dependencies = [
  "tauri-plugin-store",
  "tokio",
  "tracing",
+ "tracing-subscriber",
  "vibe_core",
 ]
 

@@ -22,6 +22,23 @@ export function TranscriptionTab() {
   const [transcriptionResult, setTranscriptionResult] = useState<any>(null)
 
   useEffect(() => {
+    // Load persisted transcription on mount
+    const loadPersistedTranscription = () => {
+      const savedTranscription = sessionStorage.getItem('currentTranscription')
+      if (savedTranscription) {
+        try {
+          const { segments, result, filePath } = JSON.parse(savedTranscription)
+          setSegments(segments || [])
+          setTranscriptionResult(result)
+          setSelectedFilePath(filePath)
+        } catch (error) {
+          console.error('Failed to load persisted transcription:', error)
+        }
+      }
+    }
+
+    loadPersistedTranscription()
+
     // Setup transcription event listeners
     const setupListeners = async () => {
       await onTranscriptionProgress((prog) => {
@@ -71,7 +88,7 @@ export function TranscriptionTab() {
   // Update transcription result from segments
   useEffect(() => {
     if (segments.length > 0) {
-      setTranscriptionResult({
+      const result = {
         segments: segments.map((s, index) => ({
           ...s,
           id: `segment-${index}`,
@@ -86,9 +103,17 @@ export function TranscriptionTab() {
         metadata: {
           duration: segments.length > 0 ? (segments[segments.length - 1].stop / 100) : 0,
         }
-      })
+      }
+      setTranscriptionResult(result)
+
+      // Persist transcription to sessionStorage
+      sessionStorage.setItem('currentTranscription', JSON.stringify({
+        segments,
+        result,
+        filePath: selectedFilePath
+      }))
     }
-  }, [segments])
+  }, [segments, selectedFilePath])
 
   const handleTranscribe = async (audioPath: string) => {
     console.log('handleTranscribe called with:', audioPath)
@@ -97,17 +122,24 @@ export function TranscriptionTab() {
       return
     }
 
+    // Clear old transcription state
     setIsTranscribing(true)
     setProgress(0)
     setSegments([])
     setTranscriptionResult(null)
+    sessionStorage.removeItem('currentTranscription')
     toast.info('Starting transcription...')
 
     try {
       // Load settings from localStorage
       const settingsStr = localStorage.getItem('whisperdesk_settings')
       const settings = settingsStr ? JSON.parse(settingsStr) : {}
-      console.log('Transcription settings:', settings)
+      console.log('=== TRANSCRIPTION SETTINGS DEBUG ===')
+      console.log('Raw localStorage value:', settingsStr)
+      console.log('Parsed settings:', settings)
+      console.log('enableSpeakerDiarization value:', settings.enableSpeakerDiarization)
+      console.log('enableSpeakerDiarization ?? false:', settings.enableSpeakerDiarization ?? false)
+      console.log('===================================')
 
       // Configure transcription based on settings
       const enableDiarization = settings.enableSpeakerDiarization ?? false

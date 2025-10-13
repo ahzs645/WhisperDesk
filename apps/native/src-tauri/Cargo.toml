@@ -44,6 +44,7 @@ tauri-plugin-shell = "2"
 # Utilities
 dirs = "5.0"
 tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["fmt"] }
 cpal = "0.15.3"
 hound = "3.5.1"
 rand = "0.8.5"

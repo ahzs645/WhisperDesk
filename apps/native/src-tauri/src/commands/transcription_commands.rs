@@ -55,13 +55,7 @@ pub async fn transcribe(
     tracing::info!("Transcription request received: {:?}", request);
 
     // Get the model context
-    let context_guard = model_state
-        .context
-        .lock()
-        .map_err(|e| {
-            tracing::error!("Failed to acquire model lock: {}", e);
-            format!("Failed to acquire model lock: {}", e)
-        })?;
+    let context_guard = model_state.context.lock().await;
 
     let context = context_guard
         .as_ref()
@@ -107,9 +101,16 @@ pub async fn transcribe(
         }
     });
 
-    // New segment callback
+    // New segment callback with filtering
     let app_handle_segment = app_handle.clone();
     let new_segment_callback = Box::new(move |segment: Segment| {
+        // Filter out empty segments and special tokens
+        let text = segment.text.trim();
+        if text.is_empty() || text.starts_with('[') && text.ends_with(']') {
+            // Skip empty segments or special tokens like [END], [BLANK_AUDIO], etc.
+            return;
+        }
+
         if let Some(window) = app_handle_segment.get_webview_window("main") {
             let segment: TranscriptionSegment = segment.into();
             let _ = window.emit("transcription_segment", segment);
@@ -165,25 +166,47 @@ pub async fn transcribe(
         None
     };
 
-    // Run transcription
+    // Setup FFmpeg audio normalization for better diarization results
+    let ffmpeg_options = vec![
+        "-af".to_string(),
+        "loudnorm=I=-16:TP=-1.5:LRA=11".to_string()
+    ];
+    tracing::info!("FFmpeg options: {:?}", ffmpeg_options);
+
+    // Run transcription while holding the lock to prevent model unloading
+    tracing::info!("About to call vibe_core::transcribe::transcribe");
+
     let transcript = vibe_core::transcribe::transcribe(
         context,
         &options,
         Some(progress_callback),
         Some(new_segment_callback),
         Some(abort_callback),
-        diarize_options,
-        None, // No additional ffmpeg args
+        diarize_options.clone(),
+        Some(ffmpeg_options),
     )
-    .map_err(|e| format!("Transcription failed: {:?}", e))?;
+    .map_err(|e| {
+        tracing::error!("Transcription error: {:?}", e);
+        format!("Transcription failed: {:?}", e)
+    })?;
 
-    // Convert to result format
+    tracing::info!("Transcription completed successfully with {} segments", transcript.segments.len());
+
+    // Convert to result format and filter out empty/special token segments
+    let filtered_segments: Vec<TranscriptionSegment> = transcript
+        .segments
+        .into_iter()
+        .filter(|s| {
+            let text = s.text.trim();
+            !text.is_empty() && !(text.starts_with('[') && text.ends_with(']'))
+        })
+        .map(|s| s.into())
+        .collect();
+
+    tracing::info!("Filtered to {} valid segments", filtered_segments.len());
+
     let result = TranscriptionResult {
-        segments: transcript
-            .segments
-            .into_iter()
-            .map(|s| s.into())
-            .collect(),
+        segments: filtered_segments,
         processing_time_sec: transcript.processing_time_sec,
     };
 

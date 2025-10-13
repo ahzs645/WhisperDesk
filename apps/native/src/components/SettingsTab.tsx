@@ -44,10 +44,17 @@ export function SettingsTab() {
   }
 
   const saveTranscriptionSetting = (key: string, value: any) => {
+    console.log('=== SAVING SETTING ===')
+    console.log('Key:', key)
+    console.log('Value:', value)
     const settingsStr = localStorage.getItem('whisperdesk_settings')
+    console.log('Current settings:', settingsStr)
     const settings = settingsStr ? JSON.parse(settingsStr) : {}
     settings[key] = value
+    console.log('Updated settings:', settings)
     localStorage.setItem('whisperdesk_settings', JSON.stringify(settings))
+    console.log('Saved to localStorage!')
+    console.log('=====================')
   }
 
   const handleThemeChange = (newTheme: string) => {

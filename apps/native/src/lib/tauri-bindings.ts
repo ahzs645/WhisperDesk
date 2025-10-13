@@ -162,7 +162,15 @@ export async function onRecordFinish(
 export async function transcribe(
   request: TranscriptionRequest
 ): Promise<TranscriptionResult> {
-  return invoke('transcribe', { request });
+  console.log('[tauri-bindings] Calling invoke with:', { request });
+  try {
+    const result = await invoke<TranscriptionResult>('transcribe', { request });
+    console.log('[tauri-bindings] Invoke returned:', result);
+    return result;
+  } catch (error) {
+    console.error('[tauri-bindings] Invoke error:', error);
+    throw error;
+  }
 }
 
 export async function stopTranscription(): Promise<void> {
