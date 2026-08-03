@@ -42,7 +42,7 @@
     "electron:build:win": "npm run build && electron-builder --win && node scripts/rename-portable.js",
     "dist": "npm run build:whisper && npm run electron:build",
     "dist:win": "npm run build && electron-builder --win && node scripts/rename-portable.js",
-    "dist:mac": "npm run build && electron-builder --mac && node scripts/rename-portable.js",
+    "dist:mac": "npm run build && electron-builder --mac && node scripts/rename-portable.js && (test \"$(uname)\" = \"Darwin\" && xattr -rd com.apple.quarantine dist/*.app 2>/dev/null || true)",
     "dist:linux": "npm run build && electron-builder --linux && node scripts/rename-portable.js",
     "dist:all": "npm run build && electron-builder --win --mac --linux && node scripts/rename-portable.js",
     "_comment_setup_scripts": "=== SETUP & INSTALLATION ===",
